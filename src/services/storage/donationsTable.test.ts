@@ -36,7 +36,7 @@ it('mirrors add, edit, delete, month move and emptying a month into rows', async
 
   await put('2026-01', [d('a', '2026-01-04', 5000), d('b', '2026-01-11'), d('c', '2026-01-18')]); // 수정 + 추가
   await expectInSync();
-  expect((await db.donations.get('a'))!.amount).toBe(5000);
+  expect((await db.donations.get(['2026-01-04', 'a']))!.amount).toBe(5000);
 
   await put('2026-01', [d('a', '2026-01-04', 5000)]); // 삭제
   await expectInSync();
@@ -46,7 +46,7 @@ it('mirrors add, edit, delete, month move and emptying a month into rows', async
   await transact(async () => ({ writes: [monthWrite('2026-01', []), monthWrite('2026-02', [d('a', '2026-02-01', 5000)])], result: null }));
   await expectInSync();
   expect(await db.kv.get(donationKey('2026-01'))).toBeUndefined();
-  expect((await db.donations.get('a'))!.date).toBe('2026-02-01');
+  expect((await db.donations.get(['2026-02-01', 'a']))!.date).toBe('2026-02-01');
 });
 
 it('rolls the rows back together with the month array when the transaction fails', async () => {
@@ -56,4 +56,12 @@ it('rolls the rows back together with the month array when the transaction fails
   ).rejects.toBeTruthy();
   await expectInSync();
   expect(await db.donations.count()).toBe(1);
+});
+
+it('removes the old key when a donation date changes inside the same month', async () => {
+  await put('2026-01', [d('a', '2026-01-04')]);
+  await put('2026-01', [d('a', '2026-01-25')]);
+  await expectInSync();
+  expect(await db.donations.count()).toBe(1);
+  expect(await db.donations.get(['2026-01-04', 'a'])).toBeUndefined();
 });

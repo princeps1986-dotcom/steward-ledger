@@ -17,6 +17,8 @@ export const KEYS = {
   migrationSettingsV22: 'meta_migration_settings_v22',
   /** v1.2 헌금 내역 저장 단위를 연도 → 월로 바꾸는 이전을 이미 수행했는지 */
   migrationDonationsMonthly: 'meta_migration_donations_monthly_v1',
+  /** 행 단위 헌금 테이블이 월 배열과 같은 내용으로 채워졌음을 확인한 표시(백업 대상 아님) */
+  donationRowsReady: 'meta_donation_rows_ready_v1',
   dirty: 'meta_dirty_since_backup',
   /** 이전(localForage) 버전이 커밋 도중 종료되어 남긴 저널. 시작할 때 recoverJournal()이 한 번 마저 적용하고 지웁니다. */
   journal: 'meta_journal',

@@ -183,7 +183,7 @@ interface BackupEnvelope {    // 백업 파일
 
 값이 키마다 따로 저장되므로 저널 시절의 값 크기 한도(약 128MB) 문제가 없습니다. 월별 이전은 데이터베이스 업그레이드 안에서 처리합니다(14장).
 
-**이전 데이터와의 호환:** 데이터베이스 이름(`church-offering-ledger`)과 저장소(`kv`, 외부 키)를 localForage 때와 같게 두어 기존 데이터를 옮기지 않고 그대로 읽습니다(`legacyUpgrade.test.ts`). 첫 실행 때 데이터베이스 버전이 올라가며(localForage 2 → Dexie 10 → 20) localForage의 빈 확인용 저장소가 지워집니다. 한 번 연 데이터는 이전 버전 앱으로 다시 열 수 없습니다. 버전 3(Dexie 30)은 행 단위 헌금 테이블 `donations`(인덱스 `date`, `memberId`, `[date+memberId+offeringTypeId]`)을 비어 있는 채로 추가합니다. 월 배열(`donations_YYYY-MM`)을 쓸 때 `applyWrites`가 같은 트랜잭션에서 바뀐 행만 이 테이블에도 기록합니다(이중 기록). 읽기는 아직 월 배열만 쓰며, 읽기 전환과 기존 데이터 이전은 이후 단계입니다.
+**이전 데이터와의 호환:** 데이터베이스 이름(`church-offering-ledger`)과 저장소(`kv`, 외부 키)를 localForage 때와 같게 두어 기존 데이터를 옮기지 않고 그대로 읽습니다(`legacyUpgrade.test.ts`). 첫 실행 때 데이터베이스 버전이 올라가며(localForage 2 → Dexie 10 → 20) localForage의 빈 확인용 저장소가 지워집니다. 한 번 연 데이터는 이전 버전 앱으로 다시 열 수 없습니다. 버전 3~5(Dexie 50)는 행 단위 헌금 테이블 `donations`(기본키 `[date+id]`, 인덱스 `memberId`, `[date+memberId+offeringTypeId]`)을 만들고, 업그레이드 때 기존 월 배열 전체를 행으로 채웁니다(`buildDonationRows`; 월 배열은 그대로 두고, 건수가 같을 때만 `meta_donation_rows_ready_v1` 표시). 기본키를 날짜 앞세운 복합키로 둔 것은 월·연 로드가 날짜 범위 읽기라 `id` 키보다 약 2배 빠르기 때문입니다. 월 배열을 쓸 때 `applyWrites`가 같은 트랜잭션에서 바뀐 행만 이 테이블에도 기록합니다(이중 기록). 읽기는 아직 월 배열만 쓰며, 읽기 전환은 이후 단계입니다.
 
 **일관된 읽기와 오류 안내:** 백업은 `snapshot()`(읽기 전용 트랜잭션)과 `getMany()`(`bulkGet`)로 한 시점의 데이터를 묶음으로 읽습니다. 저장소 오류(공간 부족·더 새로운 버전·열기 실패)는 `storageErrors.ts`의 `StorageError`로 바뀌어 한글 안내가 나가고, 업무 규칙 오류는 그대로 전달됩니다.
 

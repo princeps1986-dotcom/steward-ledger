@@ -46,13 +46,19 @@ const isDataKey = (k: string): boolean =>
  */
 async function mirrorMonth(key: string, next: Donation[]): Promise<void> {
   const prev = ((await db.kv.get(key)) as Donation[] | undefined) ?? [];
-  const before = new Map(prev.map((d) => [d.id, JSON.stringify(d)]));
+  const before = new Map(prev.map((d) => [d.id, { json: JSON.stringify(d), date: d.date }]));
   const puts: Donation[] = [];
+  const removes: [string, string][] = [];
   for (const d of next) {
-    if (before.get(d.id) !== JSON.stringify(d)) puts.push(d);
+    const old = before.get(d.id);
+    if (!old || old.json !== JSON.stringify(d)) {
+      puts.push(d);
+      if (old && old.date !== d.date) removes.push([old.date, d.id]); // 같은 달 안에서 날짜가 바뀌면 이전 키를 지웁니다
+    }
     before.delete(d.id);
   }
-  if (before.size) await db.donations.bulkDelete([...before.keys()]);
+  for (const [id, old] of before) removes.push([old.date, id]);
+  if (removes.length) await db.donations.bulkDelete(removes);
   if (puts.length) await db.donations.bulkPut(puts);
 }
 

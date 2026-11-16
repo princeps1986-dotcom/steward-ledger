@@ -3,7 +3,7 @@ import type { AppSettings, Donation, Member, OfferingType } from '../../contexts
 import { migrateOfferingTypesV22, migrateOfferingTypesV23, migrateOfferingTypesV24, migrateSettingsV22 } from '../domain/migrations';
 import { migrateOfferingTypesV21 } from '../domain/offeringDefaults';
 import { clearLegacyPosition } from '../domain/positions';
-import { donationKey, KEYS, LEGACY_DONATION_KEY_RE, monthOfDate } from './keys';
+import { donationKey, DONATION_KEY_RE, KEYS, LEGACY_DONATION_KEY_RE, monthOfDate } from './keys';
 
 type Kv = Table<unknown, string>;
 
@@ -90,4 +90,26 @@ export async function applyPendingMigrations(kv: Kv): Promise<void> {
     }
     await kv.put(true, KEYS.migrationDonationsMonthly);
   }
+}
+
+/**
+ * 월 배열(donations_YYYY-MM)의 모든 내역을 행 테이블(donations)로 채웁니다. 월 배열은 지우거나 바꾸지 않습니다.
+ * 끝난 뒤 행 수가 월 배열의 내역 수와 같을 때만 완료 표시를 남기고, 다르면 행을 비워 둡니다(오류를 던지지 않으므로 앱은 열립니다).
+ */
+export async function buildDonationRows(kv: Kv, rows: Table<Donation, [string, string]>): Promise<boolean> {
+  await rows.clear();
+  const keys = (await kv.toCollection().primaryKeys()).map(String).filter((k) => DONATION_KEY_RE.test(k)).sort();
+  let expected = 0;
+  for (let i = 0; i < keys.length; i += 6) {
+    const lists = ((await kv.bulkGet(keys.slice(i, i + 6))) as (Donation[] | undefined)[]).flatMap((l) => l ?? []);
+    expected += lists.length;
+    await rows.bulkPut(lists);
+  }
+  const ok = (await rows.count()) === expected;
+  if (!ok) {
+    console.error('[업그레이드] 행 테이블 건수가 월 배열과 달라 채우기를 취소합니다', expected);
+    await rows.clear();
+  }
+  await kv.put(ok, KEYS.donationRowsReady);
+  return ok;
 }
