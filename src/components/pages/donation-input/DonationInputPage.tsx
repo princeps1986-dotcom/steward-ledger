@@ -1,5 +1,6 @@
 import { useDonationEditor } from '../../../hooks/useDonationEditor';
 import { useDonationInput } from '../../../hooks/useDonationInput';
+import { useIsMobileDevice } from '../../../hooks/useIsMobileDevice';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
 import { DonationEditModal } from '../reports/DonationEditModal';
@@ -14,6 +15,7 @@ import { QuickRegisterModal } from './QuickRegisterModal';
 export function DonationInputPage() {
   const c = useDonationInput();
   const editor = useDonationEditor();
+  const isMobile = useIsMobileDevice();
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
@@ -22,6 +24,11 @@ export function DonationInputPage() {
         <div className="min-h-[2.75rem]" aria-live="polite">
           <Notice message={c.message} action={c.message?.undoable && c.canUndo ? { label: '되돌리기', onClick: () => void c.undo() } : undefined} />
         </div>
+        {isMobile ? (
+          <p role="note" className="no-print rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold leading-relaxed text-red-600">
+            안내: 이 프로그램은 PC 전용입니다. 모바일에서는 화면 구성과 기능을 보는 시연용으로 봐주세요. 모바일에서는 화면이 잘려보이거나 깨져 보일 수 있습니다.
+          </p>
+        ) : null}
         <section className="card space-y-4">
           <div className="grid grid-cols-[220px_minmax(0,26rem)] gap-3">
             <div>

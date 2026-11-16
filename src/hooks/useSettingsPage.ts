@@ -7,7 +7,8 @@ import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../context
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
-import { downloadBackup, replaceAllData, resetAllData } from '../services/backup/backupService';
+import { buildDemoPayload } from '../services/demo/demoData';
+import { collectPayload, downloadBackup, replaceAllData, resetAllData } from '../services/backup/backupService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
 import { isValidEmail } from '../services/excel/mailtoProtocol';
@@ -35,6 +36,7 @@ export function useSettingsPage() {
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
   const [busy, setBusy] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLeft, setResetLeft] = useState(RESET_WAIT_SECONDS);
   const isDesktop = !!desktop();
@@ -115,6 +117,24 @@ export function useSettingsPage() {
     return () => window.clearInterval(id);
   }, [resetOpen]);
 
+  const confirmDemo = useCallback(async () => {
+    setBusy(true);
+    try {
+      // 지금 데이터가 있을 때만 긴급 백업을 내려받습니다(빈 상태에서는 불필요한 파일을 만들지 않음).
+      const cur = await collectPayload();
+      const hasData = cur.members.length > 0 || Object.values(cur.donationsByYear).some((l) => l.length > 0);
+      if (hasData) await downloadBackup('emergency_before_demo');
+      await replaceAllData(buildDemoPayload());
+      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      setMessage({ kind: 'info', text: `시연 데이터를 불러왔습니다.${hasData ? ' 이전 데이터는 emergency_before_demo 파일로 저장되었습니다.' : ''}` });
+      setDemoOpen(false);
+    } catch (err) {
+      setMessage({ kind: 'error', text: `시연 데이터 불러오기 실패: ${(err as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  }, [memberActions, offeringActions, donationActions]);
+
   const confirmReset = useCallback(async () => {
     if (resetLeft > 0) return;
     setBusy(true);
@@ -189,6 +209,10 @@ export function useSettingsPage() {
     restore,
     confirmRestore,
     cancelRestore: () => setRestore(null),
+    demoOpen,
+    openDemo: () => setDemoOpen(true),
+    cancelDemo: () => setDemoOpen(false),
+    confirmDemo,
     resetOpen,
     resetLeft,
     openReset: () => setResetOpen(true),

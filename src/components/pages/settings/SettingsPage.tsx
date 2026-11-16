@@ -87,14 +87,39 @@ export function SettingsPage() {
             지금 백업 파일 저장
           </button>
           <label className="btn cursor-pointer">
-            백업 파일로 복원…
+            백업 파일로 복원
             <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
           </label>
-          <button className="btn-danger ml-auto whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
+          <button className="btn ml-auto whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
+            시연 데이터 불러오기
+          </button>
+          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
             전체 초기화
           </button>
         </div>
       </section>
+
+      <Modal
+        open={s.demoOpen}
+        onClose={s.cancelDemo}
+        title="시연 데이터를 불러올까요?"
+        description="현재 앱의 모든 데이터가 가상의 시연 데이터로 바뀝니다."
+        footer={
+          <>
+            <button className="btn" onClick={s.cancelDemo} disabled={s.busy}>
+              취소
+            </button>
+            <button className="btn-danger" onClick={() => void s.confirmDemo()} disabled={s.busy}>
+              시연 데이터 불러오기
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm">
+          <p>가상의 성도 150명과 헌금 400건(지난 주일 100건, 그 전날 300건), 수정·삭제 이력 6건이 들어갑니다.</p>
+          <p className="text-red-700">실제 교회 데이터가 들어 있는 곳에서는 사용하지 마세요. 지금 데이터가 있으면 먼저 긴급 백업 파일로 내려받습니다.</p>
+        </div>
+      </Modal>
 
       <Modal
         open={s.resetOpen}
