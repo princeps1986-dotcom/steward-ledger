@@ -2,11 +2,12 @@ import { useDailyTotals } from '../../../hooks/useDailyTotals';
 import { formatNumber, formatWon } from '../../../services/domain/amount';
 
 /** 선택일 합계 대조 (입력 칸 변경에는 리렌더되지 않도록 별도 컴포넌트로 분리) */
-export function DailyTotalsBar({ date }: { date: string }) {
+export function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?: number }) {
   const t = useDailyTotals(date);
   return (
     <section className="card flex flex-wrap items-center gap-x-6 gap-y-2">
-      <div>
+      {/* flashKey가 바뀔 때(저장 성공) 합계 영역이 잠깐 강조됩니다. */}
+      <div key={flashKey} className={`rounded px-1 ${flashKey > 0 ? 'flash-save' : ''}`}>
         <div className="text-xs text-gray-500">{date} 입력 합계</div>
         <div className="text-xl font-bold">{formatWon(t.total)}</div>
         <div className="text-xs text-gray-500">{formatNumber(t.count)}건</div>

@@ -28,18 +28,28 @@ export function useAppNav() {
  * - 종료 직전 main의 요청에 백업 내용을 응답
  * - 시작 시 지난 종료의 자동 백업 결과를 반영(성공 → 마지막 백업 시각 갱신, 실패 → 경고)
  */
-export function useAutoBackupBridge(): string | null {
+export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void } {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
   const { markBackupDone } = useSettingsActions();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
+  // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다.
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     const api = desktop();
     if (!api) return;
-    return api.onBackupRequest(() => buildAutoBackup(settingsRef.current));
+    const offRequest = api.onBackupRequest(async () => {
+      setClosing(true);
+      return buildAutoBackup(settingsRef.current);
+    });
+    const offCancel = api.onBackupCancelled(() => setClosing(false));
+    return () => {
+      offRequest();
+      offCancel();
+    };
   }, []);
 
   useEffect(() => {
@@ -58,7 +68,8 @@ export function useAutoBackupBridge(): string | null {
     })();
   }, [loaded, markBackupDone]);
 
-  return failure;
+  const skipBackup = useCallback(() => desktop()?.skipBackup(), []);
+  return { failure, closing, skipBackup };
 }
 
 const DAY = 24 * 60 * 60 * 1000;

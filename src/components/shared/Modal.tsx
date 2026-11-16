@@ -10,15 +10,17 @@ interface Props {
   footer?: ReactNode;
   widthClass?: string;
   onCloseAutoFocus?(e: Event): void;
+  /** true면 내용이 창 밖으로 넘쳐 보일 수 있습니다(달력 팝업이 창 높이를 늘리지 않고 위에 겹쳐 뜸). 내용이 짧은 창에만 씁니다. */
+  overflowVisible?: boolean;
 }
 
-export function Modal({ open, onClose, title, description, children, footer, widthClass = 'max-w-lg', onCloseAutoFocus }: Props) {
+export function Modal({ open, onClose, title, description, children, footer, widthClass = 'max-w-lg', onCloseAutoFocus, overflowVisible = false }: Props) {
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Dialog.Content
-          className={`fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] ${widthClass} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-5 shadow-xl outline-none`}
+          className={`fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] ${widthClass} -translate-x-1/2 -translate-y-1/2 ${overflowVisible ? 'overflow-visible' : 'overflow-y-auto'} rounded-lg bg-white p-5 shadow-xl outline-none`}
           onCloseAutoFocus={onCloseAutoFocus}
         >
           <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>

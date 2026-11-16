@@ -68,14 +68,17 @@ async function applyWrites(writes: Write[]): Promise<void> {
 const isDataKey = (k: string): boolean =>
   k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
 
+/** 끝나지 못한 트랜잭션(저널)이 남아 있으면 마저 적용합니다. 값은 절대값이라 여러 번 적용해도 결과가 같습니다. */
+async function replayPending(): Promise<boolean> {
+  const pending = await store.getItem<Write[]>(KEYS.journal);
+  if (!pending) return false;
+  await applyWrites(pending);
+  await store.removeItem(KEYS.journal);
+  return true;
+}
+
 export async function recoverJournal(): Promise<boolean> {
-  return serialize(async () => {
-    const pending = await store.getItem<Write[]>(KEYS.journal);
-    if (!pending) return false;
-    await applyWrites(pending);
-    await store.removeItem(KEYS.journal);
-    return true;
-  });
+  return serialize(replayPending);
 }
 
 /**
@@ -87,6 +90,8 @@ export function transact<R>(
   opts: { markDirty?: boolean } = {},
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
+    // 앞선 쓰기가 디스크 부족 등으로 도중에 실패해 저널이 남아 있으면, 새 저널이 그것을 덮어쓰기 전에 먼저 마저 적용합니다.
+    await replayPending();
     const read: Reader = (key) => store.getItem(key);
     const { writes, result } = await build(read);
     if (writes.length === 0) return { writes, result };

@@ -114,15 +114,19 @@ export function ReportsPage() {
         {/* 인쇄·엑셀·메일 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
         {tab === 'SUMMARY' ? (
           <>
-            <button className="btn-accent" onClick={ex.print} disabled={f.pending}>
+            <button className="btn-primary" onClick={ex.print} disabled={f.pending}>
               보고서 인쇄
             </button>
-            <button className="btn-accent" onClick={() => void ex.saveExcel()} disabled={ex.busy || f.pending}>
-              엑셀저장
-            </button>
-            <button className="btn-accent" onClick={() => void ex.mailSave()} disabled={ex.busy || f.pending}>
-              메일 저장
-            </button>
+            {/* 파일로 내보내는 동작은 한 묶음으로 두어 인쇄와 구분합니다. */}
+            <div className="flex items-center gap-1.5 rounded border border-gray-300 px-2 py-1" role="group" aria-label="파일로 내보내기">
+              <span className="text-xs text-gray-500">내보내기</span>
+              <button className="btn-accent" onClick={() => void ex.saveExcel()} disabled={ex.busy || f.pending}>
+                엑셀저장
+              </button>
+              <button className="btn-accent" onClick={() => void ex.mailSave()} disabled={ex.busy || f.pending}>
+                메일 저장
+              </button>
+            </div>
           </>
         ) : null}
       </section>

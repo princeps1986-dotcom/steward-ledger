@@ -1,6 +1,6 @@
 {
   "name": "steward-ledger",
-  "productName": "청지기장부",
+  "productName": "StewardLedger",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "org.church.offering-ledger",
-    "productName": "청지기장부",
+    "productName": "StewardLedger",
     "directories": {
       "output": "release"
     },

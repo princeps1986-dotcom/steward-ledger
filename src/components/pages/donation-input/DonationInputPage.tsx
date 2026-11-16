@@ -1,3 +1,4 @@
+import type { PageKey } from '../../../hooks/useAppShell';
 import { useDonationEditor } from '../../../hooks/useDonationEditor';
 import { useDonationInput } from '../../../hooks/useDonationInput';
 import { useIsMobileDevice } from '../../../hooks/useIsMobileDevice';
@@ -6,23 +7,25 @@ import { Notice } from '../../shared/Notice';
 import { DonationEditModal } from '../reports/DonationEditModal';
 import { AmountRow, KoreanAmount } from './AmountRow';
 import { DailyTotalsBar } from './DailyTotalsBar';
+import { FirstRunGuide } from './FirstRunGuide';
 import { DuplicateModal } from './DuplicateModal';
 import { HistoryPanel } from './HistoryPanel';
 import { LargeAmountModal } from './LargeAmountModal';
 import { MemberSearchBox } from './MemberSearchBox';
 import { QuickRegisterModal } from './QuickRegisterModal';
 
-export function DonationInputPage() {
+export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): void }) {
   const c = useDonationInput();
   const editor = useDonationEditor();
   const isMobile = useIsMobileDevice();
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
-        <DailyTotalsBar date={c.date} />
+        {c.isFirstRun ? <FirstRunGuide onNavigate={onNavigate} /> : null}
+        <DailyTotalsBar date={c.date} flashKey={c.savedSeq} />
         {/* 저장 결과는 화면 아래로 밀려 가려지지 않도록 위쪽에 두고, 나타나도 입력 칸이 밀리지 않게 높이를 확보합니다. */}
         <div className="min-h-[2.75rem]" aria-live="polite">
-          <Notice message={c.message} action={c.message?.undoable && c.canUndo ? { label: '되돌리기', onClick: () => void c.undo() } : undefined} />
+          <Notice key={c.message?.undoable ? `saved-${c.savedSeq}` : 'msg'} success={c.message?.undoable} message={c.message} action={c.message?.undoable && c.canUndo ? { label: '되돌리기', onClick: () => void c.undo() } : undefined} />
         </div>
         {isMobile ? (
           <p role="note" className="no-print rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold leading-relaxed text-red-600">

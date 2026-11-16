@@ -177,7 +177,7 @@ interface BackupEnvelope {    // 백업 파일
 3. 각 키에 쓴다.
 4. 저널을 지운다.
 
-도중에 앱이 멈추면 다음 시작 때 `recoverJournal`이 저널을 다시 실행해 **전부 반영된 상태**로 맞춥니다. 같은 키에 대한 삭제→쓰기는 마지막 쓰기만 남깁니다. 커밋된 키 목록은 `tabSyncChannel`(BroadcastChannel)로 다른 창에 알려 같은 데이터를 보게 합니다.
+도중에 앱이 멈추면 다음 시작 때 `recoverJournal`이 저널을 다시 실행해 **전부 반영된 상태**로 맞춥니다. 디스크 부족 등으로 쓰기가 도중에 실패해 저널이 남은 경우에도, **다음 트랜잭션이 시작되기 전에 남은 저널을 먼저 적용**하므로(`replayPending`) 새 저널이 옛 저널을 덮어써 일부 키만 반영된 상태로 굳는 일이 없습니다. 같은 키에 대한 삭제→쓰기는 마지막 쓰기만 남깁니다. 커밋된 키 목록은 `tabSyncChannel`(BroadcastChannel)로 다른 창에 알려 같은 데이터를 보게 합니다.
 
 저널 값은 IndexedDB의 값 크기 한도(약 128MB)를 넘을 수 없으므로, 아주 큰 작업(104만 건 전체 교체)은 한 번에 못 합니다. 그래서 **월별 이전은 연도마다 따로 커밋**하고, **복원은 연도 하나씩** 합니다.
 
@@ -232,6 +232,8 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **고정 셀:** 합계 행은 `sticky bottom-0`, 머리글 `top-0`, 번호·성도명 열 `left-0/left-10`. `border-collapse` 때문에 사라지는 윗선은 그림자(`shadow`)로 대신 그립니다.
 
 ### 8.4 수정·삭제 이력 범위
+(헌금 수정창 `useDonationEditor`는 날짜·종류·금액·메모만 바꾸며 `memberId`·`donorDisplayName`·세대 스냅샷은 원본을 그대로 유지합니다. 날짜 칸은 `DatePicker`의 `pickOnly`라 달력으로만 고르고, 성도·표기명은 읽기 전용 칸(`donorLabel`)으로만 보여 줍니다.)
+
 `auditLogsForPeriod`가 변경 전·후 날짜 중 하나라도 기간에 속하면 포함합니다(연도를 옮긴 수정은 두 보고서 모두에 나옴). 이력은 새 연도의 장부에 기록되므로 모든 연도의 이력을 불러온 뒤 거릅니다.
 
 ### 8.5 동명이인 표기
@@ -286,6 +288,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **무명 번호:** 선택일의 `무명N` 최댓값 + 1(`nextAnonymousName`). 카운터를 저장하지 않으므로 삭제·되돌리기·날짜 변경과 항상 맞습니다. 문자열만 구독해 번호가 바뀔 때만 다시 그립니다.
 * **금액:** `parseAmount`(쉼표 제거 후 안전 정수·양수), `addQuickAmount`(15자리 초과 시 무시), `amountToKorean`(표시 전용).
 * **단축키:** 전역 keydown에서 처리하되 열린 대화상자(`[role=dialog][data-state=open]`)가 있으면 무시합니다. 한글 조합 중 Enter(`isComposing`)는 무시하고, 금액 단추는 `tabIndex={-1}` + `onMouseDown preventDefault`로 포커스를 유지합니다. 진입 시에는 어느 칸에도 포커스를 두지 않습니다.
+* **처음 사용 안내:** `isFirstRun = members.length === 0`이면 `FirstRunGuide`가 맨 위에 렌더되며, `App`이 넘기는 `onNavigate`(`useAppNav.setPage`)로 해당 메뉴로 이동합니다.
 * **모바일 안내:** `useIsMobileDevice`(사용자 에이전트 또는 좁은 터치 화면)가 true면 입력 카드 위에 빨간 안내를 그립니다.
 * **현금 계수:** 선택일 합계는 파생 값(`dailyTotals`)을 구독하는 별도 컴포넌트가 계산해 입력 칸 변경에는 다시 그리지 않습니다. 계수 금액은 컴포넌트 로컬 상태입니다.
 
@@ -293,15 +296,20 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 * **인쇄:** `@page { size: A4 landscape; margin: 0 }`로 브라우저 머리글·바닥글이 들어갈 자리를 없애고, 실제 여백은 `main`의 `print:p-[12mm]`와 표의 `thead/tfoot` 간격 행(5mm, 쪽마다 반복)으로 줍니다. 표는 9.5pt·낮은 행 높이로 한 쪽에 약 34행. `print-color-adjust: exact`로 배경이 인쇄됩니다. `PrintHeader`가 한 줄 머리글(제목·요약·출력일시)을 그리며 출력일시는 `beforeprint`에서 갱신합니다. 실제 쪽 나눔과 프린터 여백은 인쇄해서 확인해야 합니다.
 * **테마:** Tailwind 4가 색을 `var(--color-*)`로 컴파일하므로 `index.css`가 `:root[data-theme]`별로 변수만 덮어씁니다(컴포넌트 수정 없음). 화면 테마 변수는 `@media screen`에만 있어 인쇄에는 영향이 없고, 인쇄 색은 `data-print-theme`의 8개 변수로만 정해집니다. 마지막 테마는 `localStorage`에 기록해 `main.tsx`가 렌더 전에 먼저 적용하므로 색이 깜빡이지 않습니다.
-* **달력:** 일요일 시작 6주(42칸) 고정 그리드, 일요일 빨간색. 입력 칸은 숫자만 받아 `YYYY-MM-DD`로 정리합니다. `pickOnly`는 읽기 전용으로 달력으로만 고르게 합니다(헌금 입력 날짜). 일반 화면은 아래에 겹쳐 띄우고, Radix `Dialog` 안(`inline`)에서는 흐름 안에 펼칩니다(스크롤 잘림·포커스 트랩 충돌 방지).
+* **달력:** 일요일 시작 6주(42칸) 고정 그리드, 일요일 빨간색. 입력 칸은 숫자만 받아 `YYYY-MM-DD`로 정리합니다. `pickOnly`는 읽기 전용으로 달력으로만 고르게 합니다(헌금 입력 날짜). 달력은 어디서든 입력 칸 아래에 **겹쳐(absolute) 띄워 창 높이를 늘리지 않고 아래 내용을 덮습니다.** Radix `Dialog` 안에서는 내용 영역의 `overflow-y-auto`가 팝업을 잘라내므로, 달력을 쓰는 짧은 창(헌금 수정, 성도 등록·수정, 빠른 등록)은 `Modal`의 `overflowVisible`로 잘림을 풀어 줍니다(포털로 빼면 포커스 트랩·바깥 클릭 감지와 충돌하기 때문).
+* **어두운 테마(`data-theme="DARK"`):** 같은 방식으로 `--color-gray-*`를 **뒤집은** 값, `--color-white`(= `bg-white` 표면색)를 어두운 색, 파랑·빨강·초록·황색 계열을 어두운 바탕에서 읽히는 값으로 덮어쓰고 `color-scheme: dark`로 입력 칸·스크롤바도 어둡게 합니다. `--color-white`가 `text-white`에도 쓰이므로 색 단추(`.btn-primary`, `.btn-danger`)와 `.text-white`는 글자를 흰색으로 고정하고 hover 색은 따로 지정합니다. 화면 전용(`@media screen`)이라 인쇄는 밝은 팔레트와 `data-print-theme`를 그대로 씁니다. 그래서 `PrintTheme`에는 `DARK`가 없습니다.
+* **저장 성공 효과:** `useDonationInput.savedSeq`가 저장 성공마다 1씩 올라가고, `Notice`(`success`)와 `DailyTotalsBar`(`flashKey`)가 `key`가 바뀌어 `pop-in`·`flash-save` CSS 애니메이션을 다시 재생합니다. `prefers-reduced-motion`이면 애니메이션을 끕니다.
+* **표 행 강조:** `.rpt-table tbody tr:not(.rpt-total-row):hover > td`와 `.row-hover:hover`(가상 목록)가 `--color-blue-50`을 칠합니다(화면 전용, 고정 열 셀도 같은 색).
 * **글자 크기:** 설정이 루트 글자 크기(100%/112.5%/125%)를 바꾸며 Tailwind가 `rem` 기반이라 화면 전체가 함께 커집니다.
 * **접근성:** 주 메뉴 `aria-current`, 보고서 탭 `role=tablist/tab` + `aria-selected`, 토글 `aria-pressed`, 성도 열 제목 `aria-sort`, 검색 `role=combobox/listbox`, 결과 알림 `aria-live`.
 
 ## 13. Electron 셸
 
 * `requestSingleInstanceLock()`으로 중복 실행 차단. `contextIsolation: true`, `nodeIntegration: false`. CSP는 응답 헤더로 강제. 서비스 워커·PWA·자동 업데이트 없음.
+* **영문 저장·백업 경로:** 데이터 폴더는 `%APPDATA%\StewardLedger`, 기본 자동 백업 폴더는 `문서\StewardLedgerBackup`입니다(`electron/dataPaths.cjs`). 이전 버전의 한글 폴더(`교회헌금회계`, `교회헌금백업`)가 있으면 앱이 데이터를 열기 전에 한 번 이름을 바꿔 옮기고, 옮기지 못하면(다른 프로그램이 사용 중 등) 데이터를 잃지 않도록 이전 폴더를 계속 씁니다. 설치 폴더 이름도 영문입니다: `productName`이 `StewardLedger`라 기본 설치 위치는 `%LOCALAPPDATA%\Programs\StewardLedger`, 설치 파일은 `StewardLedger Setup 1.0.0.exe`이며 데이터와는 별개입니다(바탕화면·시작 메뉴 바로가기 이름 `청지기 장부`와 창 제목은 표시용이라 한글 그대로). 이미 한글 폴더(`청지기장부`)에 설치된 PC에 새 설치 파일을 실행하면 설치 프로그램이 이전 설치 위치를 그대로 재사용할 수 있으므로, 영문 폴더로 옮기려면 기존 프로그램을 먼저 제거(데이터는 `deleteAppDataOnUninstall: false`로 보존)한 뒤 설치합니다. 테스트는 `dataPaths.test.ts`.
+* **화면 멈춤 대응:** `render-process-gone`(비정상 종료)이면 창을 다시 불러오고(1분에 3번 넘으면 안내 후 중단), `unresponsive`이면 [기다리기 / 다시 불러오기]를 묻습니다. 데이터는 IndexedDB에 있어 다시 불러와도 이어서 쓸 수 있습니다. React 화면 오류는 `ErrorBoundary`가 화면 단위로 잡아 앱 전체가 하얗게 되지 않고 메뉴를 계속 쓸 수 있습니다(메뉴를 옮기면 새로 시작).
 * **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
-* **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(최대 5초 대기, 초과·실패 시 종료를 막지 않고 다음 실행에 경고).
+* **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(임시 파일에 쓴 뒤 이름을 바꿔 전원이 꺼져도 잘린 백업 파일이 남지 않음)**끝날 때까지 기다린 뒤 종료**합니다(상한 5분). 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄우고, 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다). 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
 * **파일 열기:** `will-download`가 완료된 `.xlsx`의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
 
 ## 14. 1회 보정(마이그레이션)
@@ -334,7 +342,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 ## 16. 테스트
 
-`npm test` (Vitest, 17개 파일, 125건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
+`npm test` (Vitest, 20개 파일, 133건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
 
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
@@ -344,6 +352,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
+| 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 남은 저널을 다음 트랜잭션 전에 적용 |
 
 **자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, Electron 설치본 전체 흐름. 이 부분은 직접 확인해야 합니다.
 
@@ -354,6 +363,10 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * 새로 저장한 내역을 되돌리면 생성 기록이 없는데도 이력에 `DELETE(입력 직후 되돌리기)`가 남는다.
 * 복원은 설정을 포함하지 않는다. 오래된 백업을 복원하면 그 뒤에 추가된 금액 단추 등은 헌금 종류 화면에서 다시 추가해야 한다.
 * 이름만 같고 연락처가 없는 성도는 다른 PC 백업 병합 때 새 성도로 추가된다(복원 창이 안내).
+* **갑작스러운 정전·강제 종료:** 저널 덕분에 여러 키에 걸친 작업이 일부만 반영된 채 남지 않습니다. 다만 운영체제가 아직 디스크에 쓰지 않은 **마지막 몇 초의 저장은 사라질 수 있습니다**(IndexedDB의 일반적인 쓰기 보장 수준). 자동 백업은 앱을 정상 종료할 때만 만들어지므로 정전 직전까지의 변경은 백업에 없을 수 있습니다.
+* 매우 큰 데이터(수십만 건 이상)에서는 종료 시 백업이 오래 걸려 종료 안내가 길게 보입니다(8초 후 건너뛰기 가능, 상한 5분).
+* 자동 백업 폴더를 OneDrive가 동기화하는 문서 폴더나 USB·네트워크 드라이브로 두면 쓰기가 느리거나 실패할 수 있습니다(실패하면 종료 전에 묻습니다). 데이터 폴더는 Windows 계정별이므로 다른 계정으로 로그인하면 비어 있습니다.
+* Windows 10 이상 64비트만 지원합니다(Electron 45).
 * 서명되지 않은 설치 파일은 Windows 스마트 앱 컨트롤에서 막힐 수 있다.
 
 ## 18. 빌드 · 실행 · 배포

@@ -30,6 +30,7 @@ export function QuickRegisterModal({ c }: { c: DonationInputController }) {
   return (
     <Modal
       open={c.quickRegisterOpen}
+      overflowVisible
       onClose={c.closeQuickRegister}
       onCloseAutoFocus={c.preventAutoFocus}
       title="새 성도 즉시 등록"

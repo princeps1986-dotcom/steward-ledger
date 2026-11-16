@@ -13,6 +13,7 @@ export const THEME_OPTIONS: ThemeOption<AppTheme>[] = [
   { value: 'BLUE', label: '차분한 블루', desc: '기본. 정돈된 청회색 바탕', swatch: ['#1f2f46', '#f3f5f9', '#2457c5'] },
   { value: 'WARM', label: '밝고 따뜻한', desc: '크림색 바탕에 테라코타 강조', swatch: ['#b4532a', '#fff7ee', '#b4532a'] },
   { value: 'CALM', label: '눈이 편안한', desc: '반사광을 줄인 연한 회녹색', swatch: ['#47594f', '#e9eee6', '#3b7366'] },
+  { value: 'DARK', label: '어두운', desc: '어두운 바탕, 밤·어두운 방에서', swatch: ['#0f1522', '#171d2b', '#5b86ef'] },
 ];
 
 /** 인쇄 양식 색상. 흑백이 기본이고 나머지는 화면 테마의 색 계열을 옅게 사용합니다. */

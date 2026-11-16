@@ -4,12 +4,11 @@ import { isValidDateString, todayString } from '../services/domain/dates';
 
 const CELL_BASE = 'h-8 w-full rounded text-sm';
 const POPUP_BASE = 'no-print mt-1 rounded-lg border border-gray-200 bg-white p-2';
-/** 일반 화면: 입력 칸 아래에 겹쳐 띄움 / 모달 안: 모달이 overflow로 잘라내므로 흐름 안에 펼쳐 모달 높이를 늘림 */
-const POPUP_OVERLAY = `${POPUP_BASE} absolute left-0 top-full z-[60] w-[17.5rem] shadow-lg`;
-const POPUP_INLINE = `${POPUP_BASE} w-full`;
+/** 달력은 항상 입력 칸 아래에 겹쳐 띄웁니다(창·화면 높이를 늘리지 않고 아래 내용을 덮음). 모달 안에서는 Modal의 overflowVisible과 함께 씁니다. */
+const POPUP = `${POPUP_BASE} absolute left-0 top-full z-[60] w-[17.5rem] shadow-lg`;
 
 /** 달력 선택기 상태·이벤트 (일요일 빨간색 표시 포함). 입력 칸은 YYYY-MM-DD 직접 입력도 지원합니다. */
-export function useDatePicker({ value, onChange, inline = false }: { value: string; onChange(v: string): void; inline?: boolean }) {
+export function useDatePicker({ value, onChange }: { value: string; onChange(v: string): void }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState({ year: 0, month: 1 });
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -90,7 +89,7 @@ export function useDatePicker({ value, onChange, inline = false }: { value: stri
     open,
     openCalendar,
     weekday,
-    popupClassName: inline ? POPUP_INLINE : POPUP_OVERLAY,
+    popupClassName: POPUP,
     toggle,
     rootRef,
     inputRef,

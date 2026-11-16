@@ -7,6 +7,7 @@ const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell } = require('e
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
+const { resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
 
 const DEV_URL = process.env.ELECTRON_DEV_URL;
 const DIST = path.join(__dirname, '..', 'dist');
@@ -14,7 +15,7 @@ const AUTO_BACKUP_KEEP = 10;
 // 이번 실행 중 앱이 저장한 엑셀 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
 const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json$/;
-const BACKUP_TIMEOUT_MS = 5000;
+const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -28,9 +29,9 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-// 이름을 바꿔도 기존 데이터 폴더를 계속 사용합니다 (이전 productName = 교회헌금회계).
+// 데이터 폴더는 영문 경로(%APPDATA%\StewardLedger)입니다. 이전 버전의 한글 폴더(교회헌금회계)는 처음 한 번 옮겨 기존 데이터를 이어 씁니다.
 // 단일 인스턴스 잠금도 userData 기준이므로 잠금보다 먼저 지정해야 합니다.
-app.setPath('userData', path.join(app.getPath('appData'), '교회헌금회계'));
+app.setPath('userData', resolveUserDataDir(app.getPath('appData')));
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -48,7 +49,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   const statusFile = () => path.join(app.getPath('userData'), 'auto-backup-status.json');
-  const defaultBackupDir = () => path.join(app.getPath('documents'), '교회헌금백업');
+  const defaultBackupDir = () => resolveBackupDir(app.getPath('documents'));
 
   function stamp(d = new Date()) {
     const p = (n) => String(n).padStart(2, '0');
@@ -64,45 +65,84 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function pruneBackups(dir) {
-    const names = (await fs.readdir(dir)).filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
+    const all = await fs.readdir(dir);
+    // 쓰다 중단된 임시 파일(backup_….json.tmp)은 지웁니다.
+    for (const n of all.filter((x) => /^backup_\d{8}_\d{6}\.json\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    const names = all.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
     const remove = names.slice(0, Math.max(0, names.length - AUTO_BACKUP_KEEP));
     for (const n of remove) await fs.unlink(path.join(dir, n)).catch(() => undefined);
   }
 
-  /** 렌더러에 백업 내용을 요청하고 지정 폴더에 기록합니다. 실패해도 종료를 막지 않습니다. */
+  /**
+   * 렌더러에 백업 내용을 요청하고 지정 폴더에 기록합니다. 끝날 때까지 기다리며(큰 데이터는 오래 걸릴 수 있음),
+   * 화면에는 렌더러가 "백업 중" 안내를 띄웁니다. 사용자가 [백업 없이 종료]를 누르거나 화면이 죽으면 기다리지 않습니다.
+   * 반환값: true = 종료해도 됨, false = 백업이 실패했고 사용자가 종료를 취소함.
+   */
   function runAutoBackup(win) {
     return new Promise((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`;
       let done = false;
-      const finish = async (payload, timedOut) => {
+      const cleanup = () => {
+        ipcMain.removeListener('backup:response', onResponse);
+        ipcMain.removeListener('backup:skip', onSkip);
+        win.webContents.removeListener('render-process-gone', onGone);
+        clearTimeout(ceiling);
+      };
+      const finish = async (payload, abort) => {
         if (done) return;
         done = true;
-        ipcMain.removeListener('backup:response', onResponse);
-        if (timedOut) {
-          await writeStatus({ ok: false, at: new Date().toISOString(), error: '백업 응답 시간 초과(5초)' });
-          return resolve();
+        cleanup();
+        if (abort) {
+          await writeStatus({ ok: false, at: new Date().toISOString(), error: abort });
+          return resolve(true);
         }
-        if (!payload) return resolve(); // 비활성 또는 변경 없음
+        if (!payload) return resolve(true); // 비활성 또는 변경 없음
         try {
           const dir = typeof payload.dir === 'string' && path.isAbsolute(payload.dir) ? payload.dir : defaultBackupDir();
           if (typeof payload.json !== 'string') throw new Error('잘못된 백업 내용');
           JSON.parse(payload.json); // 형식 확인
           await fs.mkdir(dir, { recursive: true });
           const file = path.join(dir, `backup_${stamp()}.json`);
-          await fs.writeFile(file, payload.json, 'utf8');
+          // 임시 파일에 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
+          const tmp = `${file}.tmp`;
+          await fs.writeFile(tmp, payload.json, 'utf8');
+          await fs.rename(tmp, file);
           await pruneBackups(dir);
           await writeStatus({ ok: true, at: new Date().toISOString(), file });
         } catch (err) {
-          await writeStatus({ ok: false, at: new Date().toISOString(), error: String(err && err.message ? err.message : err) });
+          const msg = String(err && err.message ? err.message : err);
+          await writeStatus({ ok: false, at: new Date().toISOString(), error: msg });
+          // 백업이 실패했는데 그냥 닫으면 데이터를 지킬 기회를 잃으므로 사용자에게 묻습니다.
+          const r = await dialog.showMessageBox(win, {
+            type: 'warning',
+            buttons: ['그래도 종료', '종료 취소'],
+            defaultId: 1,
+            cancelId: 1,
+            message: '자동 백업에 실패했습니다.',
+            detail: `${msg}
+
+백업 폴더(설정 정보 > 자동 로컬 백업)를 확인하세요. 데이터는 앱 안에 그대로 있습니다. 종료를 취소하면 앱을 계속 쓸 수 있습니다.`,
+          });
+          if (r.response === 1) {
+            if (!win.isDestroyed()) win.webContents.send('backup:cancelled');
+            return resolve(false);
+          }
         }
-        resolve();
+        resolve(true);
       };
       const onResponse = (event, id, payload) => {
         if (event.sender !== win.webContents || id !== requestId) return;
-        void finish(payload, false);
+        void finish(payload, null);
       };
+      const onSkip = (event) => {
+        if (event.sender === win.webContents) void finish(null, '사용자가 백업 없이 종료함');
+      };
+      const onGone = () => void finish(null, '화면이 종료되어 백업하지 못함');
       ipcMain.on('backup:response', onResponse);
-      setTimeout(() => void finish(null, true), BACKUP_TIMEOUT_MS);
+      ipcMain.on('backup:skip', onSkip);
+      win.webContents.once('render-process-gone', onGone);
+      // 정말 멈춘 경우만 막기 위한 상한(정상적인 큰 백업은 이보다 훨씬 먼저 끝남)
+      const ceiling = setTimeout(() => void finish(null, `백업 응답 시간 초과(${BACKUP_TIMEOUT_MS / 1000}초)`), BACKUP_TIMEOUT_MS);
       win.webContents.send('backup:request', requestId);
     });
   }
@@ -147,11 +187,41 @@ if (!app.requestSingleInstanceLock()) {
       });
     });
 
+    // 화면(렌더러)이 죽거나 응답이 없어도 데이터는 IndexedDB에 있으므로, 다시 불러오면 이어서 쓸 수 있습니다.
+    let reloads = [];
+    win.webContents.on('render-process-gone', (_e, details) => {
+      if (details.reason === 'clean-exit') return;
+      const now = Date.now();
+      reloads = reloads.filter((t) => now - t < 60000);
+      if (reloads.length >= 3) {
+        void dialog.showMessageBox(win, { type: 'error', message: '화면이 반복해서 멈춥니다.', detail: '데이터는 안전합니다. 앱을 닫았다가 다시 실행해 주세요.' });
+        return;
+      }
+      reloads.push(now);
+      if (!win.isDestroyed()) win.webContents.reload();
+    });
+    win.on('unresponsive', () => {
+      void dialog
+        .showMessageBox(win, { type: 'warning', buttons: ['기다리기', '다시 불러오기'], defaultId: 0, message: '앱이 응답하지 않습니다.', detail: '큰 보고서를 계산하는 중일 수 있습니다. 데이터는 안전합니다.' })
+        .then((r) => {
+          if (r.response === 1 && !win.isDestroyed()) win.webContents.reload();
+        });
+    });
+
     let backupFinished = false;
+    // Windows가 종료·로그오프 중이면 사용자 확인 없이 닫혀야 하므로 백업을 기다리며 종료를 막지 않습니다.
+    win.on('session-end', () => {
+      backupFinished = true;
+    });
+    let backingUp = false;
     win.on('close', (e) => {
       if (backupFinished) return;
       e.preventDefault();
-      void runAutoBackup(win).finally(() => {
+      if (backingUp) return; // 이미 백업을 기다리는 중(닫기를 여러 번 눌러도 한 번만)
+      backingUp = true;
+      void runAutoBackup(win).then((ok) => {
+        backingUp = false;
+        if (!ok || win.isDestroyed()) return;
         backupFinished = true;
         win.close();
       });

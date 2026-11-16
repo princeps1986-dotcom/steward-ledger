@@ -53,7 +53,7 @@ describe('theme defaults (v2.9)', () => {
     const { THEME_OPTIONS, PRINT_THEME_OPTIONS } = await import('../theme');
     expect(DEFAULT_SETTINGS.theme).toBe('BLUE');
     expect(DEFAULT_SETTINGS.printTheme).toBe('MONO');
-    expect(THEME_OPTIONS.map((o) => o.value)).toEqual(['BLUE', 'WARM', 'CALM']);
+    expect(THEME_OPTIONS.map((o) => o.value)).toEqual(['BLUE', 'WARM', 'CALM', 'DARK']);
     expect(PRINT_THEME_OPTIONS.map((o) => o.value)).toEqual(['MONO', 'BLUE', 'WARM', 'CALM']);
   });
 });

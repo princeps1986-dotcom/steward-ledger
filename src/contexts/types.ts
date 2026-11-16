@@ -74,7 +74,7 @@ export interface AppSettings {
   /** 마지막 백업 후 이 일수가 지나면 백업 권고 배너 */
   backupReminderDays: number;
   autoBackupEnabled: boolean;
-  /** 빈 문자열이면 기본 폴더(문서\교회헌금백업) */
+  /** 빈 문자열이면 기본 폴더(문서\StewardLedgerBackup) */
   autoBackupDir: string;
   lastBackupAt: string | null;
   /** 화면 글자 크기 (보통/크게/매우 크게) */
@@ -84,10 +84,10 @@ export interface AppSettings {
 }
 
 export type FontScale = 'NORMAL' | 'LARGE' | 'XLARGE';
-/** 화면 테마: 차분한 블루(기본) / 밝고 따뜻한 / 눈이 편안한 */
-export type AppTheme = 'BLUE' | 'WARM' | 'CALM';
-/** 인쇄 양식 색상: 흑백(기본) + 화면 테마 3종 */
-export type PrintTheme = 'MONO' | AppTheme;
+/** 화면 테마: 차분한 블루(기본) / 밝고 따뜻한 / 눈이 편안한 / 어두운 */
+export type AppTheme = 'BLUE' | 'WARM' | 'CALM' | 'DARK';
+/** 인쇄 양식 색상: 흑백(기본) + 밝은 화면 테마 3종(어두운 테마는 인쇄에 쓰지 않음) */
+export type PrintTheme = 'MONO' | 'BLUE' | 'WARM' | 'CALM';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   recipientEmail: '',

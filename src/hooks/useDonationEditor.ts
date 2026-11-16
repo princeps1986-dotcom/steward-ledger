@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useDonationActions } from '../contexts/DonationContext';
-import { useMemberById, useMembers } from '../contexts/MemberContext';
+import { useMemberById } from '../contexts/MemberContext';
 import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 import { formatAmountInput, formatNumber, formatWon, parseAmount } from '../services/domain/amount';
@@ -11,8 +11,6 @@ export type EditorMode = 'EDIT' | 'DELETE';
 
 interface EditDraft {
   date: string;
-  memberId: string; // '' = 무명/방문자
-  donorDisplayName: string;
   offeringTypeId: string;
   amount: string;
   memo: string;
@@ -22,7 +20,6 @@ interface EditDraft {
 /** 보고서 상세 리스트 행의 수정/삭제. 사유는 필수입니다. */
 export function useDonationEditor() {
   const { updateDonation, deleteDonation } = useDonationActions();
-  const members = useMembers();
   const memberById = useMemberById();
   const types = useOfferingTypes();
   const [target, setTarget] = useState<Donation | null>(null);
@@ -37,8 +34,6 @@ export function useDonationEditor() {
     setError(null);
     setDraft({
       date: d.date,
-      memberId: d.memberId ?? '',
-      donorDisplayName: d.donorDisplayName,
       offeringTypeId: d.offeringTypeId,
       amount: formatNumber(d.amount),
       memo: d.memo ?? '',
@@ -57,14 +52,13 @@ export function useDonationEditor() {
     [],
   );
 
-  const memberOptions = useMemo(
-    () =>
-      members
-        .filter((m) => m.isActive || m.id === target?.memberId)
-        .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-        .map((m) => ({ id: m.id, label: memberLabel(m) })),
-    [members, target?.memberId],
-  );
+  /** 수정창에 보여 주는 성도·표기명(읽기 전용). 동명이인이면 현재 성도 정보로 구분 표기를 붙입니다. */
+  const donorLabel = useMemo(() => {
+    if (!target) return '';
+    const m = target.memberId ? memberById.get(target.memberId) : undefined;
+    if (!m) return `${target.donorDisplayName} (무명/방문자)`;
+    return target.donorDisplayName === m.name ? memberLabel(m) : `${target.donorDisplayName} — ${memberLabel(m)}`;
+  }, [target, memberById]);
   const typeOptions = useMemo(
     () =>
       types
@@ -86,16 +80,10 @@ export function useDonationEditor() {
         if (!isValidDateString(draft.date)) return setError('날짜가 올바르지 않습니다.');
         const p = parseAmount(draft.amount);
         if (p.kind !== 'ok') return setError(p.kind === 'invalid' ? p.reason : '금액을 입력하세요.');
-        const member = draft.memberId ? memberById.get(draft.memberId) : undefined;
-        if (draft.memberId && !member) return setError('성도를 찾을 수 없습니다.');
-        const memberChanged = (target.memberId ?? '') !== draft.memberId;
+        // 성도·표기명·세대 스냅샷은 그대로 두고 날짜·종류·금액·메모만 바꿉니다.
         const next: Donation = {
           ...target,
           date: draft.date,
-          memberId: member?.id ?? null,
-          donorDisplayName: member ? (memberChanged ? member.name : target.donorDisplayName) : draft.donorDisplayName.trim() || '무명',
-          // 성도가 바뀌면 바뀐 성도의 현재 세대를 스냅샷으로 사용
-          familyGroupIdSnapshot: memberChanged ? member?.familyGroupId ?? null : target.familyGroupIdSnapshot ?? null,
           offeringTypeId: draft.offeringTypeId,
           amount: p.value,
         };
@@ -110,14 +98,14 @@ export function useDonationEditor() {
     } finally {
       setBusy(false);
     }
-  }, [target, draft, busy, mode, deleteDonation, updateDonation, memberById, close]);
+  }, [target, draft, busy, mode, deleteDonation, updateDonation, close]);
 
   return {
     isOpen: !!target && !!draft,
     mode,
     draft,
     setField,
-    memberOptions,
+    donorLabel,
     typeOptions,
     targetSummary: target ? `${target.date} ${target.donorDisplayName} ${formatWon(target.amount)}` : '',
     error,

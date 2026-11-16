@@ -29,6 +29,10 @@ export interface DesktopApi {
   ackAutoBackupStatus(): Promise<void>;
   /** 종료 직전 main이 요청하면 handler가 백업 내용을 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
+  /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */
+  skipBackup(): void;
+  /** 백업 실패 후 사용자가 종료를 취소해 앱을 계속 쓰게 된 경우 main이 알려 줍니다. */
+  onBackupCancelled(handler: () => void): () => void;
 }
 
 declare global {

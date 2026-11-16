@@ -22,7 +22,7 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
       </label>
       <div>
         <span className="label">생년월일</span>
-        <DatePicker value={draft.birthDate} onChange={setField('birthDate')} ariaLabel="생년월일" inline />
+        <DatePicker value={draft.birthDate} onChange={setField('birthDate')} ariaLabel="생년월일" />
       </div>
       <label>
         <span className="label">연락처 뒷 4자리</span>

@@ -61,6 +61,8 @@ export function useDonationInput() {
   const [pendingLarge, setPendingLarge] = useState<PendingLarge | null>(null);
   const [quickRegisterOpen, setQuickRegisterOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 저장에 성공할 때마다 1씩 올라가, 합계·메시지에 '저장됨' 효과를 다시 보여 줍니다.
+  const [savedSeq, setSavedSeq] = useState(0);
   // 저장·되돌리기가 진행되는 동안의 중복 실행 차단. 상태(saving)는 다음 렌더 뒤에야 바뀌므로 연타를 막지 못해 ref로 즉시 막습니다.
   const busyRef = useRef(false);
   const exclusive = useMemo(() => createExclusive(busyRef), []);
@@ -224,6 +226,7 @@ export function useDonationInput() {
         const total = batch.lines.reduce((s, l) => s + l.amount, 0);
         const merged = batch.lines.some((l) => l.merged) ? ' (합산 포함)' : '';
         setMessage({ kind: 'info', text: `${batch.donorDisplayName} ${formatWon(total)} 저장${merged}`, undoable: true });
+        setSavedSeq((n) => n + 1);
         resetForm();
       } catch (err) {
         setMessage({ kind: 'error', text: `저장 실패: ${(err as Error).message}` });
@@ -453,6 +456,9 @@ export function useDonationInput() {
     // 저장
     saving,
     requestSave,
+    savedSeq,
+    // 성도가 한 명도 없는 처음 상태(시작 안내를 보여 줌)
+    isFirstRun: members.length === 0,
     message,
     pendingLarge,
     confirmLarge,

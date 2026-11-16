@@ -23,6 +23,10 @@
   .btn-danger {
     @apply inline-flex items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50;
   }
+  /* 위험 구역의 덜 파괴적인 단추: 빨간 테두리·글씨 */
+  .btn-danger-outline {
+    @apply inline-flex items-center justify-center gap-1 rounded border border-red-500 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
   /* 자주 쓰는 금액 단추: 테마의 강조색 계열(blue 변수)을 옅게 사용 */
   .btn-quick {
     @apply inline-flex items-center justify-center rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 active:bg-blue-200;
@@ -65,7 +69,35 @@
     --color-blue-50: #e1eee8; --color-blue-100: #d3e6dc; --color-blue-200: #b3d3c5; --color-blue-400: #5f9a8b; --color-blue-500: #4a8576; --color-blue-600: #3b7366; --color-blue-700: #2f5d52;
     --color-slate-300: #d3ddd6; --color-slate-800: #47594f; --color-slate-900: #364640;
   }
+  :root[data-theme="DARK"] {
+    color-scheme: dark;
+    --app-bg: #111623; --app-fg: #e6eaf2; --color-white: #1a2030;
+    --color-gray-50: #212839; --color-gray-100: #252d3f; --color-gray-200: #2f384c; --color-gray-300: #3d4860;
+    --color-gray-400: #6f7b94; --color-gray-500: #98a3b8; --color-gray-600: #b4bdcf; --color-gray-700: #ccd3e1; --color-gray-800: #e1e6f0;
+    --color-blue-50: #1b2a4a; --color-blue-100: #223560; --color-blue-200: #2f4b86; --color-blue-400: #6f97f2; --color-blue-500: #5b86ef; --color-blue-600: #3b6fe0; --color-blue-700: #8fb0ff;
+    --color-slate-300: #9aa6bb; --color-slate-800: #0f1522; --color-slate-900: #0a0e18;
+    --color-red-50: #3a1d22; --color-red-100: #4a2228; --color-red-200: #6b2f37; --color-red-300: #e08a93; --color-red-500: #e5646f; --color-red-600: #ea5c69; --color-red-700: #f2757f; --color-red-800: #f59aa2;
+    --color-emerald-50: #12302a; --color-emerald-100: #174236; --color-emerald-200: #1f5b4a; --color-emerald-600: #2f9e7a; --color-emerald-700: #5ad0a6;
+    --color-amber-50: #3a2e12; --color-amber-200: #6b5420; --color-amber-400: #c99a2e; --color-amber-700: #f0c35a; --color-amber-900: #f7dc9c;
+  }
+  /* 어두운 테마에서 '흰색'은 바탕색 변수이므로, 색 단추 위의 흰 글씨는 따로 흰색으로 고정합니다. */
+  :root[data-theme="DARK"] .text-white, :root[data-theme="DARK"] .hover\:text-white:hover, :root[data-theme="DARK"] .btn-primary, :root[data-theme="DARK"] .btn-danger { color: #fff; }
+  :root[data-theme="DARK"] .btn-primary:hover { background-color: #4f82f0; }
+  :root[data-theme="DARK"] .btn-danger:hover { background-color: #d9434f; }
 }
+
+/* 표 행 강조(화면 전용): 마우스를 올린 행 전체를 옅은 강조색으로 표시합니다. 합계 행·머리글은 제외, 고정 열도 같은 색을 씁니다. */
+@media screen {
+  .rpt-table tbody tr:not(.rpt-total-row):hover > td { background-color: var(--color-blue-50); }
+  .row-hover:hover { background-color: var(--color-blue-50); }
+}
+
+/* 저장 성공 효과: 합계 영역 배경이 잠깐 강조되고 메시지가 살짝 올라오며 나타납니다. 모션 줄이기 설정이면 끕니다. */
+@keyframes flash-save { 0% { background-color: var(--color-emerald-200, #a7f3d0); } 100% { background-color: transparent; } }
+@keyframes pop-in { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: none; } }
+.flash-save { animation: flash-save 1.2s ease-out; }
+.pop-in { animation: pop-in 0.18s ease-out; }
+@media (prefers-reduced-motion: reduce) { .flash-save, .pop-in { animation: none; } }
 
 /* 10행 단위 구분선(종합 보고서 표·전체 입력 내역): 번호가 10의 배수인 행 아래에 굵은 선 */
 .row-sep { border-bottom-width: 2px; border-bottom-color: var(--color-gray-400); }

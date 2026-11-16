@@ -13,7 +13,7 @@ interface Props {
 export function MemberEditModal({ editor, onClose, onSaved }: Props) {
   const form = useMemberForm({ initial: editor.initial, editingId: editor.editingId, onSaved });
   return (
-    <Modal open onClose={onClose} title={editor.editingId ? '성도 정보 수정' : '성도 등록'}>
+    <Modal open overflowVisible onClose={onClose} title={editor.editingId ? '성도 정보 수정' : '성도 등록'}>
       <form
         onSubmit={(e) => {
           e.preventDefault();

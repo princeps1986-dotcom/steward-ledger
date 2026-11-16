@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('download:done', listener);
     return () => ipcRenderer.removeListener('download:done', listener);
   },
+  skipBackup: () => ipcRenderer.send('backup:skip'),
+  onBackupCancelled: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on('backup:cancelled', listener);
+    return () => ipcRenderer.removeListener('backup:cancelled', listener);
+  },
   onBackupRequest: (handler) => {
     const listener = async (_event, requestId) => {
       let payload = null;

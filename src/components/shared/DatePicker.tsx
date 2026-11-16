@@ -4,8 +4,6 @@ interface Props {
   value: string;
   onChange(v: string): void;
   ariaLabel: string;
-  /** 모달 안에서 사용할 때 true: 달력을 겹치지 않고 모달 흐름 안에 펼칩니다. */
-  inline?: boolean;
   /** true면 직접 입력을 막고 달력에서만 고를 수 있습니다(입력 칸을 누르면 달력이 열림). */
   pickOnly?: boolean;
 }
@@ -13,8 +11,8 @@ interface Props {
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 /** 일요일이 빨간색으로 표시되는 달력 선택기. 직접 입력(YYYY-MM-DD)도 가능합니다. */
-export function DatePicker({ value, onChange, ariaLabel, inline, pickOnly }: Props) {
-  const p = useDatePicker({ value, onChange, inline });
+export function DatePicker({ value, onChange, ariaLabel, pickOnly }: Props) {
+  const p = useDatePicker({ value, onChange });
   return (
     <div className="relative" ref={p.rootRef} onKeyDown={p.onRootKeyDown}>
       <div className="flex gap-1">

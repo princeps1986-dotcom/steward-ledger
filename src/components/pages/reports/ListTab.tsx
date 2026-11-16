@@ -54,7 +54,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
       </span>
     </>
   );
-  const rowClass = (no: number) => `${GRID} w-full border-b border-gray-100 px-2 text-sm ${no % 10 === 0 ? 'row-sep' : ''}`;
+  const rowClass = (no: number) => `${GRID} w-full border-b border-gray-100 px-2 text-sm row-hover ${no % 10 === 0 ? 'row-sep' : ''}`;
 
   return (
     <section className="card space-y-3">

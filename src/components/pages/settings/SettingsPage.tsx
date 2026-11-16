@@ -90,12 +90,6 @@ export function SettingsPage() {
             백업 파일 복원
             <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
           </label>
-          <button className="btn ml-auto whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
-            시연 데이터 불러오기
-          </button>
-          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
-            전체 초기화
-          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="text-gray-600" htmlFor="backup-year">
@@ -112,6 +106,22 @@ export function SettingsPage() {
           <span className="text-xs text-gray-500">
             {s.backupYearOptions.length === 0 ? '헌금 내역이 있는 연도만 백업할 수 있습니다.' : '선택한 연도의 헌금과 성도·헌금 종류가 함께 저장됩니다.'}
           </span>
+        </div>
+      </section>
+
+      {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
+      <section className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-4" aria-labelledby="danger-zone-title">
+        <h3 id="danger-zone-title" className="flex items-center gap-1.5 font-semibold text-red-700">
+          <span aria-hidden="true">⚠</span> 위험 구역
+        </h3>
+        <p className="text-sm text-red-700">현재 데이터를 지우거나 통째로 바꿉니다. 실행하기 전에 현재 데이터가 긴급 백업 파일로 먼저 내려받아집니다.</p>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
+            시연 데이터 불러오기
+          </button>
+          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
+            전체 초기화
+          </button>
         </div>
       </section>
 
