@@ -116,17 +116,41 @@ export function useReportFilters() {
 
 export type ReportFilters = ReturnType<typeof useReportFilters>;
 
-/** 종합 보고서: 헌금 종류 × 월 매트릭스 */
-export function useSummaryReport(f: ReportFilters) {
+const NO_HIDDEN: ReadonlySet<string> = new Set();
+
+/** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·엑셀·메일 저장 공통). */
+export function withoutTypes<T extends { offeringTypeId: string }>(donations: readonly T[], hidden: ReadonlySet<string>): readonly T[] {
+  return hidden.size === 0 ? donations : donations.filter((d) => !hidden.has(d.offeringTypeId));
+}
+
+const typesWithout = <T extends { id: string }>(types: readonly T[], hidden: ReadonlySet<string>): readonly T[] =>
+  hidden.size === 0 ? types : types.filter((t) => !hidden.has(t.id));
+
+/** 종합 보고서의 [헌금 종류 표시] 선택지: 이 보고서 기간에 쓰였거나 활성인 종류(정렬 순서대로) */
+export function useTypeToggleOptions(f: ReportFilters): { id: string; name: string }[] {
   const types = useOfferingTypes();
   return useMemo(() => {
-    const used = new Set(f.donations.map((d) => d.offeringTypeId));
-    const list = types.filter((t) => t.isActive || used.has(t.id)).sort((a, b) => a.sortOrder - b.sortOrder);
+    const inPeriod = f.isWeek ? f.donations.filter((d) => d.date >= f.week.start && d.date <= f.week.end) : f.donations;
+    const used = new Set(inPeriod.map((d) => d.offeringTypeId));
+    return types
+      .filter((t) => t.isActive || used.has(t.id))
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((t) => ({ id: t.id, name: t.name }));
+  }, [types, f.donations, f.isWeek, f.week]);
+}
+
+/** 종합 보고서: 헌금 종류 × 월 매트릭스 */
+export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
+  const types = useOfferingTypes();
+  return useMemo(() => {
+    const donations = withoutTypes(f.donations, hidden);
+    const used = new Set(donations.map((d) => d.offeringTypeId));
+    const list = types.filter((t) => !hidden.has(t.id) && (t.isActive || used.has(t.id))).sort((a, b) => a.sortOrder - b.sortOrder);
     const cell = new Map<string, number>();
     const byType = new Map<string, number>();
     const byMonth = new Map<number, number>();
     let total = 0;
-    for (const d of f.donations) {
+    for (const d of donations) {
       const m = monthOf(d.date);
       cell.set(`${d.offeringTypeId}|${m}`, (cell.get(`${d.offeringTypeId}|${m}`) ?? 0) + d.amount);
       byType.set(d.offeringTypeId, (byType.get(d.offeringTypeId) ?? 0) + d.amount);
@@ -143,20 +167,20 @@ export function useSummaryReport(f: ReportFilters) {
       })),
       monthTotals: f.months.map((m) => byMonth.get(m) ?? 0),
       total,
-      count: f.donations.length,
-      anonymousTotal: f.donations.filter((d) => d.memberId === null).reduce((s, d) => s + d.amount, 0),
+      count: donations.length,
+      anonymousTotal: donations.filter((d) => d.memberId === null).reduce((s, d) => s + d.amount, 0),
     };
-  }, [types, f.donations, f.months]);
+  }, [types, f.donations, f.months, hidden]);
 }
 
 /** 주별 보고서(종합 보고서의 기간 '주별'): 선택 주(일~토)를 헌금 종류 × 성도명 교차표로 집계 */
-export function useWeeklyMatrix(f: ReportFilters) {
+export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
   const types = useOfferingTypes();
   const orderKey = useMemberOrderKey();
   return useMemo(() => {
-    const matrix = buildWeeklyMatrix(f.donations, types, f.week, orderKey);
+    const matrix = buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), f.week, orderKey);
     return { matrix, rangeLabel: `${f.week.start} ~ ${f.week.end}`, hasData: matrix.count > 0 };
-  }, [f.donations, types, f.week, orderKey]);
+  }, [f.donations, types, f.week, orderKey, hidden]);
 }
 
 /** 전체 입력 내역 탭: 현재 보고서 기간의 모든 헌금 내역(무명/방문자 포함)을 최신순으로, 이름·초성으로 거를 수 있음 */
@@ -317,7 +341,7 @@ export function useAuditLogTab(f: ReportFilters) {
 }
 
 /** 인쇄·엑셀 저장·메일 저장 */
-export function useReportExport(f: ReportFilters) {
+export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
   const members = useMembers();
   const types = useOfferingTypes();
   const settings = useSettings();
@@ -352,26 +376,25 @@ export function useReportExport(f: ReportFilters) {
     ? `주별헌금보고서_${f.week.start}_${f.week.end}.xlsx`
     : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.xlsx`;
 
-  const build = useCallback(
-    () =>
-      f.isWeek
+  const build = useCallback(() => {
+    const donations = withoutTypes(f.donations, hidden) as typeof f.donations;
+    return f.isWeek
         ? buildWeeklyWorkbook({
             range: f.week,
-            matrix: buildWeeklyMatrix(f.donations, types, f.week, orderKey),
-            donations: f.donations,
-            offeringTypes: types,
+            matrix: buildWeeklyMatrix(donations, typesWithout(types, hidden), f.week, orderKey),
+            donations,
+            offeringTypes: typesWithout(types, hidden) as typeof types,
           })
         : buildReportWorkbook({
             year: f.year,
             periodType: f.periodType,
             periodValue: f.periodValue,
-            donations: f.donations,
+            donations,
             members,
-            offeringTypes: types,
+            offeringTypes: typesWithout(types, hidden) as typeof types,
             basis: f.basis,
-          }),
-    [f.isWeek, f.week, f.year, f.periodType, f.periodValue, f.donations, f.basis, members, types, orderKey],
-  );
+          });
+  }, [f.isWeek, f.week, f.year, f.periodType, f.periodValue, f.donations, f.basis, members, types, orderKey, hidden]);
 
   const saveExcel = useCallback(async () => {
     setBusy(true);

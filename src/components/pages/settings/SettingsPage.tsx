@@ -90,8 +90,34 @@ export function SettingsPage() {
             백업 파일로 복원…
             <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
           </label>
+          <button className="btn-danger ml-auto whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
+            전체 초기화
+          </button>
         </div>
       </section>
+
+      <Modal
+        open={s.resetOpen}
+        onClose={s.cancelReset}
+        title="전체 데이터를 초기화할까요?"
+        description="성도, 헌금 내역, 수정·삭제 이력이 모두 삭제되고 헌금 종류는 기본값으로 돌아갑니다."
+        footer={
+          <>
+            <button className="btn" onClick={s.cancelReset} disabled={s.busy}>
+              취소
+            </button>
+            <button className="btn-danger" onClick={() => void s.confirmReset()} disabled={s.busy || s.resetLeft > 0}>
+              {s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '긴급 백업 후 초기화'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm">
+          <p className="font-semibold text-red-700">이 작업은 되돌릴 수 없습니다.</p>
+          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 내려받습니다. 필요하면 나중에 [백업 파일로 복원]으로 되살릴 수 있습니다.</p>
+          <p className="text-gray-600">테마·메일 주소·백업 주기 같은 환경 설정은 유지됩니다.</p>
+        </div>
+      </Modal>
 
       <Modal
         open={!!s.restore}

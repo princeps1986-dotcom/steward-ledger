@@ -1,6 +1,8 @@
 import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
+import { newId } from '../domain/ids';
+import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
 import { downloadText } from '../excel/downloadBridge';
 import {
   AUDIT_KEY_RE,
@@ -75,3 +77,17 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
     return { writes: [...last.values()], result: undefined };
   });
 }
+
+/**
+ * 전체 데이터 초기화(v2.15): 성도·헌금 내역·수정/삭제 이력을 모두 지우고 헌금 종류는 기본값으로 되돌립니다.
+ * 환경 설정(테마·메일 주소·백업 주기 등)은 유지합니다. 호출 전에 긴급 백업을 내려받아야 합니다.
+ */
+export async function resetAllData(): Promise<void> {
+  await replaceAllData({
+    members: [],
+    offeringTypes: DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() })),
+    donationsByYear: {},
+    auditLogsByYear: {},
+  });
+}
+

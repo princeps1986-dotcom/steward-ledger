@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useReportExport, useReportFilters, type ReportTab } from '../../../hooks/useReports';
+import { useEffect, useMemo, useState } from 'react';
+import { useReportExport, useReportFilters, useTypeToggleOptions, type ReportTab } from '../../../hooks/useReports';
 import type { PeriodType } from '../../../services/domain/dates';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
@@ -18,13 +18,23 @@ const TABS: { key: ReportTab; label: string }[] = [
 
 export function ReportsPage() {
   const f = useReportFilters();
-  const ex = useReportExport(f);
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
+  // 숨길 헌금 종류(종합 보고서 전용). 다른 보고서·다른 탭으로 가거나 이 화면을 떠나면 초기화됩니다.
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  const hidden = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const typeOptions = useTypeToggleOptions(f);
+  const ex = useReportExport(f, hidden);
   // 보고서(기간 종류·연도·분기/월·주)가 바뀌면 항상 [종합 보고서] 탭부터 보여 줍니다.
   const reportKey = f.isWeek ? `W:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
   useEffect(() => {
     setTab('SUMMARY');
+    setHiddenIds([]);
   }, [reportKey]);
+  const changeTab = (t: ReportTab) => {
+    setTab(t);
+    setHiddenIds([]);
+  };
+  const toggleType = (id: string) => setHiddenIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   // 종합 보고서는 본문(표 바로 위)에 제목·요약·출력일시가 있는 자체 인쇄 머리글을 가지므로 여기서는 나머지 탭만 처리합니다.
   const showPrintTitle = tab !== 'SUMMARY';
   return (
@@ -115,14 +125,30 @@ export function ReportsPage() {
             role="tab"
             aria-selected={tab === t.key}
             className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t.key ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-gray-600'}`}
-            onClick={() => setTab(t.key)}
+            onClick={() => changeTab(t.key)}
           >
             {t.label}
           </button>
         ))}
       </nav>
 
-      {tab === 'SUMMARY' ? <SummaryTab f={f} /> : null}
+      {tab === 'SUMMARY' ? (
+        <div className="no-print flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" role="group" aria-label="표시할 헌금 종류">
+          <span className="text-gray-600">표시할 헌금 종류</span>
+          {typeOptions.map((o) => (
+            <label key={o.id} className="flex cursor-pointer items-center gap-1">
+              <input type="checkbox" checked={!hidden.has(o.id)} onChange={() => toggleType(o.id)} />
+              {o.name}
+            </label>
+          ))}
+          {hiddenIds.length > 0 ? (
+            <button className="btn-quick" onClick={() => setHiddenIds([])}>
+              모두 표시
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {tab === 'SUMMARY' ? <SummaryTab f={f} hidden={hidden} /> : null}
       {tab === 'LIST' ? <ListTab f={f} /> : null}
       {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
       {tab === 'AUDIT' ? <AuditTab f={f} /> : null}

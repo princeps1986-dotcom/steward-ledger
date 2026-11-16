@@ -377,4 +377,6 @@ export interface BackupEnvelope {
 * `POSITIONS`에서 '성도'를 빼고 기본값을 빈 문자열로 바꿨습니다. 폼 선택 목록 맨 위에 `(없음)`(값 `''`)이 있습니다.
 * `normalizePosition(p)`가 이전 기본값 `'성도'`를 `''`로 취급하며, 목록·엑셀·검색 라벨·동명이인 구분(`nameDisambiguator`)·정렬 순위(`memberOrderKey`, `positionRank`)·가져오기·저장(`applyMemberSave`) 경로에 적용됩니다.
 * 저장 데이터 정리: `MemberProvider.reload`가 플래그 `meta_migration_position_v25`가 없을 때 한 `transact`로 `clearLegacyPosition(members)`를 적용해 '성도'를 `''`로 바꾸고 플래그를 기록합니다(1회). 이후 복원한 예전 백업의 '성도'는 표시 단계에서 정규화됩니다.
-
+* **전체 데이터 초기화:** `resetAllData()`는 `replaceAllData`에 빈 성도·내역·이력과 새 id의 `DEFAULT_OFFERING_TYPES`를 넘겨 한 트랜잭션으로 교체합니다(설정 키는 건드리지 않음). `useSettingsPage`가 확인창 열림 시 10초 카운트다운(`resetLeft`)을 돌리고 0이 되어야 `confirmReset`이 동작하며, 실행 전 `downloadBackup('emergency_before_reset')`을 호출합니다.
+* **종류 숨김:** `ReportsPage`가 `hiddenIds`(state)를 가지며 `reportKey` 변경·탭 변경 시 비웁니다. `useWeeklyMatrix/useSummaryReport/useReportExport`가 `hidden: Set`을 받아 `withoutTypes(donations)`와 `typesWithout(types)`로 내역·열을 모두 걸러 집계하므로 화면·인쇄·엑셀·메일이 같은 결과를 냅니다. 선택지는 `useTypeToggleOptions`(기간 내 사용 또는 활성 종류).
+* **스크롤 영역 높이:** 고정 `72vh`로는 표 위쪽 내용(요약·종류 선택 등)이 길 때 영역의 아래쪽(= 고정 합계 행)이 화면 밖으로 밀렸습니다. `useFitHeight(ref)`가 영역의 위쪽 위치부터 화면 아래까지 남은 높이(최소 240px)를 `--fit-h`로 정해 합계 행이 항상 화면 안에 보이게 합니다(창 크기·레이아웃 변화 시 재계산, 인쇄는 제한 해제).

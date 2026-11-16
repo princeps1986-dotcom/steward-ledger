@@ -7,7 +7,7 @@ import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../context
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
-import { downloadBackup, replaceAllData } from '../services/backup/backupService';
+import { downloadBackup, replaceAllData, resetAllData } from '../services/backup/backupService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
 import { isValidEmail } from '../services/excel/mailtoProtocol';
@@ -18,6 +18,8 @@ interface RestoreCandidate {
   migratedFrom: number | null;
   summary: string;
 }
+
+const RESET_WAIT_SECONDS = 10;
 
 export function useSettingsPage() {
   const settings = useSettings();
@@ -33,6 +35,8 @@ export function useSettingsPage() {
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetLeft, setResetLeft] = useState(RESET_WAIT_SECONDS);
   const isDesktop = !!desktop();
 
   useEffect(() => {
@@ -103,6 +107,30 @@ export function useSettingsPage() {
     });
   }, []);
 
+  // 초기화 확인창이 열리면 10초 카운트다운 후에만 [초기화]를 누를 수 있습니다.
+  useEffect(() => {
+    if (!resetOpen) return;
+    setResetLeft(RESET_WAIT_SECONDS);
+    const id = window.setInterval(() => setResetLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
+    return () => window.clearInterval(id);
+  }, [resetOpen]);
+
+  const confirmReset = useCallback(async () => {
+    if (resetLeft > 0) return;
+    setBusy(true);
+    try {
+      await downloadBackup('emergency_before_reset');
+      await resetAllData();
+      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      setMessage({ kind: 'info', text: '전체 데이터를 초기화했습니다. 초기화 전 데이터는 emergency_before_reset 파일로 저장되었습니다.' });
+      setResetOpen(false);
+    } catch (err) {
+      setMessage({ kind: 'error', text: `초기화 실패: ${(err as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  }, [resetLeft, memberActions, offeringActions, donationActions]);
+
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
     setBusy(true);
@@ -161,6 +189,11 @@ export function useSettingsPage() {
     restore,
     confirmRestore,
     cancelRestore: () => setRestore(null),
+    resetOpen,
+    resetLeft,
+    openReset: () => setResetOpen(true),
+    cancelReset: () => setResetOpen(false),
+    confirmReset,
     busy,
     message,
   };

@@ -5,12 +5,12 @@ import { SpacerRow } from './SpacerRow';
 import { WeeklySummary } from './WeeklySummary';
 
 /** 기간이 '주별'이면 성도명 × 헌금 종류 교차표, 그 외에는 헌금 종류 × 월 매트릭스 */
-export function SummaryTab({ f }: { f: ReportFilters }) {
-  return f.isWeek ? <WeeklySummary f={f} /> : <PeriodSummary f={f} />;
+export function SummaryTab({ f, hidden }: { f: ReportFilters; hidden: ReadonlySet<string> }) {
+  return f.isWeek ? <WeeklySummary f={f} hidden={hidden} /> : <PeriodSummary f={f} hidden={hidden} />;
 }
 
-function PeriodSummary({ f }: { f: ReportFilters }) {
-  const r = useSummaryReport(f);
+function PeriodSummary({ f, hidden }: { f: ReportFilters; hidden: ReadonlySet<string> }) {
+  const r = useSummaryReport(f, hidden);
   return (
     <section className="card space-y-3">
       <PrintHeader

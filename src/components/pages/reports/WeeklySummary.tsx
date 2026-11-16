@@ -1,15 +1,18 @@
+import { useRef } from 'react';
 import { useWeeklyMatrix, type ReportFilters } from '../../../hooks/useReports';
 import { useNameTag } from '../../../hooks/useNameTag';
 import { formatNumber } from '../../../services/domain/amount';
 import { NameWithTag } from './NameWithTag';
 import { PrintHeader } from './PrintHeader';
-import { REPORT_SCROLL } from './reportScroll';
+import { REPORT_SCROLL, useFitHeight } from './reportScroll';
 import { SpacerRow } from './SpacerRow';
 
 /** 종합 보고서 · 기간 '주별': 가로 = 헌금 종류, 세로 = 성도명 */
-export function WeeklySummary({ f }: { f: ReportFilters }) {
-  const { matrix: m, rangeLabel, hasData } = useWeeklyMatrix(f);
+export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: ReadonlySet<string> }) {
+  const { matrix: m, rangeLabel, hasData } = useWeeklyMatrix(f, hidden);
   const tagOf = useNameTag();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const fit = useFitHeight(scrollRef);
   return (
     <section className="card space-y-3">
       <PrintHeader
@@ -38,7 +41,7 @@ export function WeeklySummary({ f }: { f: ReportFilters }) {
 
       {hasData ? (
         // 화면에서는 표 안에서 스크롤하며 머리글 행·성도명 열을 고정합니다. 인쇄할 때는 제한을 풀고 페이지마다 머리글을 반복합니다.
-        <div className={`${REPORT_SCROLL} print:-mt-4`}>
+        <div ref={scrollRef} style={fit} className={`${REPORT_SCROLL} print:-mt-4`}>
           <table className="rpt-table w-full">
             <thead>
               <SpacerRow cols={m.columns.length + 3} />

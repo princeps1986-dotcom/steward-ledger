@@ -6,7 +6,7 @@ import { useDonationListReport, type ReportFilters } from '../../../hooks/useRep
 import { formatNumber, formatWon } from '../../../services/domain/amount';
 import { DonationEditModal } from './DonationEditModal';
 import { NameWithTag } from './NameWithTag';
-import { REPORT_SCROLL } from './reportScroll';
+import { REPORT_SCROLL, useFitHeight } from './reportScroll';
 
 const HEAD_HEIGHT = 30;
 const ROW_HEIGHT = 30;
@@ -25,6 +25,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
   const editor = useDonationEditor();
   const printing = useIsPrinting();
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const fit = useFitHeight(parentRef);
   const virtualizer = useVirtualizer({
     count: r.rows.length,
     getScrollElement: () => parentRef.current,
@@ -70,7 +71,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
         </p>
       </div>
 
-      <div ref={parentRef} className={`rounded border ${REPORT_SCROLL}`}>
+      <div ref={parentRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
         <div
           className={`${GRID} rpt-grid-head sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600 print:static`}
           style={{ height: `${HEAD_HEIGHT}px` }}
