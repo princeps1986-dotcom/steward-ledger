@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import type { Member } from '../contexts/types';
 import type { MemberDraft } from '../services/domain/memberRules';
@@ -15,6 +15,7 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
   const positionChoices = useMemo(() => positionOptions(opts.initial.position), [opts.initial.position]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // 상태는 다음 렌더 뒤에야 바뀌므로 연타를 즉시 막으려면 ref가 필요합니다.
 
   const headOptions = useMemo(
     () =>
@@ -39,7 +40,8 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
   );
 
   const submit = useCallback(async () => {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await saveMember(draft, opts.editingId);
@@ -49,9 +51,10 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
         opts.onSaved(res.saved);
       }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [saving, saveMember, draft, opts]);
+  }, [saveMember, draft, opts]);
 
   return { draft, setField, headOptions, positionOptions: positionChoices, error, saving, submit };
 }

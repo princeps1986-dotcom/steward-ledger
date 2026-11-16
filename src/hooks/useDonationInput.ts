@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createExclusive } from './exclusive';
 import { useDonationActions, useNextAnonymousName, useSaveHistory } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useActiveOfferingTypes, useOfferingTypeById } from '../contexts/OfferingTypeContext';
@@ -6,7 +7,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import type { Donation, DonationDraft, DuplicateResolution, Member } from '../contexts/types';
 import { addQuickAmount, formatAmountInput, formatWon, parseAmount } from '../services/domain/amount';
 import { shiftWeek } from '../services/domain/calendar';
-import { isValidDateString, lastSunday, yearOf } from '../services/domain/dates';
+import { isValidDateString, lastSunday } from '../services/domain/dates';
 import { memberLabel, searchMembers } from '../services/domain/search';
 
 export interface DuplicateItem {
@@ -60,6 +61,9 @@ export function useDonationInput() {
   const [pendingLarge, setPendingLarge] = useState<PendingLarge | null>(null);
   const [quickRegisterOpen, setQuickRegisterOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 저장·되돌리기가 진행되는 동안의 중복 실행 차단. 상태(saving)는 다음 렌더 뒤에야 바뀌므로 연타를 막지 못해 ref로 즉시 막습니다.
+  const busyRef = useRef(false);
+  const exclusive = useMemo(() => createExclusive(busyRef), []);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const fieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -75,7 +79,7 @@ export function useDonationInput() {
   );
 
   useEffect(() => {
-    void actions.ensureYear(yearOf(date));
+    void actions.ensureMonths([date.slice(0, 7)]);
   }, [actions, date]);
 
   /**
@@ -288,7 +292,7 @@ export function useDonationInput() {
     return { drafts };
   }, [date, anonymous, anonName, autoAnonName, selected, primaryTypes, amounts, extraAmount, extraTypeId, memo, typeById, fieldOrder]);
 
-  const requestSave = useCallback(async () => {
+  const requestSave = useCallback(() => exclusive(async () => {
     if (saving) return;
     const built = buildDrafts();
     if ('error' in built) {
@@ -306,13 +310,17 @@ export function useDonationInput() {
       return;
     }
     await checkDuplicatesAndCommit(built.drafts);
-  }, [saving, buildDrafts, settings.largeAmountThreshold, typeById, primaryTypes, focusField, checkDuplicatesAndCommit]);
+  }), [exclusive, saving, buildDrafts, settings.largeAmountThreshold, typeById, primaryTypes, focusField, checkDuplicatesAndCommit]);
 
-  const confirmLarge = useCallback(async () => {
-    const p = pendingLarge;
-    setPendingLarge(null);
-    if (p) await checkDuplicatesAndCommit(p.drafts);
-  }, [pendingLarge, checkDuplicatesAndCommit]);
+  const confirmLarge = useCallback(
+    () =>
+      exclusive(async () => {
+        const p = pendingLarge;
+        setPendingLarge(null);
+        if (p) await checkDuplicatesAndCommit(p.drafts);
+      }),
+    [exclusive, pendingLarge, checkDuplicatesAndCommit],
+  );
 
   const cancelLarge = useCallback(() => {
     const p = pendingLarge;
@@ -321,12 +329,13 @@ export function useDonationInput() {
   }, [pendingLarge, focusField]);
 
   const resolveDuplicate = useCallback(
-    async (res: DuplicateResolution) => {
-      const p = pendingDuplicate;
-      setPendingDuplicate(null);
-      if (p) await commit(p.drafts, res);
-    },
-    [pendingDuplicate, commit],
+    (res: DuplicateResolution) =>
+      exclusive(async () => {
+        const p = pendingDuplicate;
+        setPendingDuplicate(null);
+        if (p) await commit(p.drafts, res);
+      }),
+    [exclusive, pendingDuplicate, commit],
   );
 
   const cancelDuplicate = useCallback(() => {
@@ -346,15 +355,19 @@ export function useDonationInput() {
   );
 
   // ── 되돌리기 ──────────────────────────────────────────
-  const undo = useCallback(async () => {
-    try {
-      const b = await actions.undoLast();
-      if (b) setMessage({ kind: 'info', text: `되돌림: ${b.donorDisplayName} (${b.date})` });
-    } catch (err) {
-      setMessage({ kind: 'error', text: `되돌리기 실패: ${(err as Error).message}` });
-    }
-    focusSearch();
-  }, [actions, focusSearch]);
+  const undo = useCallback(
+    () =>
+      exclusive(async () => {
+        try {
+          const b = await actions.undoLast();
+          if (b) setMessage({ kind: 'info', text: `되돌림: ${b.donorDisplayName} (${b.date})` });
+        } catch (err) {
+          setMessage({ kind: 'error', text: `되돌리기 실패: ${(err as Error).message}` });
+        }
+        focusSearch();
+      }),
+    [exclusive, actions, focusSearch],
+  );
 
   const modalOpen = !!pendingDuplicate || !!pendingLarge || quickRegisterOpen;
 

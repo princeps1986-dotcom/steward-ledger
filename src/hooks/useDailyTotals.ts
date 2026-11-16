@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useShard } from '../contexts/DonationContext';
+import { useDonationMonths } from '../contexts/DonationContext';
 import { useOfferingTypeById } from '../contexts/OfferingTypeContext';
 import { formatAmountInput, parseAmount } from '../services/domain/amount';
-import { yearOf } from '../services/domain/dates';
 
 /** 선택일 합계 대조: 총액·건수·종류별 소계 + 현금 계수 차액 (계수 금액은 화면 임시 값) */
 export function useDailyTotals(date: string) {
-  const shard = useShard(yearOf(date));
+  const shard = useDonationMonths([date.slice(0, 7)]);
   const typeById = useOfferingTypeById();
   const [cash, setCash] = useState({ date, value: '' });
   const cashInput = cash.date === date ? cash.value : ''; // 날짜를 바꾸면 초기화

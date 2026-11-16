@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useAllShards, useSaveHistory } from '../contexts/DonationContext';
+import { useDonationMonthsRecord, useSaveHistory } from '../contexts/DonationContext';
 import { useOfferingTypeById } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 
@@ -25,13 +25,19 @@ export interface HistoryItem {
  */
 export function useHistoryItems(): HistoryItem[] {
   const history = useSaveHistory();
-  const shards = useAllShards();
+  const months = useDonationMonthsRecord();
   const typeById = useOfferingTypeById();
 
   return useMemo(() => {
     const wanted = new Set(history.flatMap((b) => [...b.createdIds, ...b.mergedBefore.map((m) => m.id)]));
     const byId = new Map<string, Donation>();
-    for (const list of Object.values(shards)) for (const d of list) if (wanted.has(d.id)) byId.set(d.id, d);
+    const scan = (list: readonly Donation[]): void => {
+      for (const d of list) if (wanted.has(d.id)) byId.set(d.id, d);
+    };
+    // 저장한 날짜의 달만 먼저 찾고, 못 찾은 내역이 있을 때만(수정으로 다른 달로 옮겨진 경우) 불러온 나머지 달을 찾습니다.
+    const home = new Set(history.map((b) => b.date.slice(0, 7)));
+    for (const ym of home) scan(months[ym] ?? []);
+    if (byId.size < wanted.size) for (const [ym, list] of Object.entries(months)) if (!home.has(ym)) scan(list);
     const name = (id: string): string => typeById.get(id)?.name ?? '?';
 
     return history.map((b): HistoryItem => {
@@ -46,5 +52,5 @@ export function useHistoryItems(): HistoryItem[] {
       const fallback: HistoryLine[] = b.lines.map((l, i) => ({ key: `${b.batchId}-${i}`, typeName: name(l.offeringTypeId), amount: l.amount, merged: l.merged, donation: null }));
       return { batchId: b.batchId, donorDisplayName: b.donorDisplayName, savedAt: b.savedAt, lines: lines.length ? lines : fallback };
     });
-  }, [history, shards, typeById]);
+  }, [history, months, typeById]);
 }

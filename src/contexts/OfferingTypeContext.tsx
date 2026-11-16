@@ -3,7 +3,7 @@ import { createContext, useContextSelector } from 'use-context-selector';
 import { newId } from '../services/domain/ids';
 import { migrateOfferingTypesV22, migrateOfferingTypesV23, migrateOfferingTypesV24 } from '../services/domain/migrations';
 import { DEFAULT_OFFERING_TYPES, migrateOfferingTypesV21, type OfferingTypeDraft } from '../services/domain/offeringDefaults';
-import { donationKey, getItem, KEYS, listDonationYears, transact, type Write } from '../services/storage/storageService';
+import { getItem, KEYS, listDonationKeys, transact, type Write } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { Donation, OfferingType } from './types';
 
@@ -120,8 +120,8 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
 
   const countUsage = useCallback(async (id: string) => {
     let used = 0;
-    for (const y of await listDonationYears()) {
-      used += ((await getItem<Donation[]>(donationKey(y))) ?? []).filter((d) => d.offeringTypeId === id).length;
+    for (const k of await listDonationKeys()) {
+      used += ((await getItem<Donation[]>(k)) ?? []).filter((d) => d.offeringTypeId === id).length;
     }
     return used;
   }, []);
@@ -132,8 +132,8 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
       const latest = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
       if (!latest.some((t) => t.id === id)) return { writes: [], result: { kind: 'missing' } };
       let used = 0;
-      for (const y of await listDonationYears()) {
-        used += ((await read<Donation[]>(donationKey(y))) ?? []).filter((d) => d.offeringTypeId === id).length;
+      for (const k of await listDonationKeys()) {
+        used += ((await read<Donation[]>(k)) ?? []).filter((d) => d.offeringTypeId === id).length;
       }
       if (used > 0) return { writes: [], result: { kind: 'used', count: used } };
       const list = latest.filter((t) => t.id !== id);

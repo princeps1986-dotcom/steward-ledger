@@ -1,4 +1,4 @@
-import { addDays, addWeeks, endOfWeek, format, parseISO, startOfWeek } from 'date-fns';
+import { addDays, addWeeks, endOfMonth, endOfWeek, format, parseISO, startOfWeek } from 'date-fns';
 
 /** 요일 머리글 (일요일 시작) */
 export const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'] as const;
@@ -55,6 +55,12 @@ export interface WeekRange {
 export function weekRangeOf(date: string): WeekRange {
   const d = parseISO(date);
   return { start: fmt(startOfWeek(d, { weekStartsOn: 0 })), end: fmt(endOfWeek(d, { weekStartsOn: 0 })) };
+}
+
+/** 월별 보고서의 집계 기간: 그 달 1일 ~ 말일 (WeekRange와 같은 모양) */
+export function monthRangeOf(year: string, month: number): WeekRange {
+  const first = parseISO(`${year}-${String(month).padStart(2, '0')}-01`);
+  return { start: fmt(first), end: fmt(endOfMonth(first)) };
 }
 
 /** 날짜(YYYY-MM-DD)의 요일 글자(일~토). 유효하지 않으면 null. */

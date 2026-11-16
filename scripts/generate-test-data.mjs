@@ -3,7 +3,7 @@
 // 사용법:  npm run testdata            (test-data/church-test-data_YYYYMMDD.json 생성)
 //          node scripts/generate-test-data.mjs --out 경로.json --date 2026-11-16 --seed 1
 //
-// 앱에서 [설정 정보] > [백업 파일로 복원…]으로 불러오면 됩니다.
+// 앱에서 [설정 정보] > [백업 파일 복원…]으로 불러오면 됩니다.
 // ※ 복원은 현재 데이터를 모두 이 파일의 내용으로 바꿉니다(복원 직전 긴급 백업 파일이 자동으로 내려받아집니다).
 //   실제 헌금 데이터가 들어 있는 환경에서는 사용하지 마세요.
 import { createHash } from 'node:crypto';

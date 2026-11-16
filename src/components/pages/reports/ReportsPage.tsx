@@ -19,31 +19,37 @@ const TABS: { key: ReportTab; label: string }[] = [
 export function ReportsPage() {
   const f = useReportFilters();
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
-  // 숨길 헌금 종류(종합 보고서 전용). 다른 보고서·다른 탭으로 가거나 이 화면을 떠나면 초기화됩니다.
-  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
-  const hidden = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  // 표시할 헌금 종류(종합 보고서 전용). 기본값은 헌금 종류의 활성 여부(활성=체크, 비활성=해제)이고,
+  // 사용자가 바꾼 종류만 flippedIds에 기억합니다. 다른 보고서·다른 탭으로 가거나 이 화면을 떠나면 기본값으로 돌아갑니다.
   const typeOptions = useTypeToggleOptions(f);
+  const [flippedIds, setFlippedIds] = useState<string[]>([]);
+  const hidden = useMemo(() => {
+    const flipped = new Set(flippedIds);
+    return new Set(typeOptions.filter((o) => o.isActive === flipped.has(o.id)).map((o) => o.id));
+  }, [typeOptions, flippedIds]);
   const ex = useReportExport(f, hidden);
   // 보고서(기간 종류·연도·분기/월·주)가 바뀌면 항상 [종합 보고서] 탭부터 보여 줍니다.
   const reportKey = f.isWeek ? `W:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
   useEffect(() => {
     setTab('SUMMARY');
-    setHiddenIds([]);
+    setFlippedIds([]);
   }, [reportKey]);
   const changeTab = (t: ReportTab) => {
     setTab(t);
-    setHiddenIds([]);
+    setFlippedIds([]);
   };
-  const toggleType = (id: string) => setHiddenIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const toggleType = (id: string) => setFlippedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  // 모두 표시: 활성 종류는 기본 그대로, 비활성 종류는 뒤집어 체크합니다.
+  const showAll = () => setFlippedIds(typeOptions.filter((o) => !o.isActive).map((o) => o.id));
   // 종합 보고서는 본문(표 바로 위)에 제목·요약·출력일시가 있는 자체 인쇄 머리글을 가지므로 여기서는 나머지 탭만 처리합니다.
   const showPrintTitle = tab !== 'SUMMARY';
   return (
     <div className="space-y-4">
       <section className="card no-print flex flex-wrap items-end gap-3">
-        {f.isWeek ? null : (
+        {f.sel.isWeek ? null : (
           <label>
             <span className="label">연도</span>
-            <select className="input" value={f.year} onChange={(e) => f.setYear(e.target.value)}>
+            <select className="input" value={f.sel.year} onChange={(e) => f.setYear(e.target.value)}>
               {f.yearOptions.map((y) => (
                 <option key={y} value={y}>
                   {y}년
@@ -54,7 +60,7 @@ export function ReportsPage() {
         )}
         <label>
           <span className="label">기간</span>
-          <select className="input" value={f.periodType} onChange={(e) => f.setPeriodType(e.target.value as PeriodType)}>
+          <select className="input" value={f.sel.periodType} onChange={(e) => f.setPeriodType(e.target.value as PeriodType)}>
             <option value="YEAR">연도별</option>
             <option value="QUARTER">분기별</option>
             <option value="MONTH">월별</option>
@@ -64,7 +70,7 @@ export function ReportsPage() {
         {f.periodValueOptions.length ? (
           <label>
             <span className="label">&nbsp;</span>
-            <select className="input" value={f.periodValue} onChange={(e) => f.setPeriodValue(Number(e.target.value))}>
+            <select className="input" value={f.sel.periodValue} onChange={(e) => f.setPeriodValue(Number(e.target.value))}>
               {f.periodValueOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -73,7 +79,7 @@ export function ReportsPage() {
             </select>
           </label>
         ) : null}
-        {f.isWeek ? (
+        {f.sel.isWeek ? (
           <>
             <div className="w-52">
               <span className="label">주 선택 (해당 날짜가 속한 주)</span>
@@ -90,27 +96,35 @@ export function ReportsPage() {
             </button>
           </>
         ) : null}
-        <div>
-          <span className="label">세대 집계 기준</span>
-          <div className="flex overflow-hidden rounded border border-gray-300">
-            <button className={`px-3 py-1.5 text-sm ${f.basis === 'CURRENT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'CURRENT'} onClick={() => f.setBasis('CURRENT')}>
-              현재 세대 기준
-            </button>
-            <button className={`px-3 py-1.5 text-sm ${f.basis === 'SNAPSHOT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'SNAPSHOT'} onClick={() => f.setBasis('SNAPSHOT')}>
-              납부 당시 세대 기준
-            </button>
+        {/* 세대 집계 기준은 분기·연도 요약과 개인별·세대별 탭에만 쓰이므로 주별·월별 종합 보고서에서는 숨깁니다. */}
+        {!(f.personKind !== null && tab === 'SUMMARY') ? (
+          <div>
+            <span className="label">세대 집계 기준</span>
+            <div className="flex overflow-hidden rounded border border-gray-300">
+              <button className={`px-3 py-1.5 text-sm ${f.basis === 'CURRENT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'CURRENT'} onClick={() => f.setBasis('CURRENT')}>
+                현재 세대 기준
+              </button>
+              <button className={`px-3 py-1.5 text-sm ${f.basis === 'SNAPSHOT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'SNAPSHOT'} onClick={() => f.setBasis('SNAPSHOT')}>
+                납부 당시 세대 기준
+              </button>
+            </div>
           </div>
-        </div>
+        ) : null}
         <div className="flex-1" />
-        <button className="btn-accent" onClick={ex.print}>
-          보고서 인쇄
-        </button>
-        <button className="btn-accent" onClick={() => void ex.saveExcel()} disabled={ex.busy}>
-          엑셀저장
-        </button>
-        <button className="btn-accent" onClick={() => void ex.mailSave()} disabled={ex.busy}>
-          메일 저장
-        </button>
+        {/* 인쇄·엑셀·메일 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
+        {tab === 'SUMMARY' ? (
+          <>
+            <button className="btn-accent" onClick={ex.print} disabled={f.pending}>
+              보고서 인쇄
+            </button>
+            <button className="btn-accent" onClick={() => void ex.saveExcel()} disabled={ex.busy || f.pending}>
+              엑셀저장
+            </button>
+            <button className="btn-accent" onClick={() => void ex.mailSave()} disabled={ex.busy || f.pending}>
+              메일 저장
+            </button>
+          </>
+        ) : null}
       </section>
       <div className="no-print">
         <Notice message={ex.message} actions={ex.fileActions} />
@@ -141,8 +155,8 @@ export function ReportsPage() {
               {o.name}
             </label>
           ))}
-          {hiddenIds.length > 0 ? (
-            <button className="btn-quick" onClick={() => setHiddenIds([])}>
+          {hidden.size > 0 ? (
+            <button className="btn-quick" onClick={showAll}>
               모두 표시
             </button>
           ) : null}

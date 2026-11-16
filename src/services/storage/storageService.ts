@@ -1,8 +1,9 @@
 import localforage from 'localforage';
+import type { Donation } from '../../contexts/types';
 import { broadcastChanged } from './tabSyncChannel';
 
 /**
- * 연도별 샤딩 저장소 + 저널(redo log) 기반 다중 키 원자적 커밋.
+ * 헌금 내역은 월별(donations_YYYY-MM), 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다. 저장소 + 저널(redo log) 기반 다중 키 원자적 커밋.
  * localForage는 다중 키 트랜잭션을 제공하지 않으므로, 쓰기 목록을 먼저 저널 키에 기록한 뒤 적용하고,
  * 적용 도중 앱이 종료되면 다음 실행 시 recoverJournal()이 남은 쓰기를 재적용합니다.
  */
@@ -23,13 +24,23 @@ export const KEYS = {
   migrationPositionV25: 'meta_migration_position_v25',
   /** v2.2 큰 금액 확인 기준 기본값(1천만 원) 보정을 이미 수행했는지 */
   migrationSettingsV22: 'meta_migration_settings_v22',
+  /** v1.2 헌금 내역 저장 단위를 연도 → 월로 바꾸는 이전을 이미 수행했는지 */
+  migrationDonationsMonthly: 'meta_migration_donations_monthly_v1',
   dirty: 'meta_dirty_since_backup',
   journal: 'meta_journal',
 } as const;
 
-export const donationKey = (year: string): string => `donations_${year}`;
+/** 헌금 내역 키: ym = 'YYYY-MM' */
+export const donationKey = (ym: string): string => `donations_${ym}`;
 export const auditKey = (year: string): string => `audit_logs_${year}`;
-export const DONATION_KEY_RE = /^donations_(\d{4})$/;
+/** 월별 헌금 키. 첫 그룹 = 'YYYY-MM' */
+export const DONATION_KEY_RE = /^donations_(\d{4}-\d{2})$/;
+/** 이전 버전(연도별) 헌금 키 — 시작할 때 월별로 이전합니다. */
+const LEGACY_DONATION_KEY_RE = /^donations_(\d{4})$/;
+export const monthOfDate = (date: string): string => date.slice(0, 7);
+/** 월별 목록을 쓰는 값: 비면 키를 지웁니다. */
+export const monthWrite = (ym: string, list: Donation[]): Write => ({ key: donationKey(ym), value: list.length ? list : null });
+export const monthsOfYear = (year: string): string[] => Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
 export const AUDIT_KEY_RE = /^audit_logs_(\d{4})$/;
 
 /** value가 null이면 키 삭제 */
@@ -95,12 +106,51 @@ export async function listKeys(): Promise<string[]> {
   return store.keys();
 }
 
+/** 저장된 월별 헌금 키 전체(시간 순) */
+export async function listDonationKeys(): Promise<string[]> {
+  return (await store.keys()).filter((k) => DONATION_KEY_RE.test(k)).sort();
+}
+
 export async function listDonationYears(): Promise<string[]> {
-  const keys = await store.keys();
-  return keys
-    .map((k) => DONATION_KEY_RE.exec(k)?.[1])
-    .filter((y): y is string => !!y)
-    .sort();
+  const years = new Set((await listDonationKeys()).map((k) => DONATION_KEY_RE.exec(k)![1].slice(0, 4)));
+  return [...years].sort();
+}
+
+/** 한 해의 헌금 내역(월별 키 12개를 읽어 합침) */
+export async function readDonationYear(read: Reader, year: string): Promise<Donation[]> {
+  const out: Donation[] = [];
+  for (const ym of monthsOfYear(year)) out.push(...((await read<Donation[]>(donationKey(ym))) ?? []));
+  return out;
+}
+
+/**
+ * 이전 버전의 연도별 헌금 키(donations_YYYY)를 월별 키로 한 번만 옮깁니다(앱 시작 시, 화면이 뜨기 전).
+ * 월별 쓰기와 연도 키 삭제를 저널로 묶어, 도중에 종료돼도 다음 실행에서 마저 적용됩니다.
+ */
+export async function migrateDonationsToMonthly(): Promise<boolean> {
+  return serialize(async () => {
+    if ((await store.getItem<boolean>(KEYS.migrationDonationsMonthly)) === true) return false;
+    let moved = false;
+    // 연도 키 하나씩 따로 커밋합니다: 저널은 한 값으로 저장되는데 IndexedDB 값 크기 한도(약 128MB)가 있어
+    // 여러 해를 한 저널에 담으면 데이터가 많은 교회에서 실패할 수 있습니다.
+    for (const k of (await store.keys()).filter((x) => LEGACY_DONATION_KEY_RE.test(x))) {
+      const byMonth = new Map<string, Donation[]>();
+      for (const d of (await store.getItem<Donation[]>(k)) ?? []) {
+        const ym = monthOfDate(d.date);
+        const list = byMonth.get(ym) ?? (await store.getItem<Donation[]>(donationKey(ym))) ?? [];
+        list.push(d);
+        byMonth.set(ym, list);
+      }
+      const writes: Write[] = [...byMonth].map(([ym, list]) => ({ key: donationKey(ym), value: list }));
+      writes.push({ key: k, value: null });
+      await store.setItem(KEYS.journal, writes);
+      await applyWrites(writes);
+      await store.removeItem(KEYS.journal);
+      moved = moved || byMonth.size > 0;
+    }
+    await store.setItem(KEYS.migrationDonationsMonthly, true);
+    return moved;
+  });
 }
 
 export async function isDirtySinceBackup(): Promise<boolean> {

@@ -13,7 +13,7 @@ const ROW_HEIGHT = 30;
 // 번호 · 날짜 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
 const GRID = 'grid grid-cols-[2.75rem_8rem_10rem_8.5rem_9rem_minmax(8rem,1fr)_7.5rem] items-center print:grid-cols-[2.75rem_8rem_10rem_8.5rem_9rem_minmax(8rem,1fr)]';
 
-type Row = ReturnType<typeof useDonationListReport>['rows'][number];
+type Row = ReturnType<ReturnType<typeof useDonationListReport>['rowAt']>;
 
 /**
  * 전체 입력 내역: 지금 보고 있는 기간의 모든 헌금 내역(무명/방문자 포함)을 한 줄씩 보여 주고 바로 수정·삭제합니다.
@@ -27,7 +27,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const fit = useFitHeight(parentRef);
   const virtualizer = useVirtualizer({
-    count: r.rows.length,
+    count: r.count,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
@@ -86,15 +86,18 @@ export function ListTab({ f }: { f: ReportFilters }) {
         </div>
         {printing ? (
           // 인쇄할 때는 가상 스크롤 대신 모든 행을 그대로 그려 목록이 잘리지 않게 합니다.
-          r.rows.map((row, i) => (
-            <div key={row.donation.id} className={rowClass(i + 1)} style={{ height: `${ROW_HEIGHT}px` }}>
-              {cells(row, i + 1)}
-            </div>
-          ))
+          Array.from({ length: r.count }, (_, i) => {
+            const row = r.rowAt(i);
+            return (
+              <div key={row.donation.id} className={rowClass(i + 1)} style={{ height: `${ROW_HEIGHT}px` }}>
+                {cells(row, i + 1)}
+              </div>
+            );
+          })
         ) : (
           <div className="relative w-full" style={{ height: `${virtualizer.getTotalSize()}px` }}>
             {virtualizer.getVirtualItems().map((vi) => {
-              const row = r.rows[vi.index];
+              const row = r.rowAt(vi.index);
               return (
                 <div
                   key={row.donation.id}
@@ -107,7 +110,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
             })}
           </div>
         )}
-        {r.rows.length === 0 ? <p className="px-3 py-4 text-center text-sm text-gray-500">이 기간에 저장된 헌금 내역이 없습니다.</p> : null}
+        {r.count === 0 ? <p className="px-3 py-4 text-center text-sm text-gray-500">이 기간에 저장된 헌금 내역이 없습니다.</p> : null}
       </div>
       <DonationEditModal editor={editor} />
     </section>

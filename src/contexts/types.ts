@@ -25,7 +25,7 @@ export interface OfferingType {
   isActive: boolean;
 }
 
-/** 헌금 내역 (연도별 샤딩: donations_{YYYY}) */
+/** 헌금 내역 (월별 샤딩: donations_{YYYY-MM}, v1.2) */
 export interface Donation {
   id: string;
   date: string; // YYYY-MM-DD

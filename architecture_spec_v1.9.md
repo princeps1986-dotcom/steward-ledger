@@ -196,8 +196,8 @@ export interface BackupEnvelope {
 ### 2) 연도 경계 데이터 및 샤드 간 이관 트랜잭션 (`storageService.ts`)
 * **기준일 기반 샤딩:** 신규 입력 시 브라우저 현재 연도가 아닌 `donation.date`에서 추출한 `YYYY` 키(`donations_{YYYY}`)에 저장하여 1월 초 전년도 12월 헌금 소급 입력을 정확히 처리합니다.
 * **연도 변경 수정(`UPDATE`) 원자적 이관:** 기존 내역 수정 시 `beforeSnapshot.date`의 연도(`oldYear`)와 `afterSnapshot.date`의 연도(`newYear`)가 달라진 경우 아래 절차를 수행합니다.
-  1. `donations_{oldYear}` 샤드에서 기존 레코드 제거
-  2. `donations_{newYear}` 샤드에 수정된 레코드 삽입
+  1. `donations_{oldYear-oldMonth}` 샤드에서 기존 레코드 제거
+  2. `donations_{newYear-newMonth}` 샤드에 수정된 레코드 삽입
   3. `audit_logs_{newYear}`에 연도 이관 이력 기록
 
 ### 3) `exceljs` 수식 호환성 및 수식 인젝션 방어 (`excelService.ts`)
@@ -296,6 +296,8 @@ export interface BackupEnvelope {
 ### 12) v2.5 변경 (사용성 개선 묶음)
 
 * **저장 메시지 위치:** `DonationInputPage`가 `DailyTotalsBar` 아래에 `min-h-[2.75rem] aria-live="polite"` 컨테이너를 두고 `Notice`(+`action`)를 렌더합니다. 메시지 유무와 관계없이 높이가 고정이라 폼이 위아래로 흔들리지 않습니다.
+* **보고서 선택 지연(250ms):** `useReportFilters`는 연도·기간·분기/월·주 선택 칸은 즉시 바꾸고(`f.sel`), 보고서 계산·표시·인쇄·엑셀의 기준(`f.year/periodType/periodValue/week`)은 `useDebouncedValue`로 선택이 250ms 멈춘 뒤에 반영합니다. 그동안(`f.pending`)은 [보고서 인쇄]·[엑셀저장]·[메일 저장]을 비활성화해 화면과 다른 기간이 저장되지 않게 하고, 이전/다음 주는 ref로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다.
+* **연타 방지:** 헌금 저장(Enter·Ctrl+Enter·[저장]·중복/큰 금액 확인 모달)과 되돌리기는 `hooks/exclusive.ts`의 `createExclusive(ref)`로 진행 중에 들어온 호출을 즉시 무시합니다(React 상태는 다음 렌더 뒤에야 바뀌어 연타를 막지 못함). 성도 등록·수정 폼도 같은 이유로 ref를 씁니다. 테스트는 `exclusive.test.ts`.
 * **Ctrl+Enter 저장:** `useDonationInput`의 `window keydown` 핸들러가 처리하며, `isFormEmpty`/모달 상태와 무관하게 `requestSave()`를 호출합니다(검증·큰 금액·중복 확인 흐름은 동일). 필드 단위 `onFieldKeyDown`/`onSearchKeyDown`은 `ctrlKey/metaKey`면 반환해 이중 처리를 막습니다. 수정창처럼 이 훅이 모르는 대화상자가 열려 있을 때 F2·F4·Ctrl+Z가 뒤에서 동작하지 않도록 DOM에서 열린 대화상자를 확인합니다. 달력 팝업(`role="dialog"`이지만 `data-state` 없음)은 해당하지 않습니다.
 * **최근 입력 수정:** `useHistoryItems`는 저장 묶음의 `createdIds`(+`mergedBefore`의 id)를 전체 샤드에서 찾아 **현재 값**으로 줄을 만듭니다(수정 반영·연도 이동 대응). 찾지 못하면 저장 당시 `lines`를 읽기 전용으로 표시합니다. [수정]은 보고서와 같은 `useDonationEditor`/`DonationEditModal`을 사용하므로 사유 필수·감사로그 규칙이 동일합니다.
 * **요일 표시:** `weekdayLabelOf(date)`는 `YYYY-MM-DD`가 유효할 때만 `{label, isSunday}`를 반환합니다. `DatePicker`는 입력 칸과 달력 버튼 사이에 `(일)` 형태로 표시합니다(모달 안 `inline` 모드 포함).
@@ -382,3 +384,38 @@ export interface BackupEnvelope {
 * **스크롤 영역 높이:** 고정 `72vh`로는 표 위쪽 내용(요약·종류 선택 등)이 길 때 영역의 아래쪽(= 고정 합계 행)이 화면 밖으로 밀렸습니다. `useFitHeight(ref)`가 영역의 위쪽 위치부터 화면 아래까지 남은 높이(최소 240px)를 `--fit-h`로 정해 합계 행이 항상 화면 안에 보이게 합니다(창 크기·레이아웃 변화 시 재계산, 인쇄는 제한 해제).
 * **시연 데이터:** 생성 로직을 `scripts/testdata-core.mjs`(`buildTestPayload(today, seed)`, 파일 입출력 없음)로 분리해 `scripts/generate-test-data.mjs`(백업 파일 생성)와 앱의 `services/demo/demoData.ts`(`buildDemoPayload`, 지난 주일 기준·고정 시드)가 공유합니다. `useSettingsPage.confirmDemo`가 `replaceAllData`로 교체합니다.
 * **모바일 안내:** `useIsMobileDevice()`가 사용자 에이전트(Android/iPhone/iPad/Mobile) 또는 터치 위주(`pointer: coarse`)의 900px 미만 화면이면 true를 반환하며, `DonationInputPage`가 입력 카드 위에 안내를 렌더링합니다.
+
+### 23) v1.2 헌금 월별 샤딩
+
+* **키:** 헌금은 `donations_YYYY-MM`(`donationKey(ym)`, `DONATION_KEY_RE` 첫 그룹 = ym), 수정/삭제 이력은 기존대로 `audit_logs_YYYY`입니다. `monthWrite(ym, list)`는 목록이 비면 키를 지웁니다. `readDonationYear(read, year)`는 12개 월 키를 합쳐 한 해 배열을 돌려줍니다.
+* **메모리 모델은 연도 배열 유지:** `DonationContext.shards[year]`는 그대로이며 화면·보고서 코드는 변경이 없습니다. `applyWrites`는 쓰기가 닿은 월의 내역만 해당 연도 배열에서 교체합니다. 아직 불러오지 않은 연도는 건드리지 않고, 불러오는 중이면(`loadingYears`) `staleYears`에 표시해 `ensureYear`가 다시 읽습니다(부분 배열이 연도 전체로 굳는 경합 방지).
+* **저장·수정·삭제:** 대상 날짜의 월 키 하나만 읽고 씁니다(수정으로 월이 바뀌면 이전 달·새 달 두 키). `undoLast`는 저장한 달을 먼저, 나머지 달을 뒤에 찾으며, 감사 로그는 연도 키로 기록합니다. 종류 사용 건수(`countUsage/remove`)와 백업(`collectPayload`: 월 키를 연도별로 합침, `replaceAllData`: 연도 배열을 월 키로 나눠 기록)도 월 키 기준입니다.
+* **이전(`migrateDonationsToMonthly`):** `main.tsx`가 `recoverJournal` 직후, 화면을 그리기 전에 실행합니다. 이전 `donations_YYYY` 키를 날짜의 월로 나눠 월 키에 쓰고 연도 키를 지우는 작업을 저널로 묶어 원자적으로 처리하며, 완료 플래그 `meta_migration_donations_monthly_v1`을 남겨 한 번만 실행합니다. `monthly.test.ts`(fake-indexeddb)가 이전·월 단위 쓰기·백업 왕복을 검사합니다.
+* **측정(개발 화면, 4만 5천 건·연 1만 4천 건):** 한 건 저장 중앙값 약 45ms → 약 3.4ms. 이전 작업 후 건수·보고서 합계가 일치함을 확인했습니다.
+
+### 24) 대용량 성능 측정(성도 1000명 · 주 4000건 × 260주 = 104만 건, 개발 화면 기준)
+
+* **측정 데이터:** `test-data/seed-large.mjs`(개발 화면에서 저장소에 직접 기록, 저장소에는 포함되지 않음). 월별 키 61개, 월당 약 1만 7천 건, 한 해 약 18~20만 건.
+* **양호:** 헌금 1건 저장(UI) 약 0.2초, 성도 목록(980행) 즉시, 주별 엑셀(4000건) 0.3초, 백업 JSON 생성(187MB) 4초, 연도 하나 불러오기 0.2~0.6초, 종합(연) 보고서 집계 즉시.
+* **느림·위험:** ① 연도 전체 엑셀(18만 행) 65초 + 화면 정지(행 수에 대해 초선형), 월 엑셀(1.7만 행) 3.5초 ② 되돌리기 1.5초(모든 달을 읽음) ③ 주별 보고서 주 이동 약 1초(1010행 비가상 표 렌더) ④ 메모리: 불러온 연도 배열이 해제되지 않아 3개 연도에서 약 200MB, 백업 검증 시 1.8GB ⑤ **104만 건 백업 복원 실패**(저널 값이 IndexedDB 값 한도 약 128MB 초과) ⑥ 연 단위 인쇄(전체 입력 내역)는 행 수에 비례해 오래 걸림(1.4만 행 2.2초 측정, 그 이상은 추정).
+* **조치:** 이전(`migrateDonationsToMonthly`)은 같은 한도 문제를 피하려고 연도 키 하나씩 별도 커밋으로 바꿨습니다.
+
+### 25) v1.2 연·분기·월 엑셀 요약 전용
+* `buildReportWorkbook`은 시트 2개(`종합결산요약`, `세대별_기부금집계`)만 만들며 `전체헌금상세내역` 시트와 `SUMIFS` 수식을 쓰지 않습니다(위 §10 설명 중 3단 시트·`SUMIFS` 항목은 이 절로 대체). 종류×월·종류·월·세대×종류 합계를 한 번만 훑어 Map에 모은 뒤 값으로 기록합니다(이전에는 셀마다 전체 내역을 다시 훑는 `sumOf`가 세대 수×종류 수×건수만큼 반복되어 18만 건에서 65초 + 화면 정지). 행·열·총합계는 `SUM` 수식 + `result` 캐시값입니다. 측정(18만 건, 성도 1000명): 현재 세대 0.4초, 납부 당시 세대 0.25초, 파일 76KB, 파일 합계와 원본 합계 일치.
+* **월별 개인 합산:** `ReportFilters.personRange`(주별=`week`, 월별=`monthRangeOf(year, month)`, 그 외 null)와 `personKind`로 `SummaryTab`이 `WeeklySummary`(성도명 × 종류)를 재사용하고, `useWeeklyMatrix`·`useReportExport`가 같은 `buildWeeklyMatrix`/`buildWeeklyWorkbook(kind:'MONTH')`를 씁니다(월별 엑셀은 상세 시트 생략). 월 경계에 걸친 주는 날짜 필터로 그 달 분만 집계합니다. 단위 테스트는 월별 행렬 = 주별 행렬의 개인별 합과 `monthRangeOf` 경계를 검사합니다.
+* **열 너비 갱신(v1.2):** 화면의 성도명 열은 `w-[14rem]`(이전 `4.5rem` → `10rem` → `14rem`)와 `whitespace-nowrap`, 종류·합계 열 머리글/셀은 `px-1.5`·`whitespace-nowrap`입니다. 개발 화면(928px)에서 성도명 160→224px, 종류 열 약 76→69px로 확인했고 행 높이는 모두 한 줄입니다.
+* **연도별 백업·복원(연도 선택 필수):** `collectPayload(years?)`/`createBackupJson(years?)`/`downloadBackup(prefix, years?)`(파일명 `backupYearsLabel`)와 `restoreBackup(payload, {years, mode})`. 설정 화면은 항상 연도 하나를 셀렉트 박스로 받아 `years=[연도]`, `mode='YEARS'`로 호출합니다(`'FULL'`은 서비스에만 남아 있고 단위 테스트 대상). YEARS는 한 트랜잭션에서 선택 연도의 월별 헌금 키·이력 키를 지우고 백업 내용을 월별로 쓰며 성도·종류는 `mergeRules.planMerge`로 현재 데이터와 대응시킵니다(종류: id 또는 이름 일치, 성도: id 또는 이름+연락처 뒷4자리 일치, 그 외는 새 항목). 대응된 백업 id는 `remapDonations`/`remapAudits`로 현재 id로 바꿔 헌금·이력(스냅샷 포함)을 쓰므로 다른 PC 백업도 중복되지 않으며, `previewMerge`가 복원 창 안내(연결·추가·동명이인 수)를 만듭니다. 화면 쪽 `DonationContext`는 jsdom + `@testing-library/react`(개발 의존성) 기반 `DonationContext.test.tsx`로 달 단위 교체, 읽기 경합 재조회, `reloadAll` 세대 무효화, 읽기 실패 재시도, 월·연도 이동 수정, 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신을 검증합니다. 테스트 파일은 `mergeRules.test.ts`. 선택값이 목록에 없으면 가장 최근 연도를 씁니다. 긴급 백업(`emergency_*`)·상단 알림줄 [지금 백업]·자동 백업은 연도 없이 전체입니다. 백업 파일 형식(`schemaVersion` 2)은 그대로입니다. 테스트는 `monthly.test.ts`(fake-indexeddb).
+
+### 26) v1.2 성능 재측정과 코드 검토 결과(104만 건, 성도 1000명)
+* **양호:** 저장(UI) 약 0.2초, 월별 보고서 0.5초, 분기 0.2초, 연도 0.8초, 모든 엑셀 0.2~0.3초(연도 18만 건 포함), 연도 하나 백업 생성 0.7초·검증 0.8초·복원 0.3초(복원은 연도 하나씩이라 IndexedDB 값 한도 약 128MB를 넘지 않음).
+* **남은 이슈:** 주별·월별 보고서 주 이동·월 전환 0.5~0.9초(1000행 비가상 표), 연 단위 전체 입력 내역 약 4초(18만 건 정렬·행 생성), 저장 때 연도 배열 재구성(약 0.2초), 불러온 연도가 메모리에 계속 남음(연도 3개 약 200MB).
+* **수정:** `undoLast`가 저장한 달만 먼저 읽도록 변경(1.5초 → 0.18초), 시작 때 이전 작업 오류 시 빈 화면 대신 오류 안내, 연도 하나 백업이 전체일 때만 "마지막 백업" 갱신(`isCompleteYearBackup`), `useFitHeight` 재측정·스크롤 보정, 주별·월별 종합 보고서에서 세대 집계 기준 숨김.
+* **표 가상화·목록 최적화(v1.2):** `WeeklySummary`는 `useVirtualizer`(고정 행 높이 34px, 머리글 `scrollMargin` 30px)로 보이는 행만 `<tbody>`에 그리고 위·아래를 높이만 가진 빈 `<tr>`(`padTop/padBottom`)로 채웁니다. 합계 행은 `sticky bottom-0`로 tbody 끝에 두어 고정이 유지되며, `useIsPrinting`일 때는 가상화를 끄고 모든 행을 그립니다. `useDonationListReport`는 정렬·거르기 결과(헌금 배열)와 합계만 메모하고 `rowAt(i)`로 보이는 행의 종류 이름·금액 글자·구분 표기를 계산합니다. `sortForList`는 ISO 문자열 직접 비교입니다. 측정(성도 1000명·연 18만 건): 주 이동 0.9→0.25초, 월 전환 0.53→0.25초, 연 단위 목록 열기 3.96→0.06초, 목록 이름 거르기 0.03초.
+
+### 27) v1.2 달 단위 메모리 모델과 연도 해제
+* **상태:** `DonationContext.months: Record<'YYYY-MM', Donation[]>`(이전 `shards` 연도 배열 대체)와 `epoch`(reloadAll 시 +1). `ensureMonths(yms)`가 없는 달만 읽고(읽는 중 커밋되면 `staleMonths`로 다시 읽음), `applyWrites`는 쓰기가 닿은 달의 배열만 교체합니다. 메모리에 없는 달은 건드리지 않습니다. `years`는 추가는 바로, 달이 비워질 때만 `listDonationYears()`로 다시 읽습니다.
+* **소비 측:** `useDonationMonths(yms)`가 필요한 달을 `ensureMonths` + `pinMonths`하고, 달 배열이 하나도 바뀌지 않으면 같은 결과 배열을 돌려줍니다(달이 하나면 그 배열 그대로). `useReportFilters`는 주별=시작·종료일의 달, 월·분기·연도=기간의 달들을 쓰고 주별만 날짜로 거릅니다. `useDailyTotals`/`useNextAnonymousName`은 선택일의 달만, `useHistoryItems`는 저장한 날짜의 달을 먼저 찾고 못 찾은 내역이 있을 때만 나머지 불러온 달을 찾습니다.
+* **연도 해제:** `pinMonths`가 연도별 사용 중 개수와 마지막 사용 시각을 기록하고, 달을 불러온 뒤와 사용 해제 때 `evictOldYears`가 `yearsToEvict`(순수 함수, 테스트 대상)로 최대 `MAX_LOADED_YEARS`(3)를 넘는 연도를 마지막 사용이 오래된 순으로 내립니다. 사용 중(핀)이거나 읽는 중인 연도는 내리지 않으므로 모두 핀이면 3개를 넘을 수 있습니다.
+* **측정(성도 1000명, 연 18만 건):** 저장(UI) 230ms→83ms, 되돌리기 63ms, 입력 화면 힙 약 70→35~40MB, 연도 5개를 차례로 열어도 힙이 약 210~230MB에서 더 늘지 않음. 달을 옮기는 수정(11월→12월)과 시연 데이터 불러오기(reloadAll)를 화면에서 확인했습니다.
+* **안정성 보정(v1.2):** `ensureMonths`는 읽기 실패 시 `finally`로 '읽는 중' 표시를 지우고, `generation`(reloadAll마다 +1)이 달라졌으면 읽은 결과를 버립니다(복원 직후 옛 내역이 되살아나는 경합 방지). 연도 목록 새로 읽기는 `refreshYears` 토큰으로 가장 마지막 요청만 반영합니다. `WeeklySummary`의 가상 행은 `virtualizer.measureElement`로 실제 높이를 재어 글자 크기 설정(125%)에서도 모든 행이 보입니다.
+

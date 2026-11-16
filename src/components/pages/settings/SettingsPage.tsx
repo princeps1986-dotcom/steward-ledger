@@ -79,15 +79,15 @@ export function SettingsPage() {
 
       <section className="card space-y-3">
         <h3 className="flex items-center gap-2 font-semibold">
-          전체 백업 · 복원
-          <InfoTip label="전체 백업·복원 안내" text={s.backupHelp} />
+          백업 · 복원
+          <InfoTip label="백업·복원 안내" text={s.backupHelp} />
         </h3>
         <div className="flex gap-2">
-          <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy}>
-            지금 백업 파일 저장
+          <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear}>
+            백업 파일 저장
           </button>
           <label className="btn cursor-pointer">
-            백업 파일로 복원
+            백업 파일 복원
             <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
           </label>
           <button className="btn ml-auto whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
@@ -96,6 +96,22 @@ export function SettingsPage() {
           <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
             전체 초기화
           </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="text-gray-600" htmlFor="backup-year">
+            백업할 연도
+          </label>
+          <select id="backup-year" className="input w-28" value={s.backupYear} onChange={(e) => s.setBackupYear(e.target.value)} disabled={s.backupYearOptions.length === 0}>
+            {s.backupYearOptions.length === 0 ? <option value="">연도 없음</option> : null}
+            {s.backupYearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-500">
+            {s.backupYearOptions.length === 0 ? '헌금 내역이 있는 연도만 백업할 수 있습니다.' : '선택한 연도의 헌금과 성도·헌금 종류가 함께 저장됩니다.'}
+          </span>
         </div>
       </section>
 
@@ -139,7 +155,7 @@ export function SettingsPage() {
       >
         <div className="space-y-2 text-sm">
           <p className="font-semibold text-red-700">이 작업은 되돌릴 수 없습니다.</p>
-          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 내려받습니다. 필요하면 나중에 [백업 파일로 복원]으로 되살릴 수 있습니다.</p>
+          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 내려받습니다. 필요하면 나중에 [백업 파일 복원]으로 되살릴 수 있습니다.</p>
           <p className="text-gray-600">테마·메일 주소·백업 주기 같은 환경 설정은 유지됩니다.</p>
         </div>
       </Modal>
@@ -147,14 +163,14 @@ export function SettingsPage() {
       <Modal
         open={!!s.restore}
         onClose={s.cancelRestore}
-        title="백업 파일로 복원할까요?"
-        description="현재 앱의 모든 데이터가 백업 파일 내용으로 바뀝니다."
+        title="백업 파일 복원할까요?"
+        description="복원할 연도를 선택하세요. 복원 전 현재 데이터는 긴급 백업 파일로 저장됩니다."
         footer={
           <>
             <button className="btn" onClick={s.cancelRestore}>
               취소
             </button>
-            <button className="btn-danger" onClick={() => void s.confirmRestore()} disabled={s.busy}>
+            <button className="btn-danger" onClick={() => void s.confirmRestore()} disabled={s.busy || !s.restoreYear}>
               긴급 백업 후 복원
             </button>
           </>
@@ -165,6 +181,25 @@ export function SettingsPage() {
             파일: <b>{s.restore?.fileName}</b>
           </p>
           <p>{s.restore?.summary}</p>
+          {s.restore?.mergeNotice ? <p className="rounded bg-blue-50 p-2 text-xs text-blue-800">{s.restore.mergeNotice}</p> : null}
+          <div className="flex flex-wrap items-center gap-2 rounded border border-gray-200 p-2">
+            <label className="text-gray-600" htmlFor="restore-year">
+              복원할 연도
+            </label>
+            <select id="restore-year" className="input w-44" value={s.restoreYear} onChange={(e) => s.setRestoreYear(e.target.value)} disabled={s.restoreYearOptions.length === 0}>
+              {s.restoreYearOptions.length === 0 ? <option value="">연도 없음</option> : null}
+              {s.restoreYearOptions.map((y) => (
+                <option key={y.year} value={y.year}>
+                  {y.year}년 ({y.count.toLocaleString('ko-KR')}건)
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-gray-600">
+            {s.restoreYearOptions.length === 0
+              ? '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
+              : '선택한 연도의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다. 다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.'}
+          </p>
           {s.restore?.migratedFrom ? <p className="text-amber-700">구버전(v{s.restore.migratedFrom}) 백업입니다. v2 형식으로 자동 변환됩니다.</p> : null}
           <p className="text-gray-600">무결성 검증을 통과했습니다.</p>
         </div>

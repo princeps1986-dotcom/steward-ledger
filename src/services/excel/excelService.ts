@@ -4,7 +4,6 @@ import type { WeekRange } from '../domain/calendar';
 import { monthsOfPeriod, periodLabel, yearMonthOf, type PeriodType } from '../domain/dates';
 import { buildFamilyLabels, familyKeyOf, familyMemberNames, type FamilyBasis } from '../domain/family';
 import type { WeeklyMatrix } from '../domain/weekly';
-import { normalizePosition } from '../domain/positions';
 
 export interface ExcelReportInput {
   year: string;
@@ -19,7 +18,6 @@ export interface ExcelReportInput {
 
 const SHEET1 = '종합결산요약';
 const SHEET2 = '세대별_기부금집계';
-const SHEET3 = '전체헌금상세내역';
 const AMOUNT_FMT = '#,##0';
 
 /** 엑셀 수식 인젝션 방어: 위험 문자로 시작하면 작은따옴표를 붙입니다. */
@@ -28,7 +26,6 @@ export function sanitizeCellText(v: string): string {
 }
 
 /** 수식 문자열 리터럴 이스케이프 */
-const lit = (s: string): string => `"${s.replace(/"/g, '""')}"`;
 
 /** 한글은 2, 그 외 1의 가중치로 표시 폭을 계산합니다. */
 export function displayWidth(s: string): number {
@@ -75,8 +72,11 @@ export interface ExcelWeeklyInput {
   /** 이미 해당 주로 필터링된 내역 (상세 시트용) */
   donations: Donation[];
   offeringTypes: OfferingType[];
+  /** 'MONTH'(월별 보고서)이면 제목을 월별로 쓰고 개별 내역 시트를 만들지 않습니다. 기본 'WEEK' */
+  kind?: 'WEEK' | 'MONTH';
 }
 
+const MONTH_SHEET1 = '월별헌금보고서';
 const WEEK_SHEET1 = '주별헌금보고서';
 const WEEK_SHEET2 = '주간상세내역';
 const THIN_BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } as const;
@@ -86,17 +86,18 @@ const THIN_BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: {
  * Sheet 2 = 해당 주 상세 내역. 모든 텍스트 셀은 수식 인젝션 방어를 거칩니다.
  */
 export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob> {
-  const { range, matrix, donations, offeringTypes } = input;
+  const { range, matrix, donations, offeringTypes, kind = 'WEEK' } = input;
+  const isMonth = kind === 'MONTH';
   const typeName = (id: string): string => offeringTypes.find((t) => t.id === id)?.name ?? '(삭제된 종류)';
 
   const wb = new ExcelJS.Workbook();
   wb.creator = '청지기 장부';
   wb.created = new Date();
-  const ws1 = wb.addWorksheet(WEEK_SHEET1);
-  const ws2 = wb.addWorksheet(WEEK_SHEET2, { views: [{ state: 'frozen', ySplit: 1 }] });
+  const ws1 = wb.addWorksheet(isMonth ? MONTH_SHEET1 : WEEK_SHEET1);
+  const ws2 = isMonth ? null : wb.addWorksheet(WEEK_SHEET2, { views: [{ state: 'frozen', ySplit: 1 }] });
 
   // ── Sheet 1: 성도명 × 헌금 종류 ─────────────────────────
-  ws1.addRow([`${range.start} ~ ${range.end} 주별 헌금 보고서`]).font = { bold: true, size: 14 };
+  ws1.addRow([isMonth ? `${range.start.slice(0, 7)} 월별 헌금 보고서` : `${range.start} ~ ${range.end} 주별 헌금 보고서`]).font = { bold: true, size: 14 };
   ws1.addRow([]);
   const colCount = matrix.columns.length;
   const header = ws1.addRow(['성도명', ...matrix.columns.map((c) => sanitizeCellText(c.name)), '합계']);
@@ -126,16 +127,18 @@ export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob
   fitNameColumn(ws1, 1, ['성도명', '합계', ...matrix.rows.map((r) => r.name)]);
   ws1.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
-  // ── Sheet 2: 주간 상세 내역 ─────────────────────────────
-  ws2.addRow(['날짜', '표기명', '헌금종류', '금액', '메모']);
-  styleHeader(ws2.getRow(1));
-  const sorted = [...donations].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
-  for (const d of sorted) {
-    ws2.addRow([d.date, sanitizeCellText(d.donorDisplayName), sanitizeCellText(typeName(d.offeringTypeId)), d.amount, sanitizeCellText(d.memo ?? '')]);
+  // ── Sheet 2: 주간 상세 내역 (월별 보고서에는 없음) ─────────
+  if (ws2) {
+    ws2.addRow(['날짜', '표기명', '헌금종류', '금액', '메모']);
+    styleHeader(ws2.getRow(1));
+    const sorted = [...donations].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+    for (const d of sorted) {
+      ws2.addRow([d.date, sanitizeCellText(d.donorDisplayName), sanitizeCellText(typeName(d.offeringTypeId)), d.amount, sanitizeCellText(d.memo ?? '')]);
+    }
+    ws2.getColumn(4).numFmt = AMOUNT_FMT;
+    autoFit(ws2);
+    fitNameColumn(ws2, 2, ['표기명', ...sorted.map((d) => d.donorDisplayName)]);
   }
-  ws2.getColumn(4).numFmt = AMOUNT_FMT;
-  autoFit(ws2);
-  fitNameColumn(ws2, 2, ['표기명', ...sorted.map((d) => d.donorDisplayName)]);
 
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -143,53 +146,45 @@ export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob
 
 export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob> {
   const { year, periodType, periodValue, donations, members, offeringTypes, basis } = input;
-  const typeById = new Map(offeringTypes.map((t) => [t.id, t]));
   const memberById = new Map(members.map((m) => [m.id, m]));
   const usedTypeIds = new Set(donations.map((d) => d.offeringTypeId));
   const types = offeringTypes
     .filter((t) => t.isActive || usedTypeIds.has(t.id))
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  const typeName = (id: string): string => typeById.get(id)?.name ?? '(삭제된 종류)';
   const months = monthsOfPeriod(periodType, periodValue);
   const title = periodLabel(year, periodType, periodValue);
 
-  const rows = [...donations].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
-  const familyKeys = [...new Set(rows.map((d) => familyKeyOf(d, basis, memberById)).filter((k): k is string => !!k))];
+  // 한 번만 훑어 종류×월, 종류, 월, 세대×종류, 세대 합계를 모읍니다(건수가 많아도 선형 시간).
+  // 개별 내역은 파일에 넣지 않으므로 합계는 수식이 아니라 값으로 기록합니다(행·열 합계만 SUM 수식).
+  const typeMonth = new Map<string, number>();
+  const typeTotal = new Map<string, number>();
+  const monthTotal = new Map<string, number>();
+  const famType = new Map<string, number>();
+  const famTotal = new Map<string, number>();
+  const add = (m: Map<string, number>, k: string, v: number): void => void m.set(k, (m.get(k) ?? 0) + v);
+  let grand = 0;
+  const familyKeySet = new Set<string>();
+  for (const d of donations) {
+    const ym = yearMonthOf(d.date);
+    add(typeMonth, `${d.offeringTypeId}|${ym}`, d.amount);
+    add(typeTotal, d.offeringTypeId, d.amount);
+    add(monthTotal, ym, d.amount);
+    grand += d.amount;
+    const fk = familyKeyOf(d, basis, memberById);
+    if (fk) {
+      familyKeySet.add(fk);
+      add(famType, `${fk}|${d.offeringTypeId}`, d.amount);
+      add(famTotal, fk, d.amount);
+    }
+  }
+  const familyKeys = [...familyKeySet];
   const familyLabels = buildFamilyLabels(familyKeys, members);
-  const familyLabelOf = (d: Donation): string => {
-    const k = familyKeyOf(d, basis, memberById);
-    return k ? familyLabels.get(k)! : '무명/방문자';
-  };
 
   const wb = new ExcelJS.Workbook();
   wb.creator = '청지기 장부';
   wb.created = new Date();
   const ws1 = wb.addWorksheet(SHEET1);
   const ws2 = wb.addWorksheet(SHEET2);
-  const ws3 = wb.addWorksheet(SHEET3, { views: [{ state: 'frozen', ySplit: 1 }] });
-
-  // ── Sheet 3: 전체 상세 내역 ──────────────────────────────
-  ws3.addRow(['날짜', '귀속월', '표기명', '헌금종류', '금액', '세대', '직분', '메모']);
-  styleHeader(ws3.getRow(1));
-  for (const d of rows) {
-    const m = d.memberId ? memberById.get(d.memberId) : undefined;
-    ws3.addRow([
-      d.date,
-      yearMonthOf(d.date),
-      sanitizeCellText(d.donorDisplayName),
-      sanitizeCellText(typeName(d.offeringTypeId)),
-      d.amount,
-      sanitizeCellText(familyLabelOf(d)),
-      sanitizeCellText(normalizePosition(m?.position)),
-      sanitizeCellText(d.memo ?? ''),
-    ]);
-  }
-  ws3.getColumn(5).numFmt = AMOUNT_FMT;
-  autoFit(ws3);
-  fitNameColumn(ws3, 3, ['표기명', ...rows.map((d) => d.donorDisplayName)]);
-  fitNameColumn(ws3, 6, ['세대', ...rows.map((d) => familyLabelOf(d))]);
-  const last = Math.max(rows.length + 1, 2);
-  const ref = (col: string): string => `'${SHEET3}'!$${col}$2:$${col}$${last}`;
 
   // ── Sheet 1: 종류 × 월 매트릭스 ──────────────────────────
   ws1.addRow([`${title} 헌금 결산 요약`]).font = { bold: true, size: 14 };
@@ -199,21 +194,17 @@ export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob
   styleHeader(header);
   const firstDataRow = header.number + 1;
   const colLetter = (i: number): string => ws1.getColumn(i).letter;
-  const sumOf = (pred: (d: Donation) => boolean): number => rows.reduce((s, d) => (pred(d) ? s + d.amount : s), 0);
+  const ymOf = (mo: number): string => `${year}-${String(mo).padStart(2, '0')}`;
 
   types.forEach((t) => {
     const r = ws1.addRow([sanitizeCellText(t.name)]);
     months.forEach((mo, i) => {
-      const ym = `${year}-${String(mo).padStart(2, '0')}`;
-      r.getCell(i + 2).value = {
-        formula: `SUMIFS(${ref('E')},${ref('D')},${lit(t.name)},${ref('B')},${lit(ym)})`,
-        result: sumOf((d) => d.offeringTypeId === t.id && yearMonthOf(d.date) === ym),
-      };
+      r.getCell(i + 2).value = typeMonth.get(`${t.id}|${ymOf(mo)}`) ?? 0;
     });
     const totalCol = months.length + 2;
     r.getCell(totalCol).value = {
       formula: `SUM(${colLetter(2)}${r.number}:${colLetter(totalCol - 1)}${r.number})`,
-      result: sumOf((d) => d.offeringTypeId === t.id),
+      result: typeTotal.get(t.id) ?? 0,
     };
   });
   const lastDataRow = firstDataRow + types.length - 1;
@@ -221,14 +212,8 @@ export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob
   totalRow.font = { bold: true };
   for (let c = 2; c <= months.length + 2; c++) {
     const L = colLetter(c);
-    const monthIdx = c - 2;
-    const result =
-      c === months.length + 2
-        ? sumOf(() => true)
-        : sumOf((d) => yearMonthOf(d.date) === `${year}-${String(months[monthIdx]).padStart(2, '0')}`);
-    totalRow.getCell(c).value = types.length
-      ? { formula: `SUM(${L}${firstDataRow}:${L}${lastDataRow})`, result }
-      : 0;
+    const result = c === months.length + 2 ? grand : (monthTotal.get(ymOf(months[c - 2])) ?? 0);
+    totalRow.getCell(c).value = types.length ? { formula: `SUM(${L}${firstDataRow}:${L}${lastDataRow})`, result } : 0;
   }
   for (let r = firstDataRow; r <= totalRow.number; r++) {
     ws1.getRow(r).eachCell((c, ci) => {
@@ -251,15 +236,12 @@ export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob
     const label = familyLabels.get(k)!;
     const r = ws2.addRow([sanitizeCellText(label), sanitizeCellText(familyMemberNames(k, members))]);
     types.forEach((t, i) => {
-      r.getCell(i + 3).value = {
-        formula: `SUMIFS(${ref('E')},${ref('F')},${lit(label)},${ref('D')},${lit(t.name)})`,
-        result: sumOf((d) => d.offeringTypeId === t.id && familyKeyOf(d, basis, memberById) === k),
-      };
+      r.getCell(i + 3).value = famType.get(`${k}|${t.id}`) ?? 0;
     });
     const tc = types.length + 3;
     r.getCell(tc).value = {
       formula: `SUM(${ws2.getColumn(3).letter}${r.number}:${ws2.getColumn(tc - 1).letter}${r.number})`,
-      result: sumOf((d) => familyKeyOf(d, basis, memberById) === k),
+      result: famTotal.get(k) ?? 0,
     };
     r.eachCell((c, ci) => {
       if (ci > 2) c.numFmt = AMOUNT_FMT;

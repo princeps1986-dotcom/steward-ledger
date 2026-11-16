@@ -33,7 +33,7 @@ describe('excel helpers', () => {
     expect(sanitizeFileName('a/b:c*?.xlsx')).toBe('a_b_c__.xlsx');
   });
 
-  it('builds 3 sheets with SUMIFS formulas and cached results', async () => {
+  it('builds 2 summary sheets (no per-donation detail) with SUM formulas and cached results', async () => {
     const types: OfferingType[] = [{ id: 't1', name: '십일조', displayArea: 'PRIMARY', quickAmounts: [], sortOrder: 1, isActive: true }];
     const head = member({ id: 'h', isFamilyHead: true, familyGroupId: 'h' });
     const donations: Donation[] = [
@@ -43,13 +43,13 @@ describe('excel helpers', () => {
     const blob = await buildReportWorkbook({ year: '2026', periodType: 'YEAR', periodValue: 1, donations, members: [head], offeringTypes: types, basis: 'CURRENT' });
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(await blob.arrayBuffer());
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['종합결산요약', '세대별_기부금집계', '전체헌금상세내역']);
-    const detail = wb.getWorksheet('전체헌금상세내역')!;
-    expect(detail.getCell('C3').value).toBe('\'=HYPERLINK("x")');
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['종합결산요약', '세대별_기부금집계']); // 개별 내역 시트 없음
     const summary = wb.getWorksheet('종합결산요약')!;
-    const jan = summary.getRow(5).getCell(2).value as { formula: string; result: number };
-    expect(jan.formula).toContain('SUMIFS');
-    expect(jan.result).toBe(100000);
+    expect(summary.getRow(5).getCell(2).value).toBe(100000); // 1월 십일조(값)
+    expect(summary.getRow(5).getCell(3).value).toBe(5000); // 2월(무명 포함)
+    const rowTotal = summary.getRow(5).getCell(14).value as { formula: string; result: number };
+    expect(rowTotal.formula).toContain('SUM');
+    expect(rowTotal.result).toBe(105000);
     const family = wb.getWorksheet('세대별_기부금집계')!;
     expect(family.rowCount).toBe(4); // 제목, 빈 줄, 헤더, 김철수 세대 (무명 제외)
   });

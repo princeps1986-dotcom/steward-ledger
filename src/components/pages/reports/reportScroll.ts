@@ -13,13 +13,16 @@ const BOTTOM_GAP = 16;
 /** 스크롤 영역의 위쪽 위치부터 화면 아래까지 남은 높이를 계산해 `--fit-h`로 돌려줍니다. */
 export function useFitHeight(ref: RefObject<HTMLElement | null>): CSSProperties {
   const [h, setH] = useState<number | null>(null);
+  const measure = (): void => {
+    const el = ref.current;
+    if (!el) return;
+    // 페이지가 이미 아래로 스크롤되어 top이 음수여도 화면 높이를 넘지 않도록 0으로 보정합니다.
+    const top = Math.max(0, el.getBoundingClientRect().top);
+    setH(Math.max(MIN_HEIGHT, Math.floor(window.innerHeight - top - BOTTOM_GAP)));
+  };
+  // 렌더 후마다 확인합니다(영역이 데이터가 생긴 뒤에야 나타나는 경우 포함). 값이 같으면 다시 그려지지 않습니다.
+  useEffect(measure);
   useEffect(() => {
-    const measure = () => {
-      const el = ref.current;
-      if (!el) return;
-      setH(Math.max(MIN_HEIGHT, Math.floor(window.innerHeight - el.getBoundingClientRect().top - BOTTOM_GAP)));
-    };
-    measure();
     window.addEventListener('resize', measure);
     const ro = new ResizeObserver(measure);
     ro.observe(document.body);
@@ -27,6 +30,7 @@ export function useFitHeight(ref: RefObject<HTMLElement | null>): CSSProperties 
       window.removeEventListener('resize', measure);
       ro.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref]);
   return (h === null ? {} : { '--fit-h': `${h}px` }) as CSSProperties;
 }

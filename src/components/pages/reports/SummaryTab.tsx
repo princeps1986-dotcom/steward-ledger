@@ -4,9 +4,9 @@ import { PrintHeader } from './PrintHeader';
 import { SpacerRow } from './SpacerRow';
 import { WeeklySummary } from './WeeklySummary';
 
-/** 기간이 '주별'이면 성도명 × 헌금 종류 교차표, 그 외에는 헌금 종류 × 월 매트릭스 */
+/** 기간이 '주별'·'월별'이면 성도명 × 헌금 종류 교차표(월별은 그 달의 모든 주를 개인별로 합산), 그 외(분기·연)는 헌금 종류 × 월 매트릭스 */
 export function SummaryTab({ f, hidden }: { f: ReportFilters; hidden: ReadonlySet<string> }) {
-  return f.isWeek ? <WeeklySummary f={f} hidden={hidden} /> : <PeriodSummary f={f} hidden={hidden} />;
+  return f.personRange ? <WeeklySummary f={f} hidden={hidden} /> : <PeriodSummary f={f} hidden={hidden} />;
 }
 
 function PeriodSummary({ f, hidden }: { f: ReportFilters; hidden: ReadonlySet<string> }) {

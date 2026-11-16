@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
-import { useDonationActions } from '../contexts/DonationContext';
+import { useDonationActions, useDonationYears } from '../contexts/DonationContext';
 import { useMemberActions } from '../contexts/MemberContext';
 import { useOfferingActions } from '../contexts/OfferingTypeContext';
 import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
@@ -8,7 +8,7 @@ import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { buildDemoPayload } from '../services/demo/demoData';
-import { collectPayload, downloadBackup, replaceAllData, resetAllData } from '../services/backup/backupService';
+import { collectPayload, downloadBackup, isCompleteYearBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
 import { isValidEmail } from '../services/excel/mailtoProtocol';
@@ -18,6 +18,10 @@ interface RestoreCandidate {
   fileName: string;
   migratedFrom: number | null;
   summary: string;
+  /** 성도·헌금 종류 합치기 결과 안내(없으면 빈 문자열) */
+  mergeNotice: string;
+  /** 백업 파일에 들어 있는 연도와 그 연도의 헌금 건수 */
+  yearRows: { year: string; count: number }[];
 }
 
 const RESET_WAIT_SECONDS = 10;
@@ -28,6 +32,7 @@ export function useSettingsPage() {
   const memberActions = useMemberActions();
   const offeringActions = useOfferingActions();
   const donationActions = useDonationActions();
+  const years = useDonationYears();
 
   const [email, setEmail] = useState(settings.recipientEmail);
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
@@ -35,6 +40,12 @@ export function useSettingsPage() {
   const [defaultDir, setDefaultDir] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
+  // 백업·복원은 항상 연도 하나를 골라서 합니다(셀렉트 박스, 헌금 내역이 있는 연도만).
+  const [backupYearPick, setBackupYearPick] = useState('');
+  const [restoreYearPick, setRestoreYearPick] = useState('');
+  // 선택값이 목록에 없으면(처음, 또는 연도가 사라졌을 때) 가장 최근 연도를 씁니다.
+  const backupYear = years.includes(backupYearPick) ? backupYearPick : (years[years.length - 1] ?? '');
+  const restoreYear = restore?.yearRows.some((r) => r.year === restoreYearPick) ? restoreYearPick : (restore?.yearRows[restore.yearRows.length - 1]?.year ?? '');
   const [busy, setBusy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -81,17 +92,20 @@ export function useSettingsPage() {
   const resetDir = useCallback(() => void update({ autoBackupDir: '' }), [update]);
 
   const backupNow = useCallback(async () => {
+    if (!backupYear) return setMessage({ kind: 'error', text: '백업할 연도가 없습니다. 헌금 내역이 있는 연도만 백업할 수 있습니다.' });
     setBusy(true);
     try {
-      const name = await downloadBackup('backup');
-      await markBackupDone();
-      setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다.` });
+      const all = await isCompleteYearBackup(backupYear); // 다른 연도의 헌금·이력이 없을 때만 전체 백업으로 취급
+      const name = await downloadBackup('backup', [backupYear]);
+      // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
+      if (all) await markBackupDone();
+      setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {
       setMessage({ kind: 'error', text: `백업 실패: ${(err as Error).message}` });
     } finally {
       setBusy(false);
     }
-  }, [markBackupDone]);
+  }, [markBackupDone, years, backupYear]);
 
   const onRestoreFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,11 +115,20 @@ export function useSettingsPage() {
     if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
     const p = res.envelope.payload;
     const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
+    setRestoreYearPick('');
+    // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
+    const plan = await previewMerge(p);
+    const parts: string[] = [];
+    if (plan.memberIdMap.size + plan.typeIdMap.size > 0) parts.push(`현재 데이터와 같은 성도 ${plan.memberIdMap.size}명·헌금 종류 ${plan.typeIdMap.size}개는 기존 항목에 연결됩니다.`);
+    if (plan.addMembers.length + plan.addTypes.length > 0) parts.push(`새로 추가되는 항목: 성도 ${plan.addMembers.length}명·헌금 종류 ${plan.addTypes.length}개.`);
+    if (plan.sameNameAdded > 0) parts.push(`새로 추가되는 성도 중 ${plan.sameNameAdded}명은 현재 데이터에 이름이 같은 성도가 있습니다(연락처 뒷4자리가 달라 같은 사람으로 보지 않음). 같은 사람이면 복원 후 성도 화면에서 확인해 주세요.`);
     setRestore({
+      mergeNotice: parts.join(' '),
       envelope: res.envelope,
       fileName: file.name,
       migratedFrom: res.migratedFrom,
       summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${p.members.length}명 · 헌금 종류 ${p.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
+      yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
     });
   }, []);
 
@@ -153,15 +176,17 @@ export function useSettingsPage() {
 
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
+    if (!restoreYear) return setMessage({ kind: 'error', text: '이 백업 파일에는 복원할 헌금 내역(연도)이 없습니다.' });
+    const picked = [restoreYear];
     setBusy(true);
     try {
       // 복원 직전 현재 데이터를 긴급 백업으로 내려받습니다.
       await downloadBackup('emergency_before_restore');
-      await replaceAllData(restore.envelope.payload);
+      await restoreBackup(restore.envelope.payload, { years: picked, mode: 'YEARS' });
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({
         kind: 'info',
-        text: `복원 완료${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}. 복원 전 데이터는 emergency_before_restore 파일로 저장되었습니다.`,
+        text: `복원 완료 (${restoreYear}년, 다른 연도는 유지)${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}. 복원 전 데이터는 emergency_before_restore 파일로 저장되었습니다.`,
       });
       setRestore(null);
     } catch (err) {
@@ -169,7 +194,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [restore, memberActions, offeringActions, donationActions]);
+  }, [restore, restoreYear, memberActions, offeringActions, donationActions]);
 
   return {
     email,
@@ -198,7 +223,7 @@ export function useSettingsPage() {
       { value: 'XLARGE' as const, label: '매우 크게' },
     ],
     backupHelp:
-      '백업 파일(.json)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 복원 직전에는 현재 데이터를 긴급 백업 파일로 먼저 내려받아 데이터 유실을 막습니다.',
+      '백업 파일(.json)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원 직전에는 현재 데이터를 긴급 백업 파일로 먼저 내려받아 데이터 유실을 막습니다.',
     backupDir: settings.autoBackupDir || defaultDir || '(데스크톱 앱에서만 사용 가능)',
     isCustomDir: !!settings.autoBackupDir,
     selectDir,
@@ -209,6 +234,13 @@ export function useSettingsPage() {
     restore,
     confirmRestore,
     cancelRestore: () => setRestore(null),
+    // 연도별 백업·복원 선택
+    backupYearOptions: years,
+    backupYear,
+    setBackupYear: setBackupYearPick,
+    restoreYearOptions: restore?.yearRows ?? [],
+    restoreYear,
+    setRestoreYear: setRestoreYearPick,
     demoOpen,
     openDemo: () => setDemoOpen(true),
     cancelDemo: () => setDemoOpen(false),

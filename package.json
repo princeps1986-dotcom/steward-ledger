@@ -18,9 +18,25 @@
   "build": {
     "appId": "org.church.offering-ledger",
     "productName": "청지기장부",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json", "!node_modules/**/*"],
-    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -46,6 +62,8 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/lodash-es": "^4.17.12",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.3.0",
@@ -55,6 +73,7 @@
     "electron": "^45.3.2",
     "electron-builder": "^26.18.0",
     "fake-indexeddb": "^6.2.8",
+    "jsdom": "^31.0.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
