@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
 import { collectPayload, replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
+import { db } from './db';
 import {
   donationKey,
   getItem,
@@ -11,23 +12,17 @@ import {
   migrateDonationsToMonthly,
   monthWrite,
   readDonationYear,
+  recoverJournal,
   transact,
 } from './storageService';
 
 const d = (id: string, date: string): Donation =>
   ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: '', updatedAt: '' }) as unknown as Donation;
 
-beforeAll(() => {
-  // localforage는 브라우저 전역(window)을 찾으므로 Node 테스트에서는 같은 전역을 흉내냅니다.
-  (globalThis as unknown as { window?: unknown }).window ??= globalThis;
-});
-
 describe('monthly donation storage', () => {
   it('migrates legacy year keys to month keys once and keeps every donation', async () => {
-    const localforage = (await import('localforage')).default;
-    const raw = localforage.createInstance({ name: 'church-offering-ledger', storeName: 'kv' });
-    await raw.setItem('donations_2025', [d('a', '2025-12-28'), d('b', '2025-01-05'), d('c', '2025-12-21')]);
-    await raw.setItem('donations_2026', [d('e', '2026-02-01')]);
+    await db.kv.put([d('a', '2025-12-28'), d('b', '2025-01-05'), d('c', '2025-12-21')], 'donations_2025');
+    await db.kv.put([d('e', '2026-02-01')], 'donations_2026');
     expect(await migrateDonationsToMonthly()).toBe(true);
     expect(await listDonationKeys()).toEqual(['donations_2025-01', 'donations_2025-12', 'donations_2026-02']);
     expect((await getItem<Donation[]>('donations_2025-12'))!.map((x) => x.id)).toEqual(['a', 'c']);
@@ -115,21 +110,50 @@ describe('year-selectable backup and restore', () => {
 });
 
 describe('power-loss recovery', () => {
-  it('replays an unfinished journal before the next transaction overwrites it', async () => {
-    const localforage = (await import('localforage')).default;
-    const raw = localforage.createInstance({ name: 'church-offering-ledger', storeName: 'kv' });
-    // 앞선 저장이 두 키 중 일부만 쓴 채 끝난 상태(저널이 남아 있음)를 만듭니다.
-    await raw.setItem('meta_journal', [
-      { key: 'donations_2030-01', value: [d('p1', '2030-01-06')] },
-      { key: 'audit_logs_2030', value: [] },
-    ]);
-    await transact(async (read) => {
-      const list = [...((await read<Donation[]>(donationKey('2030-02'))) ?? []), d('p2', '2030-02-03')];
-      return { writes: [monthWrite('2030-02', list)], result: 0 };
-    });
-    expect((await getItem<Donation[]>('donations_2030-01'))!.map((x) => x.id)).toEqual(['p1']); // 이전 저널이 먼저 적용됨
-    expect((await getItem<Donation[]>('donations_2030-02'))!.map((x) => x.id)).toEqual(['p2']);
+  it('replays a journal left by the previous (localForage) version once at startup', async () => {
+    // 이전 버전이 커밋 도중 종료되어 저널이 남아 있는 상태를 만듭니다.
+    await db.kv.put(
+      [
+        { key: 'donations_2030-01', value: [d('p1', '2030-01-06')] },
+        { key: 'audit_logs_2030', value: [] },
+      ],
+      'meta_journal',
+    );
+    expect(await recoverJournal()).toBe(true);
+    expect((await getItem<Donation[]>('donations_2030-01'))!.map((x) => x.id)).toEqual(['p1']);
     expect(await getItem('meta_journal')).toBeNull();
+    expect(await recoverJournal()).toBe(false); // 두 번째는 할 일이 없음
+  });
+
+  it('commits all keys of one transaction together or none of them', async () => {
+    await expect(
+      transact(async () => {
+        throw new Error('빌드 도중 실패');
+      }),
+    ).rejects.toThrow('빌드 도중 실패');
+    expect(await getItem('donations_2031-01')).toBeNull(); // 실패한 트랜잭션은 아무것도 남기지 않음
+    // 쓰기 도중 오류(값을 복사할 수 없는 함수)가 나면 같은 트랜잭션의 앞선 쓰기도 취소되어야 합니다.
+    await expect(
+      transact(async () => ({
+        writes: [monthWrite('2031-02', [d('q2', '2031-02-02')]), { key: 'bad', value: () => 1 }],
+        result: 0,
+      })),
+    ).rejects.toBeTruthy();
+    expect(await getItem('donations_2031-02')).toBeNull();
+  });
+
+  it('applies the last write when a key appears twice in one transaction', async () => {
+    await transact(async () => ({
+      writes: [
+        { key: 'donations_2031-03', value: [d('r1', '2031-03-02')] },
+        { key: 'donations_2031-03', value: null },
+        { key: 'donations_2031-04', value: null },
+        { key: 'donations_2031-04', value: [d('r2', '2031-04-06')] },
+      ],
+      result: 0,
+    }));
+    expect(await getItem('donations_2031-03')).toBeNull();
+    expect((await getItem<Donation[]>('donations_2031-04'))!.map((x) => x.id)).toEqual(['r2']);
   });
 });
 

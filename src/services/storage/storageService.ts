@@ -1,13 +1,12 @@
-import localforage from 'localforage';
 import type { Donation } from '../../contexts/types';
+import { db } from './db';
 import { broadcastChanged } from './tabSyncChannel';
 
 /**
- * 헌금 내역은 월별(donations_YYYY-MM), 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다. 저장소 + 저널(redo log) 기반 다중 키 원자적 커밋.
- * localForage는 다중 키 트랜잭션을 제공하지 않으므로, 쓰기 목록을 먼저 저널 키에 기록한 뒤 적용하고,
- * 적용 도중 앱이 종료되면 다음 실행 시 recoverJournal()이 남은 쓰기를 재적용합니다.
+ * 헌금 내역은 월별(donations_YYYY-MM), 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다.
+ * 저장소는 Dexie(IndexedDB)입니다. 여러 키를 읽고 쓰는 한 번의 작업(transact)은 IndexedDB 트랜잭션 하나로 처리되어,
+ * 도중에 앱이 종료돼도 전부 반영되거나 전부 반영되지 않습니다(이전 localForage 시절의 저널 방식은 필요 없어졌습니다).
  */
-const store = localforage.createInstance({ name: 'church-offering-ledger', storeName: 'kv' });
 
 export const KEYS = {
   members: 'members',
@@ -27,6 +26,7 @@ export const KEYS = {
   /** v1.2 헌금 내역 저장 단위를 연도 → 월로 바꾸는 이전을 이미 수행했는지 */
   migrationDonationsMonthly: 'meta_migration_donations_monthly_v1',
   dirty: 'meta_dirty_since_backup',
+  /** 이전(localForage) 버전이 커밋 도중 종료되어 남긴 저널. 시작할 때 recoverJournal()이 한 번 마저 적용하고 지웁니다. */
   journal: 'meta_journal',
 } as const;
 
@@ -51,6 +51,27 @@ export interface Write {
 
 export type Reader = <T>(key: string) => Promise<T | null>;
 
+/** 키 하나 읽기(없으면 null). 트랜잭션 안에서 부르면 그 트랜잭션에 참여합니다. */
+export const getItem = async <T>(key: string): Promise<T | null> => ((await db.kv.get(key)) as T | undefined) ?? null;
+
+const isDataKey = (k: string): boolean =>
+  k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
+
+/** 쓰기 목록을 적용합니다(같은 키는 마지막 쓰기만). 반드시 열려 있는 쓰기 트랜잭션 안에서 부릅니다. */
+async function applyWrites(writes: Write[]): Promise<void> {
+  const last = new Map<string, Write>();
+  for (const w of writes) last.set(w.key, w);
+  const puts: Write[] = [];
+  const removes: string[] = [];
+  for (const w of last.values()) {
+    if (w.value === null) removes.push(w.key);
+    else puts.push(w);
+  }
+  if (removes.length) await db.kv.bulkDelete(removes);
+  if (puts.length) await db.kv.bulkPut(puts.map((w) => w.value), puts.map((w) => w.key));
+}
+
+// 한 번에 하나씩 커밋합니다(앞 작업이 끝난 뒤의 최신 값을 읽도록 하고, 다른 창 알림 순서를 유지).
 let queue: Promise<unknown> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const p = queue.then(fn, fn);
@@ -58,31 +79,9 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
-async function applyWrites(writes: Write[]): Promise<void> {
-  for (const w of writes) {
-    if (w.value === null) await store.removeItem(w.key);
-    else await store.setItem(w.key, w.value);
-  }
-}
-
-const isDataKey = (k: string): boolean =>
-  k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
-
-/** 끝나지 못한 트랜잭션(저널)이 남아 있으면 마저 적용합니다. 값은 절대값이라 여러 번 적용해도 결과가 같습니다. */
-async function replayPending(): Promise<boolean> {
-  const pending = await store.getItem<Write[]>(KEYS.journal);
-  if (!pending) return false;
-  await applyWrites(pending);
-  await store.removeItem(KEYS.journal);
-  return true;
-}
-
-export async function recoverJournal(): Promise<boolean> {
-  return serialize(replayPending);
-}
-
 /**
- * 최신 저장 값을 읽어 쓰기 목록을 만들고 원자적으로 커밋합니다. 모든 트랜잭션은 직렬화됩니다.
+ * 최신 저장 값을 읽어 쓰기 목록을 만들고 하나의 IndexedDB 트랜잭션으로 커밋합니다. build 안에서는 read와
+ * 이 파일의 읽기 함수(getItem·listKeys·listDonationKeys)만 기다려야 합니다(다른 비동기 작업을 기다리면 트랜잭션이 먼저 끝납니다).
  * 데이터 키가 바뀌면 '마지막 백업 이후 변경' 플래그를 세웁니다.
  */
 export function transact<R>(
@@ -90,30 +89,42 @@ export function transact<R>(
   opts: { markDirty?: boolean } = {},
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
-    // 앞선 쓰기가 디스크 부족 등으로 도중에 실패해 저널이 남아 있으면, 새 저널이 그것을 덮어쓰기 전에 먼저 마저 적용합니다.
-    await replayPending();
-    const read: Reader = (key) => store.getItem(key);
-    const { writes, result } = await build(read);
-    if (writes.length === 0) return { writes, result };
-    const all = [...writes];
-    if ((opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) all.push({ key: KEYS.dirty, value: true });
-    await store.setItem(KEYS.journal, all);
-    await applyWrites(all);
-    await store.removeItem(KEYS.journal);
-    broadcastChanged(all.map((w) => w.key));
-    return { writes, result };
+    const out = await db.transaction('rw', db.kv, async () => {
+      const { writes, result } = await build(getItem);
+      const all = [...writes];
+      if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) all.push({ key: KEYS.dirty, value: true });
+      if (all.length > 0) await applyWrites(all);
+      return { writes, result, keys: all.map((w) => w.key) };
+    });
+    if (out.keys.length > 0) broadcastChanged(out.keys);
+    return { writes: out.writes, result: out.result };
   });
 }
 
-export const getItem = <T>(key: string): Promise<T | null> => store.getItem<T>(key);
-
-export async function listKeys(): Promise<string[]> {
-  return store.keys();
+/**
+ * 이전(localForage) 버전이 커밋 도중 종료되어 남긴 저널이 있으면 한 번 마저 적용하고 지웁니다(앱 시작 시).
+ * 값은 절대값이라 여러 번 적용해도 결과가 같습니다. 새 버전은 저널을 만들지 않습니다.
+ */
+export async function recoverJournal(): Promise<boolean> {
+  return serialize(() =>
+    db.transaction('rw', db.kv, async () => {
+      const pending = await getItem<Write[]>(KEYS.journal);
+      if (!pending) return false;
+      await applyWrites(pending);
+      await db.kv.delete(KEYS.journal);
+      return true;
+    }),
+  );
 }
 
-/** 저장된 월별 헌금 키 전체(시간 순) */
+export async function listKeys(): Promise<string[]> {
+  return (await db.kv.toCollection().primaryKeys()).map(String);
+}
+
+/** 저장된 월별 헌금 키 전체(시간 순). 'donations_' 범위만 읽습니다. */
 export async function listDonationKeys(): Promise<string[]> {
-  return (await store.keys()).filter((k) => DONATION_KEY_RE.test(k)).sort();
+  const keys = await db.kv.where(':id').startsWith('donations_').primaryKeys();
+  return keys.map(String).filter((k) => DONATION_KEY_RE.test(k)).sort();
 }
 
 export async function listDonationYears(): Promise<string[]> {
@@ -129,38 +140,37 @@ export async function readDonationYear(read: Reader, year: string): Promise<Dona
 
 /**
  * 이전 버전의 연도별 헌금 키(donations_YYYY)를 월별 키로 한 번만 옮깁니다(앱 시작 시, 화면이 뜨기 전).
- * 월별 쓰기와 연도 키 삭제를 저널로 묶어, 도중에 종료돼도 다음 실행에서 마저 적용됩니다.
+ * 연도 키 하나를 옮기는 작업(월별 쓰기 + 연도 키 삭제)이 트랜잭션 하나라, 도중에 종료돼도 그 연도는 옮기기 전 상태로 남습니다.
  */
 export async function migrateDonationsToMonthly(): Promise<boolean> {
   return serialize(async () => {
-    if ((await store.getItem<boolean>(KEYS.migrationDonationsMonthly)) === true) return false;
+    if ((await getItem<boolean>(KEYS.migrationDonationsMonthly)) === true) return false;
     let moved = false;
-    // 연도 키 하나씩 따로 커밋합니다: 저널은 한 값으로 저장되는데 IndexedDB 값 크기 한도(약 128MB)가 있어
-    // 여러 해를 한 저널에 담으면 데이터가 많은 교회에서 실패할 수 있습니다.
-    for (const k of (await store.keys()).filter((x) => LEGACY_DONATION_KEY_RE.test(x))) {
-      const byMonth = new Map<string, Donation[]>();
-      for (const d of (await store.getItem<Donation[]>(k)) ?? []) {
-        const ym = monthOfDate(d.date);
-        const list = byMonth.get(ym) ?? (await store.getItem<Donation[]>(donationKey(ym))) ?? [];
-        list.push(d);
-        byMonth.set(ym, list);
-      }
-      const writes: Write[] = [...byMonth].map(([ym, list]) => ({ key: donationKey(ym), value: list }));
-      writes.push({ key: k, value: null });
-      await store.setItem(KEYS.journal, writes);
-      await applyWrites(writes);
-      await store.removeItem(KEYS.journal);
-      moved = moved || byMonth.size > 0;
+    for (const k of (await listKeys()).filter((x) => LEGACY_DONATION_KEY_RE.test(x))) {
+      const didMove = await db.transaction('rw', db.kv, async () => {
+        const byMonth = new Map<string, Donation[]>();
+        for (const d of (await getItem<Donation[]>(k)) ?? []) {
+          const ym = monthOfDate(d.date);
+          const list = byMonth.get(ym) ?? (await getItem<Donation[]>(donationKey(ym))) ?? [];
+          list.push(d);
+          byMonth.set(ym, list);
+        }
+        const writes: Write[] = [...byMonth].map(([ym, list]) => ({ key: donationKey(ym), value: list }));
+        writes.push({ key: k, value: null });
+        await applyWrites(writes);
+        return byMonth.size > 0;
+      });
+      moved = moved || didMove;
     }
-    await store.setItem(KEYS.migrationDonationsMonthly, true);
+    await db.kv.put(true, KEYS.migrationDonationsMonthly);
     return moved;
   });
 }
 
 export async function isDirtySinceBackup(): Promise<boolean> {
-  return (await store.getItem<boolean>(KEYS.dirty)) === true;
+  return (await getItem<boolean>(KEYS.dirty)) === true;
 }
 
 export async function clearDirty(): Promise<void> {
-  await serialize(() => store.setItem(KEYS.dirty, false));
+  await serialize(() => db.kv.put(false, KEYS.dirty).then(() => undefined));
 }

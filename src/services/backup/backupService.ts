@@ -190,37 +190,12 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
   });
 }
 
-/** 저널 한 건이 너무 커지지 않도록 한 번에 커밋하는 쓰기의 추정 크기 상한(IndexedDB 값 크기 한도 약 128MB보다 한참 작게) */
-const MAX_BATCH_BYTES = 20_000_000;
-const estimateBytes = (w: Write): number => (Array.isArray(w.value) ? w.value.length * 500 : 1000);
-
-/** 쓰기 목록을 추정 크기 기준으로 나눕니다. 삭제(value=null)는 마지막 묶음으로 보내 새 데이터가 먼저 자리 잡게 합니다. */
-export function splitWrites(writes: Write[], maxBytes = MAX_BATCH_BYTES): Write[][] {
-  const ordered = [...writes.filter((w) => w.value !== null), ...writes.filter((w) => w.value === null)];
-  const batches: Write[][] = [];
-  let cur: Write[] = [];
-  let size = 0;
-  for (const w of ordered) {
-    const n = estimateBytes(w);
-    if (cur.length > 0 && size + n > maxBytes) {
-      batches.push(cur);
-      cur = [];
-      size = 0;
-    }
-    cur.push(w);
-    size += n;
-  }
-  if (cur.length > 0) batches.push(cur);
-  return batches;
-}
-
 /**
  * 백업으로 전체 데이터를 교체합니다. 호출 전에 반드시 긴급 백업을 저장해야 합니다(useSettingsPage).
- * 기존 연도 샤드 중 백업에 없는 연도는 삭제합니다. 보통 크기에서는 하나의 원자적 트랜잭션으로 수행합니다.
- * 데이터가 매우 커서 저널 값이 한도에 가까워지면 여러 번에 나눠 커밋합니다(이 경우 도중에 앱이 꺼지면 일부만 바뀔 수 있으므로 긴급 백업으로 되돌립니다).
+ * 기존 연도 샤드 중 백업에 없는 연도는 삭제합니다. 하나의 원자적 트랜잭션으로 수행되어, 데이터가 아무리 커도
+ * 도중에 실패하면 아무것도 바뀌지 않습니다(월별 키마다 값이 따로라 한 값의 크기 한도에 걸리지도 않습니다).
  */
 export async function replaceAllData(payload: BackupPayload): Promise<void> {
-  const rest: Write[][] = [];
   await transact(async () => {
     const existing = await listKeys();
     const writes: Write[] = [];
@@ -240,14 +215,8 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
     }
     for (const [ym, list] of byMonth) writes.push({ key: donationKey(ym), value: list });
     for (const [y, list] of Object.entries(payload.auditLogsByYear)) writes.push({ key: auditKey(y), value: list });
-    // 같은 키에 대한 삭제→쓰기 순서가 보장되도록 마지막 쓰기만 남깁니다.
-    const last = new Map<string, Write>();
-    for (const w of writes) last.set(w.key, w);
-    const [first = [], ...others] = splitWrites([...last.values()]);
-    rest.push(...others);
-    return { writes: first, result: undefined };
+    return { writes, result: undefined };
   });
-  for (const batch of rest) await transact(async () => ({ writes: batch, result: undefined }));
 }
 
 /**
