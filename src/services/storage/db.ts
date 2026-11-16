@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { Donation } from '../../contexts/types';
 import { applyPendingMigrations } from './schemaUpgrades';
 
 /**
@@ -11,8 +12,8 @@ import { applyPendingMigrations } from './schemaUpgrades';
  */
 export class LedgerDB extends Dexie {
   kv!: Table<unknown, string>;
-  /** 행 단위 헌금 테이블(준비 중: 아직 아무 코드도 읽거나 쓰지 않습니다. 쓰기 전환은 이후 단계). */
-  donations!: Table<{ id: string; date: string; memberId: string | null; offeringTypeId: string }, string>;
+  /** 행 단위 헌금 테이블(준비 중). 월 배열을 쓸 때 함께 기록만 하고(storageService.applyWrites), 아직 읽지는 않습니다. */
+  donations!: Table<Donation, string>;
 
   constructor() {
     super('church-offering-ledger');

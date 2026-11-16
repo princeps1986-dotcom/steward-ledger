@@ -39,6 +39,23 @@ export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction(
 const isDataKey = (k: string): boolean =>
   k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
 
+/**
+ * 월 배열(donations_YYYY-MM)이 바뀔 때 행 단위 테이블(db.donations)도 같은 트랜잭션에서 맞춥니다(이중 기록).
+ * 이전 배열과 비교해 바뀐 행만 쓰고 사라진 행만 지웁니다. 읽기는 아직 월 배열만 씁니다.
+ * shortcut: 비교 비용이 월 건수에 비례합니다. 쓰기를 행 단위로 전환하는 단계에서 이 함수는 없어집니다.
+ */
+async function mirrorMonth(key: string, next: Donation[]): Promise<void> {
+  const prev = ((await db.kv.get(key)) as Donation[] | undefined) ?? [];
+  const before = new Map(prev.map((d) => [d.id, JSON.stringify(d)]));
+  const puts: Donation[] = [];
+  for (const d of next) {
+    if (before.get(d.id) !== JSON.stringify(d)) puts.push(d);
+    before.delete(d.id);
+  }
+  if (before.size) await db.donations.bulkDelete([...before.keys()]);
+  if (puts.length) await db.donations.bulkPut(puts);
+}
+
 /** 쓰기 목록을 적용합니다(같은 키는 마지막 쓰기만). 반드시 열려 있는 쓰기 트랜잭션 안에서 부릅니다. */
 async function applyWrites(writes: Write[]): Promise<void> {
   const last = new Map<string, Write>();
@@ -49,6 +66,8 @@ async function applyWrites(writes: Write[]): Promise<void> {
     if (w.value === null) removes.push(w.key);
     else puts.push(w);
   }
+  for (const k of removes) if (DONATION_KEY_RE.test(k)) await mirrorMonth(k, []);
+  for (const w of puts) if (DONATION_KEY_RE.test(w.key)) await mirrorMonth(w.key, w.value as Donation[]);
   if (removes.length) await db.kv.bulkDelete(removes);
   if (puts.length) await db.kv.bulkPut(puts.map((w) => w.value), puts.map((w) => w.key));
 }
@@ -73,7 +92,7 @@ export function transact<R>(
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
     try {
-      const out = await db.transaction('rw', db.kv, async () => {
+      const out = await db.transaction('rw', db.kv, db.donations, async () => {
         const { writes, result } = await build(getItem);
         const all = [...writes];
         if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) all.push({ key: KEYS.dirty, value: true });
@@ -96,7 +115,7 @@ export function transact<R>(
 export async function recoverJournal(): Promise<boolean> {
   return serialize(async () => {
     try {
-      return await db.transaction('rw', db.kv, async () => {
+      return await db.transaction('rw', db.kv, db.donations, async () => {
         const pending = await getItem<Write[]>(KEYS.journal);
         if (!pending) return false;
         await applyWrites(pending);
