@@ -132,3 +132,29 @@ describe('power-loss recovery', () => {
     expect(await getItem('meta_journal')).toBeNull();
   });
 });
+
+describe('createBackupJson single-stringify', () => {
+  it('produces valid JSON that passes checksum validation', async () => {
+    const { createBackupJson } = await import('../backup/backupService');
+    const { parseAndValidateBackup } = await import('../backup/validation');
+    const text = await createBackupJson();
+    expect(Object.keys(JSON.parse(text))).toEqual(['appVersion', 'schemaVersion', 'exportedAt', 'checksum', 'payload']);
+    expect((await parseAndValidateBackup(text)).ok).toBe(true);
+  });
+});
+
+describe('streaming (v3) backup lines', () => {
+  it('round-trips through parseAndValidateBackup and detects tampering/truncation', async () => {
+    const { backupLines, collectPayload } = await import('../backup/backupService');
+    const { parseAndValidateBackup, sha256Hex } = await import('../backup/validation');
+    await transact(async () => ({ writes: [monthWrite('2026-04', [d('x1', '2026-04-05')]), monthWrite('2026-05', [d('x2', '2026-05-03')])], result: 0 }));
+    let body = '';
+    for await (const l of backupLines()) body += l;
+    const text = `${body}${JSON.stringify({ t: 'end', sha256: await sha256Hex(body) })}\n`;
+    const res = await parseAndValidateBackup(text);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.envelope.payload).toEqual(await collectPayload());
+    expect((await parseAndValidateBackup(text.replace('x1', 'zz'))).ok).toBe(false); // 변조
+    expect((await parseAndValidateBackup(body)).ok).toBe(false); // 끝 줄 없음(잘림)
+  });
+});

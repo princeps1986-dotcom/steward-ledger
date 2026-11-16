@@ -1,3 +1,4 @@
+import { FEATURES } from '../../../config/features';
 import { useMemberImport } from '../../../hooks/useMemberImport';
 import { Modal } from '../../shared/Modal';
 import { normalizePosition } from '../../../services/domain/positions';
@@ -15,8 +16,8 @@ function ImportBody({ onClose }: { onClose(): void }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <label className="btn cursor-pointer">
-          파일 선택 (.csv / .xlsx)
-          <input type="file" accept=".csv,.xlsx" className="hidden" onChange={(e) => void im.onFile(e)} />
+          파일 선택 ({FEATURES.excelImport ? '.csv / .xlsx' : '.csv'})
+          <input type="file" accept={FEATURES.excelImport ? '.csv,.xlsx' : '.csv'} className="hidden" onChange={(e) => void im.onFile(e)} />
         </label>
         <button className="btn" onClick={im.downloadTemplate}>
           양식 다운로드
@@ -24,7 +25,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
         <span className="text-sm text-gray-600">{im.fileName}</span>
       </div>
       <p className="text-xs text-gray-500">
-        컬럼: 이름(필수), 직분, 생년월일(YYYY-MM-DD), 연락처뒷4자리, 세대주여부(Y/N), 세대주이름. CSV는 UTF-8과 한글 엑셀(CP949)을 자동 인식합니다.
+        컬럼: 이름(필수), 직분, 생년월일(YYYY-MM-DD), 연락처뒷4자리, 세대주여부(Y/N), 세대주이름.
       </p>
       {im.error ? <p className="text-sm text-red-600">{im.error}</p> : null}
       {im.stats ? (

@@ -3,7 +3,7 @@ import { useDonationYears } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useSettings, useSettingsActions, useSettingsSelector } from '../contexts/SettingsContext';
 import { buildAutoBackup } from '../services/backup/autoBackupService';
-import { downloadBackup } from '../services/backup/backupService';
+import { saveBackupFile } from '../services/backup/backupService';
 import { formatDateTime } from '../services/domain/dates';
 import { desktop } from '../services/desktopBridge';
 
@@ -99,9 +99,11 @@ export function useBackupReminder(autoBackupFailure: string | null) {
   const backupNow = useCallback(async () => {
     setBusy(true);
     try {
-      await downloadBackup('backup');
+      await saveBackupFile('backup');
       await markBackupDone();
       setDismissed(true);
+    } catch {
+      // 저장 창에서 취소했거나 저장에 실패하면 백업한 것으로 기록하지 않고 안내 배너를 그대로 둡니다.
     } finally {
       setBusy(false);
     }

@@ -59,12 +59,14 @@ export function useDonationEditor() {
     if (!m) return `${target.donorDisplayName} (무명/방문자)`;
     return target.donorDisplayName === m.name ? memberLabel(m) : `${target.donorDisplayName} — ${memberLabel(m)}`;
   }, [target, memberById]);
+  // 선택 목록에는 헌금 종류 화면에서 활성인 종류만 보여 줍니다.
+  // 이 내역의 현재 종류가 비활성이면 값이 엉뚱하게 보이지 않도록 선택 불가(회색)로만 함께 표시합니다.
   const typeOptions = useMemo(
     () =>
       types
         .filter((t) => t.isActive || t.id === target?.offeringTypeId)
         .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((t) => ({ id: t.id, label: t.name })),
+        .map((t) => ({ id: t.id, label: t.isActive ? t.name : `${t.name} (비활성)`, disabled: !t.isActive })),
     [types, target?.offeringTypeId],
   );
 
@@ -90,6 +92,10 @@ export function useDonationEditor() {
         const memo = draft.memo.trim();
         if (memo) next.memo = memo;
         else delete next.memo;
+        // 바뀐 내용이 없으면 의미 없는 수정 이력을 남기지 않습니다.
+        if (next.date === target.date && next.offeringTypeId === target.offeringTypeId && next.amount === target.amount && (next.memo ?? '') === (target.memo ?? '')) {
+          return setError('바뀐 내용이 없습니다. 수정할 항목을 바꿔 주세요.');
+        }
         await updateDonation(target, next, reason);
       }
       close();

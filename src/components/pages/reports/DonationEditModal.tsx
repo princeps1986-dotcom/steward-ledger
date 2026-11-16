@@ -35,7 +35,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 <span className="label">헌금 종류</span>
                 <select className="input" value={d.offeringTypeId} onChange={(ev) => e.setField('offeringTypeId')(ev.target.value)}>
                   {e.typeOptions.map((o) => (
-                    <option key={o.id} value={o.id}>
+                    <option key={o.id} value={o.id} disabled={o.disabled}>
                       {o.label}
                     </option>
                   ))}

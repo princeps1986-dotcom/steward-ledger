@@ -123,9 +123,8 @@ export async function listDonationYears(): Promise<string[]> {
 
 /** 한 해의 헌금 내역(월별 키 12개를 읽어 합침) */
 export async function readDonationYear(read: Reader, year: string): Promise<Donation[]> {
-  const out: Donation[] = [];
-  for (const ym of monthsOfYear(year)) out.push(...((await read<Donation[]>(donationKey(ym))) ?? []));
-  return out;
+  const lists = await Promise.all(monthsOfYear(year).map((ym) => read<Donation[]>(donationKey(ym))));
+  return lists.flatMap((l) => l ?? []);
 }
 
 /**

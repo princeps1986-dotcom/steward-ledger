@@ -12,21 +12,34 @@ export function toChosung(s: string): string {
     .join('');
 }
 
+// 같은 이름의 초성 변환을 반복하지 않도록 캐시합니다(이름 종류는 내역·성도 수보다 훨씬 적음).
+const chosungCache = new Map<string, string>();
+export function chosungOf(s: string): string {
+  let v = chosungCache.get(s);
+  if (v === undefined) {
+    if (chosungCache.size > 20000) chosungCache.clear();
+    v = toChosung(s);
+    chosungCache.set(s, v);
+  }
+  return v;
+}
+
 const isChosungOnly = (q: string): boolean => /^[ㄱ-ㅎ]+$/.test(q);
 
 /** 자동 완성·초성 검색. 연락처 뒷4자리로도 찾을 수 있습니다. */
 export function matchMember(m: Member, query: string): boolean {
   const q = query.replace(/\s/g, '');
   if (q === '') return false;
-  if (isChosungOnly(q)) return toChosung(m.name).includes(q);
+  if (isChosungOnly(q)) return chosungOf(m.name).includes(q);
   if (/^\d{2,4}$/.test(q) && m.phoneLast4?.includes(q)) return true;
   return m.name.includes(q);
 }
 
-export function searchMembers(members: Member[], query: string, limit = 20): Member[] {
+/** includeInactive: 비활성 성도도 찾습니다(과거 내역 조회용). */
+export function searchMembers(members: Member[], query: string, limit = 20, includeInactive = false): Member[] {
   const q = query.replace(/\s/g, '');
   return members
-    .filter((m) => m.isActive && matchMember(m, query))
+    .filter((m) => (includeInactive || m.isActive) && matchMember(m, query))
     .sort((a, b) => {
       // 이름이 쿼리로 시작하는 항목 우선
       const as = a.name.startsWith(q) ? 0 : 1;

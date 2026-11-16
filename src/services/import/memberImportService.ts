@@ -1,5 +1,3 @@
-import ExcelJS from 'exceljs';
-import Papa from 'papaparse';
 import type { Member } from '../../contexts/types';
 import { isValidDateString } from '../domain/dates';
 import { nowIso } from '../domain/ids';
@@ -79,6 +77,7 @@ export async function readImportFile(file: File): Promise<Record<string, string>
   const bytes = new Uint8Array(await file.arrayBuffer());
   const lower = file.name.toLowerCase();
   if (lower.endsWith('.csv')) {
+    const Papa = (await import('papaparse')).default;
     const parsed = Papa.parse<Record<string, string>>(decodeCsvBytes(bytes), {
       header: true,
       skipEmptyLines: 'greedy',
@@ -87,7 +86,7 @@ export async function readImportFile(file: File): Promise<Record<string, string>
     return parsed.data;
   }
   if (lower.endsWith('.xlsx')) {
-    const wb = new ExcelJS.Workbook();
+    const wb = new (await import('exceljs')).default.Workbook();
     await wb.xlsx.load(bytes.buffer as ArrayBuffer);
     const ws = wb.worksheets[0];
     if (!ws) return [];

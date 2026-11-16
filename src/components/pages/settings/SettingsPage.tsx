@@ -14,10 +14,6 @@ export function SettingsPage() {
         <h3 className="font-semibold">
           기본 설정 <span className="ml-1 text-xs font-normal text-gray-500">[설정 저장]을 눌러야 적용됩니다</span>
         </h3>
-        <label className="block">
-          <span className="label">기본 메일 주소 ([메일 저장] 수신인)</span>
-          <input className="input" type="email" value={s.email} onChange={(e) => s.setEmail(e.target.value)} placeholder="finance@example.org" />
-        </label>
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="label">큰 금액 확인 기준 (이 금액 초과 시 확인창)</span>
@@ -88,7 +84,7 @@ export function SettingsPage() {
           </button>
           <label className="btn cursor-pointer">
             백업 파일 복원
-            <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
+            <input type="file" accept=".json,.gz,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -114,7 +110,7 @@ export function SettingsPage() {
         <h3 id="danger-zone-title" className="flex items-center gap-1.5 font-semibold text-red-700">
           <span aria-hidden="true">⚠</span> 위험 구역
         </h3>
-        <p className="text-sm text-red-700">현재 데이터를 지우거나 통째로 바꿉니다. 실행하기 전에 현재 데이터가 긴급 백업 파일로 먼저 내려받아집니다.</p>
+        <p className="text-sm text-red-700">현재 데이터를 지우거나 통째로 바꿉니다. 실행하기 전에 현재 데이터가 긴급 백업 파일로 백업 폴더에 먼저 저장됩니다.</p>
         <div className="flex flex-wrap gap-2">
           <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
             시연 데이터 불러오기
@@ -143,7 +139,7 @@ export function SettingsPage() {
       >
         <div className="space-y-2 text-sm">
           <p>가상의 성도 150명과 헌금 400건(지난 주일 100건, 그 전날 300건), 수정·삭제 이력 6건이 들어갑니다.</p>
-          <p className="text-red-700">실제 교회 데이터가 들어 있는 곳에서는 사용하지 마세요. 지금 데이터가 있으면 먼저 긴급 백업 파일로 내려받습니다.</p>
+          <p className="text-red-700">실제 교회 데이터가 들어 있는 곳에서는 사용하지 마세요. 지금 데이터가 있으면 먼저 긴급 백업 파일로 백업 폴더에 저장합니다.</p>
         </div>
       </Modal>
 
@@ -165,8 +161,8 @@ export function SettingsPage() {
       >
         <div className="space-y-2 text-sm">
           <p className="font-semibold text-red-700">이 작업은 되돌릴 수 없습니다.</p>
-          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 내려받습니다. 필요하면 나중에 [백업 파일 복원]으로 되살릴 수 있습니다.</p>
-          <p className="text-gray-600">테마·메일 주소·백업 주기 같은 환경 설정은 유지됩니다.</p>
+          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 백업 폴더에 저장합니다. 필요하면 나중에 [백업 파일 복원]으로 되살릴 수 있습니다.</p>
+          <p className="text-gray-600">테마·백업 주기 같은 환경 설정은 유지됩니다.</p>
         </div>
       </Modal>
 
@@ -174,7 +170,7 @@ export function SettingsPage() {
         open={!!s.restore}
         onClose={s.cancelRestore}
         title="백업 파일 복원할까요?"
-        description="복원할 연도를 선택하세요. 복원 전 현재 데이터는 긴급 백업 파일로 저장됩니다."
+        description="복원할 연도를 선택하세요."
         footer={
           <>
             <button className="btn" onClick={s.cancelRestore}>
@@ -187,6 +183,9 @@ export function SettingsPage() {
         }
       >
         <div className="space-y-2 text-sm">
+          <p className="rounded border border-amber-400 bg-amber-50 p-2 font-semibold text-amber-900" role="note">
+            ⚠ 복원 전에 현재 데이터가 <u>긴급 백업 파일</u>로 백업 폴더에 먼저 저장됩니다.
+          </p>
           <p>
             파일: <b>{s.restore?.fileName}</b>
           </p>

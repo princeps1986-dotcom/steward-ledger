@@ -1,5 +1,5 @@
 import type { Donation } from '../../contexts/types';
-import { toChosung } from './search';
+import { chosungOf } from './search';
 
 /**
  * 날짜 최신순, 같은 날짜는 입력 시각 최신순 (방금 입력한 내역이 맨 위).
@@ -22,5 +22,5 @@ export function filterByDonor(donations: readonly Donation[], query: string): Do
   const q = query.replace(/\s/g, '');
   if (q === '') return [...donations];
   const chosungOnly = /^[ㄱ-ㅎ]+$/.test(q);
-  return donations.filter((d) => (chosungOnly ? toChosung(d.donorDisplayName).includes(q) : d.donorDisplayName.includes(q)));
+  return donations.filter((d) => (chosungOnly ? chosungOf(d.donorDisplayName).includes(q) : d.donorDisplayName.includes(q)));
 }

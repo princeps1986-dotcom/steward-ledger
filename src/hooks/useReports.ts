@@ -3,7 +3,6 @@ import { useAllAudits, useDonationActions, useDonationMonths, useDonationYears }
 import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useMemberOrderKey, useNameTag } from './useNameTag';
 import { useOfferingTypeById, useOfferingTypes } from '../contexts/OfferingTypeContext';
-import { useSettings } from '../contexts/SettingsContext';
 import type { AuditLog, Donation, Member } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
@@ -16,7 +15,6 @@ import { memberLabel, searchMembers } from '../services/domain/search';
 import { buildReportWorkbook, buildWeeklyWorkbook } from '../services/excel/excelService';
 import { desktop, type SavedFileInfo } from '../services/desktopBridge';
 import { downloadBlob } from '../services/excel/downloadBridge';
-import { isValidEmail, openMailto } from '../services/excel/mailtoProtocol';
 
 export type ReportTab = 'SUMMARY' | 'LIST' | 'PERSONAL' | 'AUDIT';
 
@@ -140,7 +138,7 @@ export type ReportFilters = ReturnType<typeof useReportFilters>;
 
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
-/** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·엑셀·메일 저장 공통). */
+/** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·엑셀 저장 공통). */
 export function withoutTypes<T extends { offeringTypeId: string }>(donations: readonly T[], hidden: ReadonlySet<string>): readonly T[] {
   return hidden.size === 0 ? donations : donations.filter((d) => !hidden.has(d.offeringTypeId));
 }
@@ -152,13 +150,12 @@ const typesWithout = <T extends { id: string }>(types: readonly T[], hidden: Rea
 export function useTypeToggleOptions(f: ReportFilters): { id: string; name: string; isActive: boolean }[] {
   const types = useOfferingTypes();
   return useMemo(() => {
-    const inPeriod = f.isWeek ? f.donations.filter((d) => d.date >= f.week.start && d.date <= f.week.end) : f.donations;
-    const used = new Set(inPeriod.map((d) => d.offeringTypeId));
+    const used = new Set(f.donations.map((d) => d.offeringTypeId)); // f.donations는 주별이면 이미 그 주로 걸러져 있음
     return types
       .filter((t) => t.isActive || used.has(t.id))
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((t) => ({ id: t.id, name: t.name, isActive: t.isActive }));
-  }, [types, f.donations, f.isWeek, f.week]);
+  }, [types, f.donations]);
 }
 
 /** 종합 보고서: 헌금 종류 × 월 매트릭스 */
@@ -172,7 +169,9 @@ export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> =
     const byType = new Map<string, number>();
     const byMonth = new Map<number, number>();
     let total = 0;
+    let anonymousTotal = 0;
     for (const d of donations) {
+      if (d.memberId === null) anonymousTotal += d.amount;
       const m = monthOf(d.date);
       cell.set(`${d.offeringTypeId}|${m}`, (cell.get(`${d.offeringTypeId}|${m}`) ?? 0) + d.amount);
       byType.set(d.offeringTypeId, (byType.get(d.offeringTypeId) ?? 0) + d.amount);
@@ -190,7 +189,7 @@ export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> =
       monthTotals: f.months.map((m) => byMonth.get(m) ?? 0),
       total,
       count: donations.length,
-      anonymousTotal: donations.filter((d) => d.memberId === null).reduce((s, d) => s + d.amount, 0),
+      anonymousTotal,
     };
   }, [types, f.donations, f.months, hidden]);
 }
@@ -214,12 +213,14 @@ export function useDonationListReport(f: ReportFilters) {
   const tagOf = useNameTag();
   const [query, setQuery] = useState('');
   // 정렬·거르기는 헌금 배열만 만들고, 종류 이름·금액 글자·구분 표기는 화면에 그려지는 행만 계산합니다(수십만 건에서도 빠르게).
+  // 입력 칸은 바로 반영하고, 수십만 건을 거르는 계산은 입력이 잠시 멈춘 뒤에 합니다.
+  const appliedQuery = useDebouncedValue(query, 150);
   const { donations, total } = useMemo(() => {
-    const sorted = sortForList(filterByDonor(f.donations, query));
+    const sorted = sortForList(filterByDonor(f.donations, appliedQuery));
     let sum = 0;
     for (const d of sorted) sum += d.amount;
     return { donations: sorted, total: sum };
-  }, [f.donations, query]);
+  }, [f.donations, appliedQuery]);
   const rowAt = useCallback(
     (i: number) => {
       const d = donations[i];
@@ -249,7 +250,7 @@ export function usePersonalReport(f: ReportFilters) {
 
   // 비활성 성도도 과거 내역 조회를 위해 검색 대상에 포함
   const results = useMemo(
-    () => (selected ? [] : searchMembers(members.map((m) => ({ ...m, isActive: true })), query, 15)),
+    () => (selected ? [] : searchMembers(members, query, 15, true)),
     [members, query, selected],
   );
 
@@ -374,11 +375,10 @@ export function useAuditLogTab(f: ReportFilters) {
   }, [audits, typeById, tagOf, isWeek, week, year, months]);
 }
 
-/** 인쇄·엑셀 저장·메일 저장 */
+/** 인쇄·엑셀 저장 */
 export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
   const members = useMembers();
   const types = useOfferingTypes();
-  const settings = useSettings();
   const orderKey = useMemberOrderKey();
   const [busy, setBusy] = useState(false);
   const [message, setMessageState] = useState<string | null>(null);
@@ -390,8 +390,16 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
     setSaved(null);
   }, []);
 
-  // 데스크톱 앱: 엑셀 저장이 끝나면 저장 위치를 받아 [파일 열기] 버튼을 보여 줍니다.
-  useEffect(() => desktop()?.onDownloadDone(setSaved), []);
+  // 데스크톱 앱: 엑셀 저장이 끝나면 저장 위치를 받아 폴더를 열고 [파일 열기] 버튼을 보여 줍니다.
+  useEffect(
+    () =>
+      desktop()?.onDownloadDone((info) => {
+        setMessageState(`${info.name} 저장 완료 — 저장 폴더를 엽니다.`);
+        setSaved(info);
+        void desktop()?.showInFolder(info.path); // 저장이 끝나면 폴더를 자동으로 엽니다.
+      }),
+    [],
+  );
 
   const openSaved = useCallback(async () => {
     if (!saved) return;
@@ -438,7 +446,8 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
     setBusy(true);
     try {
       downloadBlob(await build(), fileName);
-      say(`${fileName} 저장 완료`);
+      // 데스크톱 앱은 저장 창에서 취소할 수 있으므로, 파일이 실제로 저장된 뒤(onDownloadDone)에 '저장 완료'를 알립니다.
+      say(desktop() ? '저장 창에서 위치를 정하면 파일이 저장됩니다.' : `${fileName} 저장 완료`);
     } catch (err) {
       say(`엑셀 생성 실패: ${(err as Error).message}`);
     } finally {
@@ -446,26 +455,26 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
     }
   }, [build, fileName, say]);
 
-  const mailSave = useCallback(async () => {
-    if (!isValidEmail(settings.recipientEmail)) {
-      say('설정 정보 화면에서 기본 메일 주소를 먼저 등록하세요.');
+  // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 고르게 합니다.
+  const savePdf = useCallback(async () => {
+    const d = desktop();
+    if (!d) {
+      say("인쇄 창에서 대상을 'PDF로 저장'으로 고르세요.");
+      window.print();
       return;
     }
     setBusy(true);
+    // 인쇄 중에만 전체 행을 그리는 화면이 있어, 인쇄와 같은 상태가 되도록 이벤트를 직접 보냅니다.
+    window.dispatchEvent(new Event('beforeprint'));
     try {
-      downloadBlob(await build(), fileName);
-      openMailto(
-        settings.recipientEmail,
-        `[헌금 결산] ${f.label}`,
-        `${f.label} 헌금 결산 파일(${fileName})이 다운로드 폴더에 저장되었습니다.\n이 메일에 파일을 첨부하여 보내 주세요.`,
-      );
-      say('메일 앱을 열고 엑셀 파일을 다운로드했습니다. 파일을 직접 첨부하세요.');
+      if (await d.savePdf(fileName.replace(/\.xlsx$/, '.pdf'))) say('PDF를 저장하는 중입니다…');
     } catch (err) {
-      say(`메일 저장 실패: ${(err as Error).message}`);
+      say(`PDF 저장 실패: ${(err as Error).message}`);
     } finally {
+      window.dispatchEvent(new Event('afterprint'));
       setBusy(false);
     }
-  }, [build, fileName, settings.recipientEmail, f.label, say]);
+  }, [fileName, say]);
 
   const fileActions = saved
     ? [
@@ -474,5 +483,5 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
       ]
     : undefined;
 
-  return { busy, message, fileActions, saveExcel, mailSave, print: () => window.print() };
+  return { busy, message, fileActions, saveExcel, savePdf, print: () => window.print() };
 }

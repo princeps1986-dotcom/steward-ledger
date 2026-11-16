@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import type { Donation, Member, OfferingType } from '../../contexts/types';
 import type { WeekRange } from '../domain/calendar';
 import { monthsOfPeriod, periodLabel, yearMonthOf, type PeriodType } from '../domain/dates';
@@ -90,7 +90,7 @@ export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob
   const isMonth = kind === 'MONTH';
   const typeName = (id: string): string => offeringTypes.find((t) => t.id === id)?.name ?? '(삭제된 종류)';
 
-  const wb = new ExcelJS.Workbook();
+  const wb = new (await import('exceljs')).default.Workbook();
   wb.creator = '청지기 장부';
   wb.created = new Date();
   const ws1 = wb.addWorksheet(isMonth ? MONTH_SHEET1 : WEEK_SHEET1);
@@ -180,7 +180,7 @@ export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob
   const familyKeys = [...familyKeySet];
   const familyLabels = buildFamilyLabels(familyKeys, members);
 
-  const wb = new ExcelJS.Workbook();
+  const wb = new (await import('exceljs')).default.Workbook();
   wb.creator = '청지기 장부';
   wb.created = new Date();
   const ws1 = wb.addWorksheet(SHEET1);

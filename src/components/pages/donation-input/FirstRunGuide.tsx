@@ -1,10 +1,11 @@
+import { FEATURES } from '../../../config/features';
 import type { PageKey } from '../../../hooks/useAppShell';
 
 /** 성도가 한 명도 없을 때(처음 사용) 헌금 입력 화면 맨 위에 보여 주는 시작 안내 */
 export function FirstRunGuide({ onNavigate }: { onNavigate(page: PageKey): void }) {
   const steps: { no: number; title: string; desc: string; label: string; page: PageKey }[] = [
     { no: 1, title: '헌금 종류 확인', desc: '십일조·주일헌금 등 교회에서 쓰는 종류와 금액 단추를 확인하세요.', label: '헌금 종류 열기', page: 'offerings' },
-    { no: 2, title: '성도 등록', desc: '성도를 한 명씩 등록하거나 엑셀·CSV 명단을 한 번에 가져오세요.', label: '성도 정보 열기', page: 'members' },
+    { no: 2, title: '성도 등록', desc: `성도를 한 명씩 등록하거나 ${FEATURES.excelImport ? '엑셀·CSV' : 'CSV'} 명단을 한 번에 가져오세요.`, label: '성도 정보 열기', page: 'members' },
     { no: 3, title: '헌금 입력', desc: '이 화면으로 돌아와 성도를 검색하고 금액을 입력합니다. Enter만으로 이어서 입력할 수 있습니다.', label: '', page: 'input' },
   ];
   return (

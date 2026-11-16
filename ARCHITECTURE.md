@@ -86,7 +86,7 @@ src/
 │   ├── domain/         [순수 규칙] 금액·검색·세대·집계·마이그레이션·월 캐시 …
 │   ├── storage/        storageService(저널 트랜잭션·월 키), tabSyncChannel(창 간 동기화)
 │   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
-│   ├── excel/          excelService, downloadBridge, mailtoProtocol
+│   ├── excel/          excelService, downloadBridge
 │   ├── import/         memberImportService (CSV·xlsx 명단)
 │   ├── demo/           demoData (시연 데이터)
 │   └── theme.ts, desktopBridge.ts
@@ -209,7 +209,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 8. 보고서
 
 ### 8.1 선택과 계산의 분리 (250ms 지연)
-`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·엑셀·메일 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
+`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·엑셀 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
 
 ### 8.2 종류별 표
 | 기간 | 표 | 집계 |
@@ -221,7 +221,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * `ReportFilters.personKind('WEEK'|'MONTH'|null)`/`personRange`로 화면·엑셀이 같은 코드를 씁니다.
 * 열 = 활성 종류 + 기간에 쓰인 비활성 종류(`sortOrder` 순) + 장부에만 있는 종류(`(삭제된 종류)`, 합계 일치 보장). 행 키는 `memberId`(동명이인 분리) 또는 `anon:표기명`(같은 무명 합산).
 * 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 엑셀이 같은 `useMemberOrderKey()`를 씁니다.
-* **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·엑셀·메일이 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
+* **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·엑셀이 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
 * **세대 집계 기준**(현재/납부 당시)은 분기·연도 요약과 개인별·세대별 탭에만 쓰이며, 주별·월별 종합 보고서에서는 숨깁니다.
 * 탭은 `reportKey`(주별은 주 시작일, 그 외 `기간:연도:값`)가 바뀌면 [종합 보고서]로 돌아갑니다.
 
@@ -232,7 +232,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **고정 셀:** 합계 행은 `sticky bottom-0`, 머리글 `top-0`, 번호·성도명 열 `left-0/left-10`. `border-collapse` 때문에 사라지는 윗선은 그림자(`shadow`)로 대신 그립니다.
 
 ### 8.4 수정·삭제 이력 범위
-(헌금 수정창 `useDonationEditor`는 날짜·종류·금액·메모만 바꾸며 `memberId`·`donorDisplayName`·세대 스냅샷은 원본을 그대로 유지합니다. 날짜 칸은 `DatePicker`의 `pickOnly`라 달력으로만 고르고, 성도·표기명은 읽기 전용 칸(`donorLabel`)으로만 보여 줍니다.)
+(헌금 수정창 `useDonationEditor`는 날짜·종류·금액·메모만 바꾸며 `memberId`·`donorDisplayName`·세대 스냅샷은 원본을 그대로 유지합니다. 날짜 칸은 `DatePicker`의 `pickOnly`라 달력으로만 고르고, 성도·표기명은 읽기 전용 칸(`donorLabel`)으로만 보여 줍니다. 종류 선택 목록(`typeOptions`)은 활성 종류만이며, 현재 종류가 비활성이면 `disabled` 옵션으로만 함께 보여 줍니다.)
 
 `auditLogsForPeriod`가 변경 전·후 날짜 중 하나라도 기간에 속하면 포함합니다(연도를 옮긴 수정은 두 보고서 모두에 나옴). 이력은 새 연도의 장부에 기록되므로 모든 연도의 이력을 불러온 뒤 거릅니다.
 
@@ -249,7 +249,8 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **수식 인젝션 방어:** 텍스트가 `= + - @ \t \r`로 시작하면 앞에 `'`를 붙입니다(`sanitizeCellText`).
 * **열 너비:** `fitNameColumn`이 이름 데이터만으로 폭을 정합니다(한글 2칸, 여유 6칸, 최소 18·최대 60).
 * **파일명 보호:** OS 금지 문자 `\ / : * ? " < > |`를 `_`로 바꾼 뒤 UTF-8 Blob으로 내려받습니다(`downloadBridge`).
-* [메일 저장]은 `mailtoProtocol`로 기본 메일 앱을 열고, 데스크톱 앱에서는 저장 완료 후 [파일 열기]/[폴더 열기]를 보여 줍니다.
+* [PDF 저장]은 데스크톱 앱에서 `report:save-pdf`(main의 `printToPDF`, `@page` 크기 사용)로 저장 창을 거쳐 저장하고, 웹은 `window.print()`로 대신합니다. 인쇄 전용 렌더링(`useIsPrinting`)을 위해 호출 전후에 `beforeprint`/`afterprint`를 직접 보냅니다.
+* 데스크톱 앱에서는 저장 완료(`download:done`) 시 `showInFolder`로 저장 폴더를 자동으로 열고 [파일 열기]/[폴더 열기]도 보여 줍니다. `recipientEmail` 설정 필드는 저장 데이터 호환을 위해 남겨 두고 화면에서는 쓰지 않습니다.
 
 ## 10. 백업 · 복원 · 초기화
 
@@ -262,7 +263,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 복원 | `restoreBackup(payload, {years, mode})` | 화면은 `mode: 'YEARS'`, 연도 하나 |
 | 전체 교체 | `replaceAllData(payload)` | 시연 데이터·초기화용(단일 트랜잭션, 큰 데이터에는 한도 있음) |
 | 초기화 | `resetAllData()` | 빈 성도·내역·이력 + 새 id의 기본 헌금 종류로 교체(설정 유지) |
-| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 파일로 저장, 최근 10개 보관 |
+| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개 보관. 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip(`backup_….json.gz`)으로 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 수동·긴급 백업은 기존 v2 JSON |
 
 ### 10.1 연도 복원(YEARS)과 다른 PC 백업 병합
 한 트랜잭션에서 ① 선택 연도의 기존 월 키·이력 키를 지우고 ② 백업 내용을 월별로 쓰고 ③ 성도·종류를 **현재 데이터와 대응**시킵니다. 대응 규칙(`mergeRules.planMerge`)은 다음과 같습니다.

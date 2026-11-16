@@ -7,9 +7,9 @@ export interface AutoBackupStatus {
   error?: string;
 }
 
+/** 자동 백업이 끝난 뒤 저장된 파일 경로(내용은 autoBackupWrite로 이미 main에 보냄) */
 export interface AutoBackupPayload {
-  dir: string;
-  json: string;
+  file: string;
 }
 
 export interface SavedFileInfo {
@@ -21,14 +21,24 @@ export interface DesktopApi {
   /** 저장한 파일을 기본 프로그램으로 엽니다. 성공 시 빈 문자열, 실패 시 오류 문구. */
   openFile(path: string): Promise<string>;
   showInFolder(path: string): Promise<boolean>;
+  /** 현재 화면을 PDF로 저장합니다(저장 창에서 취소하면 false). 저장되면 onDownloadDone으로도 알립니다. */
+  savePdf(name: string): Promise<boolean>;
   /** 엑셀(.xlsx) 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
   onDownloadDone(handler: (info: SavedFileInfo) => void): () => void;
   getDefaultBackupDir(): Promise<string>;
   selectBackupDir(): Promise<string | null>;
   getAutoBackupStatus(): Promise<AutoBackupStatus | null>;
   ackAutoBackupStatus(): Promise<void>;
-  /** 종료 직전 main이 요청하면 handler가 백업 내용을 반환합니다(null = 백업 생략). */
+  /** 자동 백업을 줄 단위로 main에 보내 파일로 씁니다: begin → write(여러 번) → end(저장된 경로 반환). */
+  autoBackupBegin(dir: string): Promise<boolean>;
+  autoBackupWrite(line: string): Promise<boolean>;
+  autoBackupEnd(): Promise<string>;
+  /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
+  /** 긴급 백업을 백업 폴더에 대화상자 없이 저장합니다. 실패하면 reject. 저장된 전체 경로를 돌려줍니다. */
+  saveEmergencyBackup(name: string, json: string): Promise<string>;
+  /** 저장 위치를 고르게 해 백업을 저장합니다. 사용자가 취소하면 null. */
+  saveBackupAs(name: string, json: string): Promise<string | null>;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */
   skipBackup(): void;
   /** 백업 실패 후 사용자가 종료를 취소해 앱을 계속 쓰게 된 경우 main이 알려 줍니다. */

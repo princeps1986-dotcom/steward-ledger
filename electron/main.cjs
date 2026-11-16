@@ -6,6 +6,9 @@
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
+const zlib = require('node:zlib');
+const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
 
@@ -14,7 +17,7 @@ const DIST = path.join(__dirname, '..', 'dist');
 const AUTO_BACKUP_KEEP = 10;
 // 이번 실행 중 앱이 저장한 엑셀 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
-const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json$/;
+const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json(\.gz)?$/;
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -66,12 +69,63 @@ if (!app.requestSingleInstanceLock()) {
 
   async function pruneBackups(dir) {
     const all = await fs.readdir(dir);
-    // 쓰다 중단된 임시 파일(backup_….json.tmp)은 지웁니다.
-    for (const n of all.filter((x) => /^backup_\d{8}_\d{6}\.json\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    // 쓰다 중단된 임시 파일(backup_….json.gz.tmp)은 지웁니다.
+    for (const n of all.filter((x) => /^backup_\d{8}_\d{6}\.json(\.gz)?\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
     const names = all.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
     const remove = names.slice(0, Math.max(0, names.length - AUTO_BACKUP_KEEP));
     for (const n of remove) await fs.unlink(path.join(dir, n)).catch(() => undefined);
   }
+
+  // 자동 백업은 렌더러가 월 단위 줄(NDJSON)을 하나씩 보내면 main이 해시를 이어 계산하며 gzip 파일로 바로 씁니다.
+  // 전체 JSON을 메모리에 만들지 않으므로 데이터가 커도 메모리가 한 달치 수준에 머뭅니다.
+  let autoSession = null;
+  async function abortAutoSession() {
+    const s = autoSession;
+    autoSession = null;
+    if (!s) return;
+    s.gz.destroy();
+    s.out.destroy();
+    await fs.unlink(s.tmp).catch(() => undefined);
+  }
+  ipcMain.handle('backup:auto-begin', async (_event, dir) => {
+    await abortAutoSession();
+    const d = typeof dir === 'string' && path.isAbsolute(dir) ? dir : defaultBackupDir();
+    await fs.mkdir(d, { recursive: true });
+    const file = path.join(d, `backup_${stamp()}.json.gz`);
+    const tmp = `${file}.tmp`;
+    const out = fsSync.createWriteStream(tmp);
+    const gz = zlib.createGzip();
+    const session = { file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
+    out.on('error', (e) => (session.error = e));
+    gz.on('error', (e) => (session.error = e));
+    gz.pipe(out);
+    autoSession = session;
+    return true;
+  });
+  ipcMain.handle('backup:auto-write', (_event, line) => {
+    const s = autoSession;
+    if (!s || typeof line !== 'string') throw new Error('자동 백업이 시작되지 않았습니다.');
+    if (s.error) throw s.error;
+    s.hash.update(line);
+    return new Promise((resolve, reject) => s.gz.write(line, (err) => (err ? reject(err) : resolve(true))));
+  });
+  ipcMain.handle('backup:auto-end', async () => {
+    const s = autoSession;
+    if (!s) throw new Error('자동 백업이 시작되지 않았습니다.');
+    if (s.error) throw s.error;
+    // 끝 줄: 앞의 모든 줄에 대한 SHA-256. 복원할 때 이 값으로 파일이 온전한지 확인합니다.
+    const endLine = `${JSON.stringify({ t: 'end', sha256: s.hash.digest('hex') })}\n`;
+    await new Promise((resolve, reject) => {
+      s.out.once('finish', resolve);
+      s.out.once('error', reject);
+      s.gz.end(endLine);
+    });
+    autoSession = null;
+    // 임시 파일에 다 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
+    await fs.rename(s.tmp, s.file);
+    await pruneBackups(path.dirname(s.file)).catch(() => undefined); // 오래된 파일 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
+    return s.file;
+  });
 
   /**
    * 렌더러에 백업 내용을 요청하고 지정 폴더에 기록합니다. 끝날 때까지 기다리며(큰 데이터는 오래 걸릴 수 있음),
@@ -93,23 +147,16 @@ if (!app.requestSingleInstanceLock()) {
         done = true;
         cleanup();
         if (abort) {
+          await abortAutoSession();
           await writeStatus({ ok: false, at: new Date().toISOString(), error: abort });
           return resolve(true);
         }
         if (!payload) return resolve(true); // 비활성 또는 변경 없음
         try {
-          const dir = typeof payload.dir === 'string' && path.isAbsolute(payload.dir) ? payload.dir : defaultBackupDir();
-          if (typeof payload.json !== 'string') throw new Error('잘못된 백업 내용');
-          JSON.parse(payload.json); // 형식 확인
-          await fs.mkdir(dir, { recursive: true });
-          const file = path.join(dir, `backup_${stamp()}.json`);
-          // 임시 파일에 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
-          const tmp = `${file}.tmp`;
-          await fs.writeFile(tmp, payload.json, 'utf8');
-          await fs.rename(tmp, file);
-          await pruneBackups(dir);
-          await writeStatus({ ok: true, at: new Date().toISOString(), file });
+          if (typeof payload.file !== 'string') throw new Error(payload.error || '잘못된 백업 내용');
+          await writeStatus({ ok: true, at: new Date().toISOString(), file: payload.file });
         } catch (err) {
+          await abortAutoSession();
           const msg = String(err && err.message ? err.message : err);
           await writeStatus({ ok: false, at: new Date().toISOString(), error: msg });
           // 백업이 실패했는데 그냥 닫으면 데이터를 지킬 기회를 잃으므로 사용자에게 묻습니다.
@@ -235,7 +282,37 @@ if (!app.requestSingleInstanceLock()) {
     return win;
   }
 
+  // 임시 파일에 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 파일이 남지 않게 합니다.
+  async function writeFileAtomic(file, text) {
+    const tmp = `${file}.tmp`;
+    await fs.writeFile(tmp, text, 'utf8');
+    await fs.rename(tmp, file);
+  }
+  const SAFE_BACKUP_NAME_RE = /^[A-Za-z0-9_-]+\.json$/;
+
   ipcMain.handle('backup:default-dir', () => defaultBackupDir());
+  // 초기화·복원 직전의 긴급 백업: 대화상자 없이 백업 폴더에 저장하고, 실패하면 오류를 던집니다(취소할 수 없음).
+  ipcMain.handle('backup:save-emergency', async (_event, name, json) => {
+    if (typeof name !== 'string' || !SAFE_BACKUP_NAME_RE.test(name) || typeof json !== 'string') throw new Error('잘못된 백업 요청');
+    const dir = defaultBackupDir();
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, name);
+    await writeFileAtomic(file, json);
+    return file;
+  });
+  // 직접 하는 백업: 저장 위치를 고르게 하고, 취소하면 null을 돌려줍니다(저장된 것으로 처리하지 않도록).
+  ipcMain.handle('backup:save-as', async (event, name, json) => {
+    if (typeof name !== 'string' || !SAFE_BACKUP_NAME_RE.test(name) || typeof json !== 'string') throw new Error('잘못된 백업 요청');
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showSaveDialog(win, {
+      title: '백업 파일 저장',
+      defaultPath: path.join(defaultBackupDir(), name),
+      filters: [{ name: '백업 파일', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePath) return null;
+    await writeFileAtomic(res.filePath, json);
+    return res.filePath;
+  });
   ipcMain.handle('backup:select-dir', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const res = await dialog.showOpenDialog(win, { title: '자동 백업 폴더 선택', properties: ['openDirectory', 'createDirectory'] });
@@ -260,6 +337,23 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('file:show', (_event, file) => {
     if (typeof file !== 'string' || !savedFiles.has(file)) return false;
     shell.showItemInFolder(file);
+    return true;
+  });
+
+  // PDF 저장: 현재 화면을 인쇄 모양(A4 가로, @page)대로 PDF로 만들어 저장 위치를 고르게 합니다. 저장하면 download:done으로 알립니다.
+  ipcMain.handle('report:save-pdf', async (event, name) => {
+    if (typeof name !== 'string' || !/^[^\\/:*?"<>|]+\.pdf$/i.test(name)) throw new Error('잘못된 파일 이름');
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showSaveDialog(win, {
+      title: 'PDF 저장',
+      defaultPath: path.join(app.getPath('downloads'), name),
+      filters: [{ name: 'PDF 파일', extensions: ['pdf'] }],
+    });
+    if (res.canceled || !res.filePath) return false;
+    const data = await event.sender.printToPDF({ preferCSSPageSize: true, printBackground: true });
+    await fs.writeFile(res.filePath, data);
+    savedFiles.add(res.filePath);
+    if (!win.isDestroyed()) win.webContents.send('download:done', { path: res.filePath, name: path.basename(res.filePath) });
     return true;
   });
 

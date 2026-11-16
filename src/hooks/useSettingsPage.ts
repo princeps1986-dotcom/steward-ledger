@@ -8,10 +8,9 @@ import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { buildDemoPayload } from '../services/demo/demoData';
-import { collectPayload, downloadBackup, isCompleteYearBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
+import { collectPayload, isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
-import { isValidEmail } from '../services/excel/mailtoProtocol';
 
 interface RestoreCandidate {
   envelope: BackupEnvelope;
@@ -34,7 +33,6 @@ export function useSettingsPage() {
   const donationActions = useDonationActions();
   const years = useDonationYears();
 
-  const [email, setEmail] = useState(settings.recipientEmail);
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
   const [reminderDays, setReminderDays] = useState(String(settings.backupReminderDays));
   const [defaultDir, setDefaultDir] = useState('');
@@ -53,30 +51,27 @@ export function useSettingsPage() {
   const isDesktop = !!desktop();
 
   useEffect(() => {
-    setEmail(settings.recipientEmail);
     setThreshold(formatNumber(settings.largeAmountThreshold));
     setReminderDays(String(settings.backupReminderDays));
-  }, [settings.recipientEmail, settings.largeAmountThreshold, settings.backupReminderDays]);
+  }, [settings.largeAmountThreshold, settings.backupReminderDays]);
 
   useEffect(() => {
     void desktop()?.getDefaultBackupDir().then(setDefaultDir);
   }, []);
 
   const saveGeneral = useCallback(async () => {
-    if (email.trim() && !isValidEmail(email)) return setMessage({ kind: 'error', text: '메일 주소 형식이 올바르지 않습니다.' });
     const t = parseAmount(threshold);
     if (t.kind !== 'ok') return setMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
     const days = Number(reminderDays);
     if (!Number.isInteger(days) || days < 1 || days > 365) return setMessage({ kind: 'error', text: '백업 권고 주기는 1~365일입니다.' });
-    await update({ recipientEmail: email.trim(), largeAmountThreshold: t.value, backupReminderDays: days });
+    await update({ largeAmountThreshold: t.value, backupReminderDays: days });
     setMessage({ kind: 'info', text: '설정을 저장했습니다.' });
-  }, [email, threshold, reminderDays, update]);
+  }, [threshold, reminderDays, update]);
 
   /** 저장 시 정규화되는 값(공백 제거·앞자리 0·쉼표)은 정규화한 뒤 비교해, 저장 후에도 변경으로 남지 않게 합니다. */
   function isGeneralDirty(): boolean {
     const t = parseAmount(threshold);
     return (
-      email.trim() !== settings.recipientEmail ||
       t.kind !== 'ok' ||
       t.value !== settings.largeAmountThreshold ||
       Number(reminderDays) !== settings.backupReminderDays
@@ -96,7 +91,7 @@ export function useSettingsPage() {
     setBusy(true);
     try {
       const all = await isCompleteYearBackup(backupYear); // 다른 연도의 헌금·이력이 없을 때만 전체 백업으로 취급
-      const name = await downloadBackup('backup', [backupYear]);
+      const name = await saveBackupFile('backup', [backupYear]);
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
@@ -107,11 +102,15 @@ export function useSettingsPage() {
     }
   }, [markBackupDone, years, backupYear]);
 
+  /** 자동 백업(.json.gz)은 압축을 풀어서, 그 외(.json)는 그대로 읽습니다. */
+  const readBackupText = (file: File): Promise<string> =>
+    /\.gz$/i.test(file.name) ? new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text() : file.text();
+
   const onRestoreFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const res = await parseAndValidateBackup(await file.text());
+    const res = await parseAndValidateBackup(await readBackupText(file));
     if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
     const p = res.envelope.payload;
     const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
@@ -143,10 +142,10 @@ export function useSettingsPage() {
   const confirmDemo = useCallback(async () => {
     setBusy(true);
     try {
-      // 지금 데이터가 있을 때만 긴급 백업을 내려받습니다(빈 상태에서는 불필요한 파일을 만들지 않음).
+      // 지금 데이터가 있을 때만 긴급 백업을 저장습니다(빈 상태에서는 불필요한 파일을 만들지 않음).
       const cur = await collectPayload();
       const hasData = cur.members.length > 0 || Object.values(cur.donationsByYear).some((l) => l.length > 0);
-      if (hasData) await downloadBackup('emergency_before_demo');
+      if (hasData) await saveEmergencyBackup('emergency_before_demo');
       await replaceAllData(buildDemoPayload());
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({ kind: 'info', text: `시연 데이터를 불러왔습니다.${hasData ? ' 이전 데이터는 emergency_before_demo 파일로 저장되었습니다.' : ''}` });
@@ -162,7 +161,7 @@ export function useSettingsPage() {
     if (resetLeft > 0) return;
     setBusy(true);
     try {
-      await downloadBackup('emergency_before_reset');
+      await saveEmergencyBackup('emergency_before_reset');
       await resetAllData();
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({ kind: 'info', text: '전체 데이터를 초기화했습니다. 초기화 전 데이터는 emergency_before_reset 파일로 저장되었습니다.' });
@@ -181,7 +180,7 @@ export function useSettingsPage() {
     setBusy(true);
     try {
       // 복원 직전 현재 데이터를 긴급 백업으로 내려받습니다.
-      await downloadBackup('emergency_before_restore');
+      await saveEmergencyBackup('emergency_before_restore');
       await restoreBackup(restore.envelope.payload, { years: picked, mode: 'YEARS' });
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({
@@ -197,14 +196,12 @@ export function useSettingsPage() {
   }, [restore, restoreYear, memberActions, offeringActions, donationActions]);
 
   return {
-    email,
-    setEmail,
     threshold,
     setThreshold: (v: string) => setThreshold(formatAmountInput(v)),
     reminderDays,
     setReminderDays: (v: string) => setReminderDays(v.replace(/[^0-9]/g, '').slice(0, 3)),
     saveGeneral,
-    /** [설정 저장]을 눌러야 반영되는 항목(메일·큰 금액 기준·백업 주기)에 저장하지 않은 변경이 있는지 */
+    /** [설정 저장]을 눌러야 반영되는 항목(큰 금액 기준·백업 주기)에 저장하지 않은 변경이 있는지 */
     dirty: isGeneralDirty(),
     isDesktop,
     autoBackupEnabled: settings.autoBackupEnabled,
@@ -223,7 +220,7 @@ export function useSettingsPage() {
       { value: 'XLARGE' as const, label: '매우 크게' },
     ],
     backupHelp:
-      '백업 파일(.json)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원 직전에는 현재 데이터를 긴급 백업 파일로 먼저 내려받아 데이터 유실을 막습니다.',
+      '백업 파일(.json, 자동 백업은 압축된 .json.gz)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원 직전에는 현재 데이터를 긴급 백업 파일로 백업 폴더에 먼저 저장해 데이터 유실을 막습니다.',
     backupDir: settings.autoBackupDir || defaultDir || '(데스크톱 앱에서만 사용 가능)',
     isCustomDir: !!settings.autoBackupDir,
     selectDir,
