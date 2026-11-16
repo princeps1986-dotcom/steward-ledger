@@ -19,16 +19,3 @@ export const DEFAULT_OFFERING_TYPES: OfferingTypeDraft[] = [
  * 기본 나열 + 기본 금액 단추로 바꿉니다. 교회가 직접 설정을 바꾼 항목은 건드리지 않습니다.
  * 변경이 없으면 null을 반환합니다.
  */
-export function migrateOfferingTypesV21(types: readonly OfferingType[]): OfferingType[] | null {
-  const targets = new Map(DEFAULT_OFFERING_TYPES.filter((d) => d.name === '건축헌금' || d.name === '선교헌금').map((d) => [d.name, d]));
-  let changed = false;
-  const next = types.map((t) => {
-    const def = targets.get(t.name);
-    if (def && t.displayArea === 'DROPDOWN' && t.quickAmounts.length === 0) {
-      changed = true;
-      return { ...t, displayArea: 'PRIMARY' as const, quickAmounts: [...def.quickAmounts] };
-    }
-    return t;
-  });
-  return changed ? next : null;
-}

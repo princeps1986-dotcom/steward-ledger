@@ -11,7 +11,6 @@ import {
   listDonationMonths,
   listDonationYears,
   monthWrite,
-  readDonationYear,
   readMonth,
   readRow,
   rowWrite,
@@ -36,7 +35,6 @@ describe('row-per-donation storage', () => {
     expect(ids(await readMonth('2026-01'))).toEqual(['a', 'b']); // 만든 시각(c a < c b) 순서
     expect(ids(await readMonth('2026-02'))).toEqual(['c']);
     expect(await readMonth('2026-03')).toEqual([]);
-    expect(ids(await readDonationYear('2026'))).toEqual(['a', 'b', 'c']);
     expect(await listDonationMonths()).toEqual(['2025-01', '2026-01', '2026-02']);
     expect(await listDonationYears()).toEqual(['2025', '2026']);
   });

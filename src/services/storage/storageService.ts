@@ -9,8 +9,8 @@ import { broadcastChanged } from './tabSyncChannel';
  * 헌금 내역은 행 단위 테이블(db.donations, 기본키 [날짜, id])에 한 건씩 저장하고, 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다.
  * 쓰기 목록(Write)의 헌금 키(donations_YYYY-MM)는 '그 달의 행이 바뀐다'는 표시로 쓰이며(다른 창 알림·백업 이후 변경 표시), 값은 저장되지 않습니다.
  * 저장소는 Dexie(IndexedDB)입니다. 여러 키를 읽고 쓰는 한 번의 작업(transact)은 IndexedDB 트랜잭션 하나로 처리되어,
- * 도중에 앱이 종료돼도 전부 반영되거나 전부 반영되지 않습니다(이전 localForage 시절의 저널 방식은 필요 없어졌습니다).
- * 키 이름·키 규칙은 keys.ts, 데이터베이스 정의와 버전 업그레이드는 db.ts·schemaUpgrades.ts에 있습니다.
+ * 도중에 앱이 종료돼도 전부 반영되거나 전부 반영되지 않습니다.
+ * 키 이름·키 규칙은 keys.ts, 데이터베이스 정의는 db.ts에 있습니다.
  */
 export { KEYS, donationKey, auditKey, DONATION_KEY_RE, AUDIT_KEY_RE, monthOfDate, monthsOfYear } from './keys';
 
@@ -54,7 +54,7 @@ export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction(
 const isDataKey = (k: string): boolean =>
   k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
 
-const monthRange = (ym: string) => db.donations.where('[date+id]').between([`${ym}-`, Dexie.minKey], [`${ym}-￿`, Dexie.maxKey], true, true);
+const monthRange = (ym: string) => db.donations.where('[date+id]').between([`${ym}-`, Dexie.minKey], [`${ym}-\uffff`, Dexie.maxKey], true, true);
 
 async function applyDonationWrite(w: Write): Promise<void> {
   if (w.rowOps) {
@@ -123,24 +123,14 @@ export function transact<R>(
 }
 
 /**
- * 이전(localForage) 버전이 커밋 도중 종료되어 남긴 저널이 있으면 한 번 마저 적용하고 지웁니다(앱 시작 시).
- * 값은 절대값이라 여러 번 적용해도 결과가 같습니다. 새 버전은 저널을 만들지 않습니다.
- * 데이터베이스를 처음 여는 호출이라, 열기에 실패하면(예: 더 새로운 버전의 데이터) 한글 안내 오류를 던집니다.
+ * 데이터베이스를 엽니다(앱 시작 시). 열기에 실패하면(예: 더 새로운 버전의 데이터) 한글 안내 오류를 던집니다.
  */
-export async function recoverJournal(): Promise<boolean> {
-  return serialize(async () => {
-    try {
-      return await db.transaction('rw', db.kv, db.donations, async () => {
-        const pending = await getItem<Write[]>(KEYS.journal);
-        if (!pending) return false;
-        await applyWrites(pending);
-        await db.kv.delete(KEYS.journal);
-        return true;
-      });
-    } catch (e) {
-      throw toStorageError(e);
-    }
-  });
+export async function openStorage(): Promise<void> {
+  try {
+    await db.open();
+  } catch (e) {
+    throw toStorageError(e);
+  }
 }
 
 export async function listKeys(): Promise<string[]> {
@@ -153,12 +143,6 @@ const byEntryOrder = (a: Donation, b: Donation): number =>
 /** 한 달('YYYY-MM')의 헌금을 입력한 순서(만든 시각)대로 읽습니다. 날짜 범위만 읽습니다. */
 export async function readMonth(ym: string): Promise<Donation[]> {
   return (await monthRange(ym).toArray()).sort(byEntryOrder);
-}
-
-/** 한 해('YYYY')의 헌금(입력한 순서) */
-export async function readDonationYear(year: string): Promise<Donation[]> {
-  const rows = await db.donations.where('[date+id]').between([`${year}-`, Dexie.minKey], [`${year}-￿`, Dexie.maxKey], true, true).toArray();
-  return rows.sort(byEntryOrder);
 }
 
 /** 기본키([날짜, id])로 한 건 읽기(없으면 null) */
@@ -179,8 +163,8 @@ export async function listDonationMonths(): Promise<string[]> {
     if (!row) break;
     const ym = row.date.slice(0, 7);
     out.push(ym);
-    const next = `${ym}-￿`;
-    from = [next > row.date ? next : `${row.date} `, Dexie.minKey]; // 어떤 날짜 문자열이어도 앞으로 나아가게
+    const next = `${ym}-\uffff`;
+    from = [next > row.date ? next : `${row.date}\u0000`, Dexie.minKey]; // 어떤 날짜 문자열이어도 앞으로 나아가게
   }
   return out;
 }

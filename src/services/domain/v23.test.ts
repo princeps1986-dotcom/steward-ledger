@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contexts/types';
 import { addQuickAmount, amountToKorean } from './amount';
-import { migrateOfferingTypesV23 } from './migrations';
 import { DEFAULT_OFFERING_TYPES } from './offeringDefaults';
 
 describe('amountToKorean', () => {
@@ -45,13 +44,7 @@ describe('addQuickAmount', () => {
 });
 
 describe('tithe quick amounts (v2.4)', () => {
-  const tithe = (q: number[]) => ({ id: 't', name: '십일조', displayArea: 'PRIMARY' as const, quickAmounts: q, sortOrder: 1, isActive: true });
   it('seed includes 300,000 and 400,000', () => {
     expect(DEFAULT_OFFERING_TYPES.find((t) => t.name === '십일조')!.quickAmounts).toEqual([100000, 200000, 300000, 400000, 500000]);
-  });
-  it('migration adds missing amounts only, keeps custom ones, null when done', () => {
-    const out = migrateOfferingTypesV23([tithe([100000, 200000, 500000, 700000])])!;
-    expect(out[0].quickAmounts).toEqual([100000, 200000, 300000, 400000, 500000, 700000]);
-    expect(migrateOfferingTypesV23(out)).toBeNull();
   });
 });

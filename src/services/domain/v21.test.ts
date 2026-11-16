@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Donation, OfferingType } from '../../contexts/types';
 import { nextAnonymousName } from './anonymous';
 import { buildMonthGrid, formatDateInput, shiftMonth, shiftWeek, weekRangeOf } from './calendar';
-import { DEFAULT_OFFERING_TYPES, migrateOfferingTypesV21 } from './offeringDefaults';
+import { DEFAULT_OFFERING_TYPES } from './offeringDefaults';
 import { positionOptions, POSITIONS } from './positions';
 import { buildWeeklyMatrix } from './weekly';
 
@@ -157,28 +157,6 @@ describe('offering defaults v2.1', () => {
       expect(t.displayArea).toBe('PRIMARY');
       expect(t.quickAmounts.length).toBeGreaterThan(0);
     }
-  });
-  const old = (name: string, displayArea: OfferingType['displayArea'], quickAmounts: number[]): OfferingType => ({
-    id: name,
-    name,
-    displayArea,
-    quickAmounts,
-    sortOrder: 1,
-    isActive: true,
-  });
-  it('migrates only untouched legacy defaults', () => {
-    const migrated = migrateOfferingTypesV21([
-      old('십일조', 'PRIMARY', [100000]),
-      old('건축헌금', 'DROPDOWN', []),
-      old('선교헌금', 'DROPDOWN', [20000]), // 교회가 금액 단추를 직접 설정함 → 유지
-    ])!;
-    expect(migrated[0].quickAmounts).toEqual([100000]);
-    expect(migrated[1]).toMatchObject({ displayArea: 'PRIMARY' });
-    expect(migrated[1].quickAmounts.length).toBeGreaterThan(0);
-    expect(migrated[2]).toMatchObject({ displayArea: 'DROPDOWN', quickAmounts: [20000] });
-  });
-  it('returns null when nothing needs to change', () => {
-    expect(migrateOfferingTypesV21([old('건축헌금', 'PRIMARY', []), old('기타', 'DROPDOWN', [])])).toBeNull();
   });
 });
 

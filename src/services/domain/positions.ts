@@ -17,9 +17,3 @@ export function positionOptions(current: string): string[] {
   const c = normalizePosition(current);
   return c && !(POSITIONS as readonly string[]).includes(c) ? [...POSITIONS, c] : [...POSITIONS];
 }
-
-/** 직분이 '성도'인 성도를 직분 없음으로 바꾼 새 목록 (바꿀 것이 없으면 null) */
-export function clearLegacyPosition<T extends { position: string }>(members: readonly T[]): T[] | null {
-  if (!members.some((m) => m.position.trim() === '성도')) return null;
-  return members.map((m) => (m.position.trim() === '성도' ? { ...m, position: '' } : m));
-}

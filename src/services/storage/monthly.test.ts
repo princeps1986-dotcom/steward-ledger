@@ -2,17 +2,10 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
 import { collectPayload, replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
-import { db } from './db';
-import { applyPendingMigrations, moveDonationsToRows } from './schemaUpgrades';
 import {
-  getItem,
-  KEYS,
   listDonationMonths,
-  listDonationYears,
   monthWrite,
-  readDonationYear,
   readMonth,
-  recoverJournal,
   rowWrite,
   transact,
 } from './storageService';
@@ -21,23 +14,6 @@ const d = (id: string, date: string): Donation =>
   ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: '', updatedAt: '' }) as unknown as Donation;
 
 describe('monthly donation storage', () => {
-  it('migrates legacy year keys to month keys once and keeps every donation', async () => {
-    await db.kv.put([d('a', '2025-12-28'), d('b', '2025-01-05'), d('c', '2025-12-21')], 'donations_2025');
-    await db.kv.put([d('e', '2026-02-01')], 'donations_2026');
-    await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv));
-    expect((await getItem<Donation[]>('donations_2025-12'))!.map((x) => x.id)).toEqual(['a', 'c']);
-    expect(await getItem('donations_2025')).toBeNull();
-    expect(await getItem(KEYS.migrationDonationsMonthly)).toBe(true);
-    await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv)); // 두 번째는 아무것도 하지 않음
-    expect((await getItem<Donation[]>('donations_2025-12'))!.length).toBe(2);
-    // 이어서 월 배열을 행으로 옮기면 월 배열은 사라지고 같은 내역이 행으로 남습니다.
-    await db.transaction('rw', db.kv, db.donations, () => moveDonationsToRows(db.kv, db.donations));
-    expect(await getItem('donations_2025-12')).toBeNull();
-    expect(await listDonationMonths()).toEqual(['2025-01', '2025-12', '2026-02']);
-    expect(await listDonationYears()).toEqual(['2025', '2026']);
-    expect((await readDonationYear('2025')).map((x) => x.id).sort()).toEqual(['a', 'b', 'c']);
-  });
-
   it('writes only the touched month and the month disappears when its last row is deleted', async () => {
     const { writes } = await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('n', '2026-03-01')], deletes: [] })], result: 0 }));
     expect(writes.map((w) => w.key)).toEqual(['donations_2026-03']);
@@ -46,7 +22,8 @@ describe('monthly donation storage', () => {
     expect(await listDonationMonths()).not.toContain('2026-03');
   });
 
-  it('backup round-trips through month keys (collect → replace → collect)', async () => {
+  it('backup round-trips through the donation rows (collect → replace → collect)', async () => {
+    await transact(async () => ({ writes: [monthWrite('2025-12', [d('a', '2025-12-28')]), monthWrite('2026-02', [d('e', '2026-02-01')])], result: 0 }));
     const before = await collectPayload();
     expect(Object.keys(before.donationsByYear).sort()).toEqual(['2025', '2026']);
     await replaceAllData({ ...before, donationsByYear: { '2024': [d('x', '2024-06-02'), d('y', '2024-07-07')] } });
@@ -111,22 +88,7 @@ describe('year-selectable backup and restore', () => {
   });
 });
 
-describe('power-loss recovery', () => {
-  it('replays a journal left by the previous (localForage) version once at startup', async () => {
-    // 이전 버전이 커밋 도중 종료되어 저널이 남아 있는 상태를 만듭니다.
-    await db.kv.put(
-      [
-        { key: 'donations_2030-01', value: [d('p1', '2030-01-06')] },
-        { key: 'audit_logs_2030', value: [] },
-      ],
-      'meta_journal',
-    );
-    expect(await recoverJournal()).toBe(true);
-    expect((await readMonth('2030-01')).map((x) => x.id)).toEqual(['p1']);
-    expect(await getItem('meta_journal')).toBeNull();
-    expect(await recoverJournal()).toBe(false); // 두 번째는 할 일이 없음
-  });
-
+describe('atomic transactions', () => {
   it('commits all keys of one transaction together or none of them', async () => {
     await expect(
       transact(async () => {

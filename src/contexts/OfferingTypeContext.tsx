@@ -44,7 +44,6 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
       }, { markDirty: false });
       setTypes(result);
     } else {
-      // 이전 버전에서 온 데이터의 종류 보정은 데이터베이스 업그레이드 때(schemaUpgrades.ts) 이미 끝났습니다.
       setTypes(stored);
     }
     setLoaded(true);

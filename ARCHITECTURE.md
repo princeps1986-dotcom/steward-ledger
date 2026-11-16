@@ -17,7 +17,7 @@
 11. [입력 화면 설계](#11-입력-화면-설계)
 12. [인쇄, 테마, 달력](#12-인쇄-테마-달력)
 13. [Electron 셸](#13-electron-셸)
-14. [1회 보정(마이그레이션)](#14-1회-보정마이그레이션)
+14. [저장소 버전](#14-저장소-버전)
 15. [성능 측정과 설계 근거](#15-성능-측정과-설계-근거)
 16. [테스트](#16-테스트)
 17. [알려진 한계](#17-알려진-한계)
@@ -58,7 +58,7 @@
 | 분류 | 사용 | 이유 |
 | :--- | :--- | :--- |
 | 기반 | React 19 + TypeScript + Vite | 정적 타입, 빠른 빌드 |
-| 저장 | Dexie (IndexedDB) | 트랜잭션, 범위 조회, 대용량·키 단위 분할 (이전 localForage 데이터를 그대로 읽음) |
+| 저장 | Dexie (IndexedDB) | 트랜잭션, 범위 조회, 행 단위 저장·색인 |
 | 상태 | use-context-selector | 전역 리렌더링 방지 |
 | 스타일 | Tailwind CSS 4 + Radix UI(Dialog·Switch·Tabs) | 접근성 있는 헤드리스 컴포넌트 |
 | 가상 스크롤 | @tanstack/react-virtual | 수천 행에서도 보이는 행만 그림 |
@@ -73,7 +73,7 @@
 
 ```text
 src/
-├── main.tsx            시작: 이전 버전 저널 복구 → 월별 이전(1회) → 화면 렌더 (실패 시 오류 안내)
+├── main.tsx            시작: 저장소 열기 → 화면 렌더 (실패 시 오류 안내)
 ├── App.tsx             메뉴, 페이지 전환
 ├── contexts/           [상태] 데이터 보관과 변경
 │   ├── DonationContext.tsx   헌금: 달 단위 메모리 모델, 저장·수정·삭제·되돌리기
@@ -83,7 +83,7 @@ src/
 ├── hooks/              [화면 로직] useDonationInput, useReports, useSettingsPage,
 │                       useMemberForm, exclusive(연타 방지) …
 ├── services/
-│   ├── domain/         [순수 규칙] 금액·검색·세대·집계·마이그레이션·월 캐시 …
+│   ├── domain/         [순수 규칙] 금액·검색·세대·집계·월 캐시 …
 │   ├── storage/        db(Dexie 정의)·storageService(트랜잭션·월 키), tabSyncChannel(창 간 동기화)
 │   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
 │   ├── excel/          excelService, downloadBridge
@@ -166,8 +166,7 @@ interface BackupEnvelope {    // 백업 파일
 | `members`, `offering_types`, `settings` | 성도 / 헌금 종류 / 설정 |
 | (테이블 `donations`) | **한 건이 한 행**인 헌금. 기본키 `[date, id]`, 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`. 쓰기 목록(`Write`)의 `donations_YYYY-MM` 키는 '그 달의 행이 바뀐다'는 표시일 뿐 값은 저장되지 않음 |
 | `audit_logs_YYYY` | 연도 단위 수정·삭제 이력 |
-| `meta_journal` | 이전(localForage) 버전이 커밋 도중 종료되어 남긴 기록. 시작할 때 한 번 적용하고 지움(새 버전은 만들지 않음) |
-| `meta_migration_*` | 1회 보정 완료 표시(백업 대상 아님) |
+| `meta_dirty_since_backup` | 마지막 백업 이후 데이터가 바뀌었는지(백업 대상 아님) |
 
 한 건을 저장·수정·삭제하면 **그 행만** 씁니다(`rowWrite`; 날짜가 바뀌면 이전 행을 지우고 새 행을 만듦). 달 전체 교체(`monthWrite`)는 백업 복원에서만 씁니다. 월 1.2만 건에서 저장이 월 배열 방식 약 35ms → 0.6ms입니다(fake-indexeddb 측정).
 
@@ -177,15 +176,11 @@ interface BackupEnvelope {    // 백업 파일
 3. 쓸 목록(같은 키는 마지막 쓰기만)을 `bulkPut`·`bulkDelete`로 한 번에 쓴다. 데이터 키가 바뀌면 '마지막 백업 이후 변경' 표시도 같은 트랜잭션에 쓴다.
 4. 커밋되면 다른 창에 바뀐 키를 알린다.
 
-도중에 오류가 나거나 앱이 멈추면 **트랜잭션 전체가 취소**되어 아무것도 바뀌지 않습니다. 저널(redo log)을 직접 만들던 이전 방식은 필요 없어졌습니다. 이전 버전이 커밋 도중 종료되어 `meta_journal`이 남아 있으면 `recoverJournal`이 시작할 때 한 번 마저 적용하고 지웁니다.
+도중에 오류가 나거나 앱이 멈추면 **트랜잭션 전체가 취소**되어 아무것도 바뀌지 않습니다(행 테이블과 `kv`의 쓰기가 한 트랜잭션입니다).
 
-주의: `build` 안에서는 `read`와 `storageService`의 읽기 함수(`getItem`·`listKeys`·`listDonationKeys`)만 기다려야 합니다. 그 밖의 비동기 작업(`fetch`, 해시 계산 등)을 기다리면 IndexedDB 트랜잭션이 먼저 끝나 버립니다.
+주의: `build` 안에서는 `read`와 `storageService`의 읽기 함수(`getItem`·`getMany`·`listKeys`·`readMonth`·`readRow` 등)만 기다려야 합니다. 그 밖의 비동기 작업(`fetch`, 해시 계산 등)을 기다리면 IndexedDB 트랜잭션이 먼저 끝나 버립니다.
 
-값이 키마다 따로 저장되므로 저널 시절의 값 크기 한도(약 128MB) 문제가 없습니다. 월별 이전은 데이터베이스 업그레이드 안에서 처리합니다(14장).
-
-**이전 데이터와의 호환:** 데이터베이스 이름(`church-offering-ledger`)과 저장소(`kv`, 외부 키)를 localForage 때와 같게 두어 기존 데이터를 옮기지 않고 그대로 읽습니다(`legacyUpgrade.test.ts`). 첫 실행 때 데이터베이스 버전이 올라가며(localForage 2 → Dexie 10 → 20) localForage의 빈 확인용 저장소가 지워집니다. 한 번 연 데이터는 이전 버전 앱으로 다시 열 수 없습니다. 버전 4~6(Dexie 60)이 헌금을 행 단위 테이블 `donations`로 옮깁니다. Dexie는 기본키를 직접 못 바꿔 테이블을 지웠다가 `[date+id]`로 다시 만들고, 버전 6 업그레이드(`moveDonationsToRows`)가 기존 월 배열 전체를 행으로 옮긴 뒤 월 배열을 지웁니다. 옮긴 행 수가 (날짜+id가 다른) 내역 수와 다르면 오류를 던져 업그레이드 전체를 취소합니다(아무것도 바뀌지 않음). 기본키를 날짜 앞세운 복합키로 둔 것은 월·연 로드가 날짜 범위 읽기라 `id` 키보다 약 2배 빠르기 때문입니다(월 1.2만 건 기준 한 달 로드 약 43ms로, 월 배열 방식 12ms보다는 느림). 중복 검사는 색인(`findDuplicateRow`), 달 목록은 달마다 한 건씩 건너뛰며(`listDonationMonths`), 헌금 종류 사용 수는 색인으로 셉니다. 월 안의 표시 순서는 입력 시각(`createdAt`) 순입니다.
-
-**일관된 읽기와 오류 안내:** 백업은 `snapshot()`(읽기 전용 트랜잭션)과 `getMany()`(`bulkGet`)로 한 시점의 데이터를 묶음으로 읽습니다. 저장소 오류(공간 부족·더 새로운 버전·열기 실패)는 `storageErrors.ts`의 `StorageError`로 바뀌어 한글 안내가 나가고, 업무 규칙 오류는 그대로 전달됩니다.
+**저장소 구조(버전 1):** 데이터베이스 `church-offering-ledger`에 `kv`(성도·헌금 종류·설정·연도별 이력·백업 표시)와 `donations`(헌금 한 건이 한 행)가 있습니다. 헌금의 기본키는 `[date, id]`라 월·연 로드가 날짜 범위 읽기이고(월 1.2만 건에서 약 43ms), 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`로 중복 검사(약 0.1ms)와 헌금 종류 사용 수를 셉니다. 한 달 안의 표시 순서는 입력 시각(`createdAt`) 순입니다. 아직 실제 사용 데이터가 없는 개발 단계라 이전 형식(localForage·월 배열)에서 옮기는 코드는 두지 않았습니다.
 
 ### 6.3 연도 경계 수정
 날짜를 고쳐 월·연도가 바뀌면 한 트랜잭션에서 ① 이전 달에서 제거 ② 새 달에 삽입 ③ 새 연도 이력에 기록합니다.
@@ -283,9 +278,9 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 ### 10.2 원칙
 * 복원·초기화·시연 데이터 교체 전에는 **항상 긴급 백업**(`emergency_before_*`)을 백업 폴더에 먼저 저장합니다(데스크톱 앱은 대화상자 없이 저장하고 실패하면 중단)(시연 데이터는 기존 데이터가 있을 때만).
-* 복원은 화면에서 연도 하나씩 고르는 방식을 유지합니다. 예전에는 저널 값이 IndexedDB 한도(약 128MB)를 넘지 않게 하려는 이유도 있었지만, Dexie 트랜잭션에서는 값이 키마다 따로라 그 한도 문제는 없습니다.
+* 복원은 화면에서 연도 하나씩 고르는 방식을 유지합니다. Dexie 트랜잭션에서는 값이 키마다 따로라 그 한도 문제는 없습니다.
 * 연도 하나 백업이 저장소 전체와 같을 때만 “마지막 백업” 기록을 갱신합니다(`isCompleteYearBackup`).
-* 설정과 1회 보정 플래그는 백업에 포함되지 않으므로 복원 후 보정이 다시 일어나지 않습니다.
+* 설정은 백업에 포함되지 않으므로 복원해도 그대로 유지됩니다.
 
 ## 11. 입력 화면 설계
 
@@ -319,18 +314,9 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(임시 파일에 쓴 뒤 이름을 바꿔 전원이 꺼져도 잘린 백업 파일이 남지 않음)**끝날 때까지 기다린 뒤 종료**합니다(상한 5분). 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄우고, 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다). 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
 * **파일 열기:** `will-download`가 완료된 `.xlsx`의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
 
-## 14. 1회 보정(마이그레이션)
+## 14. 저장소 버전
 
-Dexie `version(2).upgrade`(`db.ts`)가 화면이 뜨기 전에 `schemaUpgrades.ts`의 `applyPendingMigrations`를 실행합니다. `meta_migration_*` 플래그로 한 번만 실행하며, 보정과 플래그 기록은 같은 업그레이드 트랜잭션입니다. 보정 계산이 이상한 데이터로 오류를 내도 그 보정만 건너뛰어(`safely`) 데이터베이스를 못 여는 일이 없습니다. 사용자가 바꾼 설정은 덮어쓰지 않는 것이 원칙입니다.
-
-| 보정 | 내용 |
-| :--- | :--- |
-| 헌금 종류 (v21~v24) | 건축·선교헌금 기본 나열·금액 단추, 십일조 단추, 구제·특별헌금 추가(같은 이름이 있으면 건드리지 않음) |
-| 설정 | 큰 금액 기준의 옛 기본값(1억)만 1천만으로 보정 |
-| 직분 | 저장된 ‘성도’를 빈 값으로 정리 |
-| 헌금 월별 이전 | `donations_YYYY` → `donations_YYYY-MM`(버전 2 업그레이드), 이어서 행 테이블로 이전하고 월 키 삭제(버전 6 업그레이드) |
-
-시작 때 이전 작업이 실패하면 빈 화면 대신 오류 안내를 보여 줍니다. 내역의 날짜 형식이 깨져 있으면 월 키를 정할 수 없어 그 내역은 이전되지 않습니다(17장).
+`db.ts`는 버전 1 하나만 선언합니다. 개발 단계라 이전 형식에서 옮기는 업그레이드는 없습니다. 저장 구조를 바꿀 때는 `version(n)`을 추가하고 `upgrade`로 옮기세요(Dexie는 기본키를 직접 바꾸지 못해 테이블을 지웠다가 다시 만들어야 합니다). 한 번 연 데이터는 이전 버전의 앱으로 다시 열 수 없습니다. 시작할 때 저장소를 열지 못하면 빈 화면 대신 한글 오류 안내를 보여 줍니다(`openStorage`, `StorageError`).
 
 ## 15. 성능 측정과 설계 근거
 
@@ -353,13 +339,13 @@ Dexie `version(2).upgrade`(`db.ts`)가 화면이 뜨기 전에 `schemaUpgrades.t
 
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
-| 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·마이그레이션·월 캐시·월별 행렬 = 주별 합 |
-| 저장소 | `storage/monthly.test.ts`, `donationsTable.test.ts`, `rowsUpgrade.test.ts` | 월별→행 이전, 행 단위 쓰기·롤백, 색인 중복 검사, 연도 백업·복원 왕복, 버전 3→6 업그레이드 |
+| 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·월 캐시·월별 행렬 = 주별 합 |
+| 저장소 | `storage/monthly.test.ts`, `donationsTable.test.ts`, `storageErrors.test.ts` | 행 단위 쓰기·롤백, 색인 중복 검사, 연도 백업·복원 왕복, 저장소 오류 안내 |
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
 | 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
-| 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 이전 버전이 남긴 저널을 시작할 때 적용, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선(`monthly.test.ts`), localForage 데이터를 그대로 읽는지(`legacyUpgrade.test.ts`) |
+| 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선 |
 
 **자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, Electron 설치본 전체 흐름. 이 부분은 직접 확인해야 합니다.
 
