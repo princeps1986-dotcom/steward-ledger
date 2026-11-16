@@ -1,0 +1,48 @@
+import { useDailyTotals } from '../../../hooks/useDailyTotals';
+import { formatNumber, formatWon } from '../../../services/domain/amount';
+
+/** 선택일 합계 대조 (입력 칸 변경에는 리렌더되지 않도록 별도 컴포넌트로 분리) */
+export function DailyTotalsBar({ date }: { date: string }) {
+  const t = useDailyTotals(date);
+  return (
+    <section className="card flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div>
+        <div className="text-xs text-gray-500">{date} 입력 합계</div>
+        <div className="text-xl font-bold">{formatWon(t.total)}</div>
+        <div className="text-xs text-gray-500">{formatNumber(t.count)}건</div>
+      </div>
+      <div className="flex flex-1 flex-wrap gap-2">
+        {t.rows.map((r) => (
+          <span key={r.id} className="rounded bg-gray-100 px-2 py-1 text-xs">
+            {r.name} <b>{formatNumber(r.amount)}</b>
+          </span>
+        ))}
+      </div>
+      <div className="flex items-end gap-2">
+        <label>
+          <span className="label">현금 계수 금액</span>
+          <input
+            className="input w-40 text-right"
+            inputMode="numeric"
+            id="cash-count-input"
+            value={t.cashInput}
+            onChange={(e) => t.onCashChange(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter: 계수 입력을 마치고 성도 검색으로 돌아갑니다.
+              if (e.key === 'Enter') document.getElementById('member-search-input')?.focus();
+            }}
+            placeholder="직접 세어본 금액 입력 (F4)"
+          />
+        </label>
+        {t.diff === null ? null : t.matched ? (
+          <span className="mb-1.5 rounded bg-emerald-100 px-2 py-1 text-sm font-semibold text-emerald-700">일치</span>
+        ) : (
+          <span className="mb-1.5 rounded bg-red-100 px-2 py-1 text-sm font-semibold text-red-700">
+            차액 {t.diff > 0 ? '+' : ''}
+            {formatNumber(t.diff)}원
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}

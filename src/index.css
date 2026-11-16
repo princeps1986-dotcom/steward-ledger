@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", system-ui, sans-serif;
+    background: var(--app-bg, #f3f5f9);
+    color: var(--app-fg, #1b2433);
+  }
+  input, select, textarea, button { font: inherit; }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50;
+  }
+  /* 자주 쓰는 금액 단추: 테마의 강조색 계열(blue 변수)을 옅게 사용 */
+  .btn-quick {
+    @apply inline-flex items-center justify-center rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 active:bg-blue-200;
+  }
+  /* 보고서 상단 작업 단추(인쇄·엑셀저장·메일저장): 테마 강조색 테두리·옅은 배경 */
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-1 rounded border border-blue-600 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .card { @apply rounded-lg border border-gray-200 bg-white p-4 shadow-sm; }
+  .label { @apply mb-1 block text-xs font-medium text-gray-600; }
+  .th { @apply border-b border-gray-200 bg-gray-50 px-2 py-1.5 text-left text-xs font-semibold text-gray-600; }
+  .td { @apply border-b border-gray-100 px-2 py-1.5 text-sm; }
+}
+
+/*
+ * 화면 테마: Tailwind 팔레트 변수(--color-gray-*, --color-blue-*, --color-slate-*, --color-white)를 테마별로 덮어씁니다.
+ * 컴포넌트는 기존 클래스(bg-blue-600, text-gray-500 …)를 그대로 쓰고 색만 바뀝니다.
+ * @media screen 안에서만 적용하므로 인쇄는 테마와 무관하게 아래 '인쇄 양식 색상' 규칙만 따릅니다.
+ * 기본(속성 없음)이 차분한 블루입니다. html[data-theme]은 설정(theme)에서 지정합니다.
+ */
+@media screen {
+  :root {
+    --app-bg: #f3f5f9; --app-fg: #1b2433; --color-white: #ffffff;
+    --color-gray-50: #eef2f8; --color-gray-100: #e6ebf3; --color-gray-200: #d9dee8; --color-gray-300: #c3cbd9;
+    --color-gray-400: #8a94a7; --color-gray-500: #5b6679; --color-gray-600: #4b566a; --color-gray-700: #343e50; --color-gray-800: #232c3b;
+    --color-blue-50: #e9eefb; --color-blue-100: #dbe5fb; --color-blue-200: #bccdf5; --color-blue-400: #5b84e6; --color-blue-500: #3a6fe0; --color-blue-600: #2457c5; --color-blue-700: #1d47a3;
+    --color-slate-300: #cfd8e6; --color-slate-800: #1f2f46; --color-slate-900: #172337;
+  }
+  :root[data-theme="WARM"] {
+    --app-bg: #fff7ee; --app-fg: #3a2a1e; --color-white: #ffffff;
+    --color-gray-50: #fdf0e0; --color-gray-100: #fbe6d0; --color-gray-200: #f0d9c3; --color-gray-300: #e3c7ab;
+    --color-gray-400: #a98c75; --color-gray-500: #7a604b; --color-gray-600: #6a523f; --color-gray-700: #4e3a2b; --color-gray-800: #3f2e22;
+    --color-blue-50: #fff0e2; --color-blue-100: #ffe3cd; --color-blue-200: #f7c9a6; --color-blue-400: #d9793f; --color-blue-500: #c8643a; --color-blue-600: #b4532a; --color-blue-700: #964320;
+    --color-slate-300: #ffe3d2; --color-slate-800: #b4532a; --color-slate-900: #96431f;
+  }
+  :root[data-theme="CALM"] {
+    --app-bg: #e9eee6; --app-fg: #2a332d; --color-white: #f6f8f3;
+    --color-gray-50: #e3eadf; --color-gray-100: #dde5d9; --color-gray-200: #cfd8cb; --color-gray-300: #b9c4b4;
+    --color-gray-400: #8a978a; --color-gray-500: #58655c; --color-gray-600: #4a564e; --color-gray-700: #38443c; --color-gray-800: #2f3a33;
+    --color-blue-50: #e1eee8; --color-blue-100: #d3e6dc; --color-blue-200: #b3d3c5; --color-blue-400: #5f9a8b; --color-blue-500: #4a8576; --color-blue-600: #3b7366; --color-blue-700: #2f5d52;
+    --color-slate-300: #d3ddd6; --color-slate-800: #47594f; --color-slate-900: #364640;
+  }
+}
+
+/* 10행 단위 구분선(종합 보고서 표·전체 입력 내역): 번호가 10의 배수인 행 아래에 굵은 선 */
+.row-sep { border-bottom-width: 2px; border-bottom-color: var(--color-gray-400); }
+tr.row-sep > td { border-bottom: 2px solid var(--color-gray-400); }
+
+/* 인쇄 양식 색상(설정 printTheme): 흑백(기본) / 화면 테마 3종. 보고서 표·머리글만 사용합니다. */
+:root {
+  --pt-line: #111111; --pt-grid: #555555; --pt-th-bg: #d1d5db; --pt-th-fg: #000000;
+  --pt-name-bg: #f3f4f6; --pt-total-bg: #d1d5db; --pt-title: #000000; --pt-rule: #000000;
+}
+:root[data-print-theme="BLUE"] {
+  --pt-line: #1f2f46; --pt-grid: #7f90ad; --pt-th-bg: #dbe5fb; --pt-th-fg: #0f1f3d;
+  --pt-name-bg: #eef2fb; --pt-total-bg: #dbe5fb; --pt-title: #1f2f46; --pt-rule: #2457c5;
+}
+:root[data-print-theme="WARM"] {
+  --pt-line: #7a3719; --pt-grid: #b98a6a; --pt-th-bg: #fde4cb; --pt-th-fg: #4a220f;
+  --pt-name-bg: #fff3e6; --pt-total-bg: #fde4cb; --pt-title: #964320; --pt-rule: #b4532a;
+}
+:root[data-print-theme="CALM"] {
+  --pt-line: #2f4a40; --pt-grid: #7f9488; --pt-th-bg: #d9e2d5; --pt-th-fg: #1b2a22;
+  --pt-name-bg: #eef3ec; --pt-total-bg: #d9e2d5; --pt-title: #2f5d52; --pt-rule: #3b7366;
+}
+
+.print-only { display: none; }
+.print-flex { display: none; }
+.print-spacer, .print-foot { display: none; }
+
+@media print {
+  /* 여백을 0으로 두면 브라우저가 넣는 머리글(날짜·문서 제목)과 바닥글(주소·쪽번호)이 인쇄되지 않습니다.
+     실제 여백은 App의 main 안쪽 여백(print:px-[8mm] print:py-[5mm])으로 줍니다. 가로(landscape) A4로 인쇄합니다. */
+  @page { size: A4 landscape; margin: 0; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .print-flex { display: flex !important; }
+  .print-spacer { display: table-row !important; }
+  .print-foot { display: table-footer-group !important; }
+  /* 한 페이지에 더 많은 행을 담기 위해 화면 높이 제한을 풀고 글자·행 높이를 줄입니다. */
+  html, body, #root, #root > div { height: auto !important; }
+  .card { box-shadow: none; border: none; padding: 0; background: transparent; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; } /* 페이지가 넘어가도 머리글 행 반복 */
+
+  /* 인쇄 머리글(제목 줄) */
+  .rpt-title-bar { border-bottom: 2px solid var(--pt-rule); }
+  .rpt-title-bar h2 { color: var(--pt-title); }
+
+  /* 보고서 표: 성도명/헌금 종류/합계를 굵기·테두리·바탕색(흑백이면 회색)으로 돋보이게 합니다. */
+  .rpt-table { border-collapse: collapse; width: 100%; font-size: 9.5pt; line-height: 1.2; }
+  /* .th/.td 유틸리티가 글자 크기·줄 높이를 직접 지정하므로 인쇄에서는 셀 단위로 다시 지정합니다. */
+  .rpt-table th, .rpt-table td { font-size: 9.5pt; line-height: 1.25; }
+  .rpt-table th { background: var(--pt-th-bg); color: var(--pt-th-fg); font-weight: 800; border: 1.5px solid var(--pt-line); padding: 2px 6px; }
+  .rpt-table td { border: 1px solid var(--pt-grid); padding: 1.5px 6px; color: #000; }
+  .rpt-table tr.print-spacer td { border: 0; padding: 0; height: 5mm; background: transparent; }
+  /* 성도명 칸: 이름과 (동명이인 표기)가 한 줄에 다 보이도록 화면용 좁은 너비 제한을 풀고 넉넉하게 */
+  .rpt-table th.rpt-name-col, .rpt-table td.rpt-name { width: 9.5rem; min-width: 9.5rem; max-width: none; white-space: nowrap; }
+  .rpt-table .rpt-name { font-weight: 800; background: var(--pt-name-bg); }
+  .rpt-table .rpt-total { font-weight: 800; background: var(--pt-name-bg); }
+  .rpt-table tr.rpt-total-row td { font-weight: 800; background: var(--pt-total-bg); color: var(--pt-th-fg); border-top: 2px solid var(--pt-line); border-bottom: 2px solid var(--pt-line); }
+  tr { page-break-inside: avoid; }
+  .row-sep { border-bottom-color: var(--pt-line); }
+  .rpt-table tr.row-sep > td { border-bottom: 2px solid var(--pt-line); }
+  .rpt-table .rpt-num { text-align: center; font-size: 8.5pt; color: #444; background: var(--pt-name-bg); }
+  .rpt-num { color: #444 !important; }
+
+  /* 개인별 탭: 머리글 행·요약 칩도 같은 색 규칙을 따릅니다. */
+  .rpt-grid-head { background: var(--pt-th-bg) !important; color: var(--pt-th-fg) !important; font-weight: 800; font-size: 10pt; border-bottom: 2px solid var(--pt-line) !important; }
+  .rpt-chip { background: transparent !important; color: #000 !important; border: 1px solid var(--pt-line); font-weight: 700; }
+  .rpt-chip-total { background: var(--pt-total-bg) !important; color: var(--pt-th-fg) !important; border: 2px solid var(--pt-line); font-weight: 800; }
+}
