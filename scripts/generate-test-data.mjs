@@ -381,7 +381,7 @@ yesterdayLines.slice(20, 22).forEach((gone, i) => {
 // ── 백업 파일(체크섬 포함) 기록 ─────────────────────────
 const payload = { members, offeringTypes, donationsByYear, auditLogsByYear };
 const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
-const envelope = { appVersion: '2.0.0', schemaVersion: 2, exportedAt: new Date().toISOString(), checksum, payload };
+const envelope = { appVersion: '1.1.0', schemaVersion: 2, exportedAt: new Date().toISOString(), checksum, payload };
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(envelope), 'utf8');
 
