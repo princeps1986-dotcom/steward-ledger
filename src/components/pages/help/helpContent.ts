@@ -1,9 +1,11 @@
 /** 사용 설명서 내용. 화면(메뉴)별 섹션 → 항목(제목 + 설명 문단) 구조입니다. */
 export interface HelpItem {
   heading: string;
-  /** 문단 목록 (각 항목은 한 줄 이상의 문장) */
-  body: string[];
+  /** 문단 목록. 화면에서는 문장(마침표 뒤)·①②③ 단위로 줄을 나누어 보여 줍니다. highlight 문단은 눈에 띄게 강조합니다. */
+  body: HelpParagraph[];
 }
+
+export type HelpParagraph = string | { text: string; highlight: true };
 
 export interface HelpSection {
   id: string;
@@ -22,7 +24,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       {
         heading: '데이터는 이 컴퓨터에만 저장됩니다',
         body: [
-          '인터넷 없이 동작하며 모든 기록은 이 컴퓨터의 앱 전용 저장 공간에 저장됩니다. 다른 컴퓨터로 옮기려면 [설정 정보]에서 백업 파일을 만들어 옮긴 뒤 복원하세요.',
+          { text: '인터넷 없이 동작하며 모든 기록은 이 컴퓨터의 앱 전용 저장 공간에 저장됩니다. 다른 컴퓨터로 옮기려면 [설정 정보]에서 백업 파일을 만들어 옮긴 뒤 복원하세요.', highlight: true },
           '메뉴는 위쪽에 있습니다: 헌금 입력 → 보고서 → 성도 정보 → 헌금 종류 → 설정 정보 → 사용 설명서.',
         ],
       },
