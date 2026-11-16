@@ -126,7 +126,7 @@ src/
 export interface Member {
   id: string;                     // UUID v4
   name: string;                   // 성명
-  position: string;               // 직분. v2.1부터 등록 UI는 목사/전도사/집사/권사/성도 선택 목록 (기존 데이터·가져오기의 다른 값(예: 집사)도 그대로 저장·표시)
+  position: string;               // 직분. v2.1부터 등록 UI는 목사/전도사/집사/권사 선택 목록, 미선택=빈 값 (기존 데이터·가져오기의 다른 값(예: 집사)도 그대로 저장·표시)
   birthDate?: string;             // 생년월일 (YYYY-MM-DD) - 동명이인 식별용
   phoneLast4?: string;            // 연락처 뒷 4자리 - 동명이인 식별용
   familyGroupId?: string;         // 세대(가족/부부) 그룹 ID = 세대주의 Member.id (세대주 변경 시에도 그룹 ID 유지, isFamilyHead만 이전)
@@ -371,4 +371,10 @@ export interface BackupEnvelope {
 * **기본 종류 추가:** `DEFAULT_OFFERING_TYPES`에 구제헌금(PRIMARY, 6종 금액, 정렬 6)·특별헌금(DROPDOWN, 정렬 7)을 추가했고 신규 시드는 `v24` 플래그를 함께 기록합니다. 기존 설치본은 `migrateOfferingTypesV24`가 이름이 없는 종류만 `newId()`와 `max(sortOrder)+n`으로 추가하며, 같은 이름이 있으면 활성 여부·노출 영역·금액을 포함해 그대로 둡니다(교회 설정 우선). 마이그레이션은 v2.1→v2.2→v2.4→v2.14 순서로 한 트랜잭션에서 실행됩니다.
 * **종류 삭제:** `countUsage`(읽기 전용, 안내용)와 `remove`(검사+삭제를 한 `transact`에서 수행)로 분리했습니다. 사용 건수는 `listDonationYears()`의 모든 샤드에서 `offeringTypeId`가 같은 내역 수이며 감사 로그의 스냅샷은 세지 않습니다(삭제된 종류의 이력은 `(삭제된 종류)`로 표시). UI는 사용 중이면 확인 버튼만 있는 안내 `Modal`, 아니면 취소/삭제 확인 `Modal`입니다. 비활성 종류도 같은 규칙입니다.
 * **성도 목록:** 번호는 표시 순번이며 `birthDate`는 데이터·폼·가져오기에는 남아 있고 목록 열만 뺐습니다(정렬 키 `birthDate`는 도메인 함수에 남아 있으나 화면에서는 쓰지 않음).
+
+### 22) v2.15 직분 '성도' 제거
+
+* `POSITIONS`에서 '성도'를 빼고 기본값을 빈 문자열로 바꿨습니다. 폼 선택 목록 맨 위에 `(없음)`(값 `''`)이 있습니다.
+* `normalizePosition(p)`가 이전 기본값 `'성도'`를 `''`로 취급하며, 목록·엑셀·검색 라벨·동명이인 구분(`nameDisambiguator`)·정렬 순위(`memberOrderKey`, `positionRank`)·가져오기·저장(`applyMemberSave`) 경로에 적용됩니다.
+* 저장 데이터 정리: `MemberProvider.reload`가 플래그 `meta_migration_position_v25`가 없을 때 한 `transact`로 `clearLegacyPosition(members)`를 적용해 '성도'를 `''`로 바꾸고 플래그를 기록합니다(1회). 이후 복원한 예전 백업의 '성도'는 표시 단계에서 정규화됩니다.
 
