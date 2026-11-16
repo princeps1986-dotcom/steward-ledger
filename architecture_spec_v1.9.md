@@ -260,7 +260,7 @@ export interface BackupEnvelope {
   * 입력 칸은 숫자만 받아 `YYYY-MM-DD`로 자동 정리(`formatDateInput`)하며 형식 검증은 기존처럼 소비하는 쪽(`isValidDateString`, `validateDraft`)이 수행합니다. 상위 컴포넌트의 값·핸들러 계약(`string`)은 `<input type="date">`와 동일해 교체 영향이 없습니다.
   * **배치:** 일반 화면은 입력 칸 아래에 `absolute`로 겹쳐 띄웁니다. Radix `Dialog` 안에서는 콘텐츠의 `overflow-y-auto`가 팝업을 잘라내고, `transform` 조상 때문에 `position: fixed`가 어긋나며, 포털로 빼면 포커스 트랩·바깥 클릭 감지와 충돌합니다. 따라서 모달 안(`inline` 속성: 헌금 수정 모달, 성도 등록/수정·빠른 등록 모달의 생년월일)에서는 달력을 흐름 안에 펼쳐 모달 높이가 함께 늘어나게 합니다.
   * 바깥 `mousedown`·`Esc`로 닫고, 달력 버튼은 `tabIndex={-1}`로 기존 Tab/Enter 입력 흐름을 방해하지 않습니다. 적용 위치: 헌금 날짜, 헌금 수정 모달, 성도 생년월일, 주별 보고서.
-* **직분 선택 (`domain/positions.ts`, `useMemberForm`):** `POSITIONS = [목사, 전도사, 집사, 권사, 성도]`, 기본값 `성도`. 편집 대상의 기존 직분이 목록 밖이면 `positionOptions(initial)`이 마지막 항목으로 추가해 유실을 막습니다(목록은 폼 초기값 기준으로 고정). 명단 가져오기(`memberImportService`)의 직분은 기존처럼 자유 텍스트를 받습니다.
+* **직분 선택 (`domain/positions.ts`, `useMemberForm`):** `POSITIONS = [목사, 전도사, 집사, 권사]`, 기본값 빈 문자열(직분 없음, v2.15에서 '성도' 제거). 편집 대상의 기존 직분이 목록 밖이면 `positionOptions(initial)`이 마지막 항목으로 추가해 유실을 막습니다(목록은 폼 초기값 기준으로 고정). 명단 가져오기(`memberImportService`)의 직분은 기존처럼 자유 텍스트를 받습니다.
 * **기본 헌금 종류 (`domain/offeringDefaults.ts`, `OfferingTypeContext.reload`):**
   * 신규 설치 시드: 건축헌금 `[1만, 5만, 10만, 50만, 100만]`, 선교헌금 `[1만, 3만, 5만, 10만]`, 모두 `PRIMARY`.
   * 기존 설치: `meta_migration_offering_v21` 플래그가 없을 때 **한 번만** `migrateOfferingTypesV21`을 `transact`로 실행합니다. `건축헌금`/`선교헌금`이 `DROPDOWN`이고 `quickAmounts`가 비어 있는 경우(= 이전 기본값 그대로)에만 변경하며, 교회가 직접 바꾼 항목은 건드리지 않습니다. 플래그 키는 백업 대상이 아니므로 복원된 데이터에 대해 재보정되지 않습니다.
