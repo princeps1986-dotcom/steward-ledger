@@ -11,6 +11,8 @@ import { applyPendingMigrations } from './schemaUpgrades';
  */
 export class LedgerDB extends Dexie {
   kv!: Table<unknown, string>;
+  /** 행 단위 헌금 테이블(준비 중: 아직 아무 코드도 읽거나 쓰지 않습니다. 쓰기 전환은 이후 단계). */
+  donations!: Table<{ id: string; date: string; memberId: string | null; offeringTypeId: string }, string>;
 
   constructor() {
     super('church-offering-ledger');
@@ -19,6 +21,8 @@ export class LedgerDB extends Dexie {
     this.version(2)
       .stores({ kv: '' })
       .upgrade((tx) => applyPendingMigrations(tx.table('kv')));
+    // 버전 3: 행 단위 헌금 테이블만 추가(비어 있음). 데이터는 건드리지 않습니다.
+    this.version(3).stores({ kv: '', donations: 'id, date, memberId, [date+memberId+offeringTypeId]' });
   }
 }
 
