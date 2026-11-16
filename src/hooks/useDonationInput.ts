@@ -381,10 +381,6 @@ export function useDonationInput() {
     return () => window.removeEventListener('keydown', onKey);
   }, [modalOpen, toggleAnonymous, isFormEmpty, history.length, undo, requestSave]);
 
-  useEffect(() => {
-    focusSearch();
-  }, [focusSearch]);
-
   const setDate = useCallback((v: string) => setDateState(v), []);
   const prevWeek = useCallback(() => setDateState((d) => (isValidDateString(d) ? shiftWeek(d, -1) : lastSunday())), []);
   const nextWeek = useCallback(() => setDateState((d) => (isValidDateString(d) ? shiftWeek(d, 1) : lastSunday())), []);

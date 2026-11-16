@@ -26,7 +26,7 @@ export function DonationInputPage() {
         </div>
         {isMobile ? (
           <p role="note" className="no-print rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold leading-relaxed text-red-600">
-            안내: 이 프로그램은 PC 전용입니다. 모바일에서는 화면 구성과 기능을 보는 시연용으로 봐주세요. 모바일에서는 화면이 잘려보이거나 깨져 보일 수 있습니다.
+            안내: PC 전용입니다. 모바일에서는 화면 구성과 기능을 보는 시연용으로 봐주세요. 모바일에서는 화면이 잘려보이거나 깨져 보일 수 있습니다.
           </p>
         ) : null}
         <section className="card space-y-4">
