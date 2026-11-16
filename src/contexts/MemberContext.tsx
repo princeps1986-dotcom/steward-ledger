@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createContext, useContextSelector } from 'use-context-selector';
 import { nowIso } from '../services/domain/ids';
 import { applyMemberSave, canDeactivate, type MemberDraft, type MemberSaveResult } from '../services/domain/memberRules';
-import { clearLegacyPosition } from '../services/domain/positions';
 import { getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { Member } from './types';
@@ -30,16 +29,6 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(async () => {
-    // v2.15: 이전 기본값 직분 '성도'를 직분 없음으로 1회 정리
-    if ((await getItem<boolean>(KEYS.migrationPositionV25)) !== true) {
-      await transact(async (read) => {
-        const list = (await read<Member[]>(KEYS.members)) ?? [];
-        const cleaned = clearLegacyPosition(list);
-        const writes: { key: string; value: unknown }[] = [{ key: KEYS.migrationPositionV25, value: true }];
-        if (cleaned) writes.push({ key: KEYS.members, value: cleaned });
-        return { writes, result: null };
-      });
-    }
     setMembers((await getItem<Member[]>(KEYS.members)) ?? []);
     setLoaded(true);
   }, []);

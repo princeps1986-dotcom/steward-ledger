@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import { applyPendingMigrations } from './schemaUpgrades';
 
 /**
  * 저장소(IndexedDB) 정의. 이름과 저장소 이름은 이전에 쓰던 localForage와 같게 둡니다(church-offering-ledger / kv).
@@ -14,6 +15,10 @@ export class LedgerDB extends Dexie {
   constructor() {
     super('church-offering-ledger');
     this.version(1).stores({ kv: '' });
+    // 버전 2: 이전 버전에서 오는 데이터를 현재 형식으로 맞추는 1회 보정(헌금 종류·설정·직분·연도→월 키)을 화면이 뜨기 전에 실행합니다.
+    this.version(2)
+      .stores({ kv: '' })
+      .upgrade((tx) => applyPendingMigrations(tx.table('kv')));
   }
 }
 

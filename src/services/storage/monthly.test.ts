@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
 import { collectPayload, replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
 import { db } from './db';
+import { applyPendingMigrations } from './schemaUpgrades';
 import {
   donationKey,
   getItem,
   KEYS,
   listDonationKeys,
   listDonationYears,
-  migrateDonationsToMonthly,
   monthWrite,
   readDonationYear,
   recoverJournal,
@@ -23,14 +23,15 @@ describe('monthly donation storage', () => {
   it('migrates legacy year keys to month keys once and keeps every donation', async () => {
     await db.kv.put([d('a', '2025-12-28'), d('b', '2025-01-05'), d('c', '2025-12-21')], 'donations_2025');
     await db.kv.put([d('e', '2026-02-01')], 'donations_2026');
-    expect(await migrateDonationsToMonthly()).toBe(true);
+    await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv));
     expect(await listDonationKeys()).toEqual(['donations_2025-01', 'donations_2025-12', 'donations_2026-02']);
     expect((await getItem<Donation[]>('donations_2025-12'))!.map((x) => x.id)).toEqual(['a', 'c']);
     expect(await getItem('donations_2025')).toBeNull();
     expect(await listDonationYears()).toEqual(['2025', '2026']);
     expect((await readDonationYear(getItem, '2025')).map((x) => x.id).sort()).toEqual(['a', 'b', 'c']);
     expect(await getItem(KEYS.migrationDonationsMonthly)).toBe(true);
-    expect(await migrateDonationsToMonthly()).toBe(false); // 두 번째는 아무것도 하지 않음
+    await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv)); // 두 번째는 아무것도 하지 않음
+    expect((await readDonationYear(getItem, '2025')).length).toBe(3);
   });
 
   it('writes only the touched month and removes the key when the month becomes empty', async () => {

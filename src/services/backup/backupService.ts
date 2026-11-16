@@ -12,8 +12,10 @@ import {
   auditKey,
   donationKey,
   getItem,
+  getMany,
   listKeys,
   monthOfDate,
+  snapshot,
   transact,
   type Write,
 } from '../storage/storageService';
@@ -25,22 +27,39 @@ import { NDJSON_VERSION, sha256Hex } from './validation';
  * years를 주면 그 연도의 헌금 내역·수정/삭제 이력만 담습니다(성도·헌금 종류는 항상 전부 담음). 생략하면 전체.
  */
 export async function collectPayload(years?: readonly string[]): Promise<BackupPayload> {
-  const keys = await listKeys();
-  const want = years ? new Set(years) : null;
-  const donationsByYear: Record<string, Donation[]> = {};
-  const auditLogsByYear: Record<string, AuditLog[]> = {};
-  for (const k of keys.sort()) {
-    const dm = DONATION_KEY_RE.exec(k)?.[1];
-    if (dm && (!want || want.has(dm.slice(0, 4)))) (donationsByYear[dm.slice(0, 4)] ??= []).push(...((await getItem<Donation[]>(k)) ?? []));
-    const ay = AUDIT_KEY_RE.exec(k)?.[1];
-    if (ay && (!want || want.has(ay))) auditLogsByYear[ay] = (await getItem<AuditLog[]>(k)) ?? [];
-  }
-  return {
-    members: (await getItem<Member[]>(KEYS.members)) ?? [],
-    offeringTypes: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [],
-    donationsByYear,
-    auditLogsByYear,
-  };
+  // 읽기 전용 트랜잭션 하나 안에서 모두 읽으므로, 읽는 도중 다른 저장이 커밋돼도 한 시점의 데이터가 담깁니다.
+  return snapshot(async () => {
+    const keys = (await listKeys()).sort();
+    const want = years ? new Set(years) : null;
+    const monthKeys = keys.filter((k) => {
+      const ym = DONATION_KEY_RE.exec(k)?.[1];
+      return !!ym && (!want || want.has(ym.slice(0, 4)));
+    });
+    const auditKeys = keys.filter((k) => {
+      const y = AUDIT_KEY_RE.exec(k)?.[1];
+      return !!y && (!want || want.has(y));
+    });
+    const [monthLists, auditLists, meta] = await Promise.all([
+      getMany<Donation[]>(monthKeys),
+      getMany<AuditLog[]>(auditKeys),
+      getMany<Member[] | OfferingType[]>([KEYS.members, KEYS.offeringTypes]),
+    ]);
+    const donationsByYear: Record<string, Donation[]> = {};
+    monthKeys.forEach((k, i) => {
+      const year = DONATION_KEY_RE.exec(k)![1].slice(0, 4);
+      (donationsByYear[year] ??= []).push(...(monthLists[i] ?? []));
+    });
+    const auditLogsByYear: Record<string, AuditLog[]> = {};
+    auditKeys.forEach((k, i) => {
+      auditLogsByYear[AUDIT_KEY_RE.exec(k)![1]] = auditLists[i] ?? [];
+    });
+    return {
+      members: (meta[0] as Member[] | null) ?? [],
+      offeringTypes: (meta[1] as OfferingType[] | null) ?? [],
+      donationsByYear,
+      auditLogsByYear,
+    };
+  });
 }
 
 export async function createBackupJson(years?: readonly string[]): Promise<string> {
@@ -55,16 +74,24 @@ export async function createBackupJson(years?: readonly string[]): Promise<strin
  * 자동 백업(v3, 줄 단위 JSON)의 줄을 하나씩 만듭니다. 한 줄은 한 달치 헌금 등 한 덩어리라 메모리에는 한 번에 한 줄만 올라갑니다.
  * 머리글 → 성도 → 헌금 종류 → 월별 헌금/연도별 이력 순이며, 마지막 SHA-256 줄은 main이 붙입니다.
  */
+/** 줄 단위 백업에서 한 번에 읽는 키 수(메모리에 몇 달치만 올라가게 하면서 읽기 횟수를 줄임) */
+const BACKUP_READ_BATCH = 6;
+
 export async function* backupLines(): AsyncGenerator<string> {
   const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
   yield line({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
   yield line({ t: 'members', data: (await getItem<Member[]>(KEYS.members)) ?? [] });
   yield line({ t: 'offeringTypes', data: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [] });
-  for (const k of (await listKeys()).sort()) {
-    const ym = DONATION_KEY_RE.exec(k)?.[1];
-    if (ym) yield line({ t: 'donations', ym, data: (await getItem<Donation[]>(k)) ?? [] });
-    const year = AUDIT_KEY_RE.exec(k)?.[1];
-    if (year) yield line({ t: 'audit', year, data: (await getItem<AuditLog[]>(k)) ?? [] });
+  const dataKeys = (await listKeys()).sort().filter((k) => DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k));
+  for (let i = 0; i < dataKeys.length; i += BACKUP_READ_BATCH) {
+    const chunk = dataKeys.slice(i, i + BACKUP_READ_BATCH);
+    const values = await getMany<Donation[] | AuditLog[]>(chunk);
+    for (const [j, k] of chunk.entries()) {
+      const ym = DONATION_KEY_RE.exec(k)?.[1];
+      if (ym) yield line({ t: 'donations', ym, data: values[j] ?? [] });
+      const year = AUDIT_KEY_RE.exec(k)?.[1];
+      if (year) yield line({ t: 'audit', year, data: values[j] ?? [] });
+    }
   }
 }
 

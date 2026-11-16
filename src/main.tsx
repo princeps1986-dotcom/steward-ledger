@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AppProviders } from './contexts/AppProviders';
-import { migrateDonationsToMonthly, recoverJournal } from './services/storage/storageService';
+import { recoverJournal } from './services/storage/storageService';
 import { applyStoredTheme } from './services/theme';
 import './index.css';
 
@@ -21,10 +21,8 @@ function showFatal(err: unknown): void {
 
 async function bootstrap() {
   try {
-    // 지난 실행에서 커밋 도중 종료된 트랜잭션이 있으면 먼저 재적용합니다.
+    // 이전 버전이 커밋 도중 종료되어 남긴 저널이 있으면 먼저 재적용합니다. 데이터베이스를 여는 첫 호출이라, 이때 버전 업그레이드(1회 보정)도 함께 실행됩니다.
     await recoverJournal();
-    // 이전 버전(연도별) 헌금 저장 형식을 월별로 1회 이전합니다.
-    await migrateDonationsToMonthly();
   } catch (err) {
     // 빈 화면 대신 안내를 보여 줍니다(데이터는 그대로 남아 있고 다음 실행에서 다시 시도).
     showFatal(err);

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
-import { migrateSettingsV22 } from '../services/domain/migrations';
 import { applyTheme } from '../services/theme';
-import { clearDirty, KEYS, transact, type Write } from '../services/storage/storageService';
+import { clearDirty, getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import { DEFAULT_SETTINGS, type AppSettings, type FontScale } from './types';
 
@@ -27,15 +26,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    // v2.2 1회 보정: 큰 금액 확인 기준이 이전 기본값(1억 원) 그대로면 새 기본값(1천만 원)으로 변경
-    const { result: s } = await transact<Partial<AppSettings> | null>(async (read) => {
-      const stored = await read<Partial<AppSettings>>(KEYS.settings);
-      if ((await read<boolean>(KEYS.migrationSettingsV22)) === true) return { writes: [], result: stored };
-      const migrated = migrateSettingsV22(stored);
-      const writes: Write[] = [{ key: KEYS.migrationSettingsV22, value: true }];
-      if (migrated) writes.push({ key: KEYS.settings, value: migrated });
-      return { writes, result: migrated ?? stored };
-    });
+        const s = await getItem<Partial<AppSettings>>(KEYS.settings);
     setSettings({ ...DEFAULT_SETTINGS, ...(s ?? {}) });
     setLoaded(true);
   }, []);

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
 import { newId } from '../services/domain/ids';
-import { migrateOfferingTypesV22, migrateOfferingTypesV23, migrateOfferingTypesV24 } from '../services/domain/migrations';
-import { DEFAULT_OFFERING_TYPES, migrateOfferingTypesV21, type OfferingTypeDraft } from '../services/domain/offeringDefaults';
-import { getItem, KEYS, listDonationKeys, transact, type Write } from '../services/storage/storageService';
+import { DEFAULT_OFFERING_TYPES, type OfferingTypeDraft } from '../services/domain/offeringDefaults';
+import { getItem, KEYS, listDonationKeys, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { Donation, OfferingType } from './types';
 
@@ -41,54 +40,12 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
         const again = await read<OfferingType[]>(KEYS.offeringTypes);
         if (again) return { writes: [], result: again };
         const seeded = DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() }));
-        // 기본값이 이미 v2.1 기준이므로 보정 완료 표시도 함께 기록
-        return {
-          writes: [
-            { key: KEYS.offeringTypes, value: seeded },
-            { key: KEYS.migrationOfferingV21, value: true },
-            { key: KEYS.migrationOfferingV22, value: true },
-            { key: KEYS.migrationOfferingV23, value: true },
-            { key: KEYS.migrationOfferingV24, value: true },
-          ],
-          result: seeded,
-        };
+        return { writes: [{ key: KEYS.offeringTypes, value: seeded }], result: seeded };
       }, { markDirty: false });
       setTypes(result);
     } else {
-      // 버전별 1회 보정 (완료 플래그가 없을 때만 실행)
-      //  v2.1: 이전 기본값(건축·선교 = 드롭다운, 금액 단추 없음)만 기본 나열로 이동
-      //  v2.2: 건축·선교헌금 금액 단추에 빠진 금액 추가
-      //  v2.4: 십일조 금액 단추에 30만·40만 추가
-      //  v2.14: 구제헌금(기본 나열)·특별헌금(기타 드롭다운) 추가
-      const { result } = await transact(async (read) => {
-        const latest = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? stored;
-        const done21 = (await read<boolean>(KEYS.migrationOfferingV21)) === true;
-        const done22 = (await read<boolean>(KEYS.migrationOfferingV22)) === true;
-        const done23 = (await read<boolean>(KEYS.migrationOfferingV23)) === true;
-        const done24 = (await read<boolean>(KEYS.migrationOfferingV24)) === true;
-        if (done21 && done22 && done23 && done24) return { writes: [], result: latest };
-        let list = latest;
-        const writes: Write[] = [];
-        if (!done21) {
-          list = migrateOfferingTypesV21(list) ?? list;
-          writes.push({ key: KEYS.migrationOfferingV21, value: true });
-        }
-        if (!done22) {
-          list = migrateOfferingTypesV22(list) ?? list;
-          writes.push({ key: KEYS.migrationOfferingV22, value: true });
-        }
-        if (!done23) {
-          list = migrateOfferingTypesV23(list) ?? list;
-          writes.push({ key: KEYS.migrationOfferingV23, value: true });
-        }
-        if (!done24) {
-          list = migrateOfferingTypesV24(list) ?? list;
-          writes.push({ key: KEYS.migrationOfferingV24, value: true });
-        }
-        if (list !== latest) writes.push({ key: KEYS.offeringTypes, value: list });
-        return { writes, result: list };
-      });
-      setTypes(result);
+      // 이전 버전에서 온 데이터의 종류 보정은 데이터베이스 업그레이드 때(schemaUpgrades.ts) 이미 끝났습니다.
+      setTypes(stored);
     }
     setLoaded(true);
   }, []);
