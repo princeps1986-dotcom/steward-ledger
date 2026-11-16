@@ -23,6 +23,7 @@ import {
   monthOfDate,
   monthsOfYear,
   monthWrite,
+  findDuplicatesByIndex,
   transact,
   type Write,
 } from '../services/storage/storageService';
@@ -234,6 +235,9 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   }, [applyWrites, refreshYears]);
 
   const findDuplicates = useCallback(async (drafts: DonationDraft[]) => {
+    // 행 테이블이 준비돼 있으면 색인으로 찾고(월 전체를 읽지 않음), 아니면 월 배열에서 찾습니다.
+    const byIndex = await findDuplicatesByIndex(drafts);
+    if (byIndex) return byIndex;
     const cache = new Map<string, Donation[]>();
     const out: (Donation | undefined)[] = [];
     for (const d of drafts) {

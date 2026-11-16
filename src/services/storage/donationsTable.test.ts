@@ -65,3 +65,21 @@ it('removes the old key when a donation date changes inside the same month', asy
   expect(await db.donations.count()).toBe(1);
   expect(await db.donations.get(['2026-01-04', 'a'])).toBeUndefined();
 });
+
+it('finds duplicates by index like the month-array search does, and defers when rows are not ready', async () => {
+  const { findDuplicate } = await import('../domain/donationOps');
+  const { findDuplicatesByIndex } = await import('./storageService');
+  const list = [d('a', '2026-01-04'), { ...d('b', '2026-01-04'), offeringTypeId: 't2' } as Donation, { ...d('c', '2026-01-11'), memberId: null } as Donation];
+  await put('2026-01', list);
+  const drafts = [
+    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't1' },
+    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't2' },
+    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't9' },
+    { date: '2026-01-11', memberId: null, offeringTypeId: 't1' },
+  ];
+  expect(await findDuplicatesByIndex(drafts)).toBeNull(); // 준비 표시가 없으면 월 배열 방식으로
+  await db.kv.put(true, 'meta_donation_rows_ready_v1');
+  const byIndex = await findDuplicatesByIndex(drafts);
+  expect(byIndex!.map((x) => x?.id)).toEqual(drafts.map((x) => findDuplicate(list, x as never)?.id));
+  expect(byIndex!.map((x) => x?.id)).toEqual(['a', 'b', undefined, undefined]);
+});

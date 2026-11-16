@@ -162,3 +162,16 @@ export async function isDirtySinceBackup(): Promise<boolean> {
 export async function clearDirty(): Promise<void> {
   await serialize(() => db.kv.put(false, KEYS.dirty).then(() => undefined));
 }
+
+/**
+ * [날짜+성도+헌금 종류]가 같은 기존 내역을 행 테이블의 색인으로 찾습니다(무명은 중복 없음).
+ * 행 테이블이 월 배열과 같게 채워졌다는 표시가 없으면 null을 돌려주니, 부르는 쪽이 월 배열 방식으로 찾으세요.
+ */
+export async function findDuplicatesByIndex(drafts: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>[]): Promise<(Donation | undefined)[] | null> {
+  if ((await getItem<boolean>(KEYS.donationRowsReady)) !== true) return null;
+  return Promise.all(
+    drafts.map((d) =>
+      d.memberId === null ? undefined : db.donations.where('[date+memberId+offeringTypeId]').equals([d.date, d.memberId, d.offeringTypeId]).first(),
+    ),
+  );
+}
