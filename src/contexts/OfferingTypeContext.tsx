@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createContext, useContextSelector } from 'use-context-selector';
 import { newId } from '../services/domain/ids';
 import { DEFAULT_OFFERING_TYPES, type OfferingTypeDraft } from '../services/domain/offeringDefaults';
-import { getItem, KEYS, listDonationKeys, transact } from '../services/storage/storageService';
+import { countDonationsOfType, getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
-import type { Donation, OfferingType } from './types';
+import type { OfferingType } from './types';
 
 export type { OfferingTypeDraft };
 
@@ -76,11 +76,7 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const countUsage = useCallback(async (id: string) => {
-    let used = 0;
-    for (const k of await listDonationKeys()) {
-      used += ((await getItem<Donation[]>(k)) ?? []).filter((d) => d.offeringTypeId === id).length;
-    }
-    return used;
+    return countDonationsOfType(id);
   }, []);
 
   const remove = useCallback(async (id: string) => {
@@ -88,10 +84,7 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
     const { result } = await transact<{ kind: 'deleted'; list: OfferingType[] } | { kind: 'used'; count: number } | { kind: 'missing' }>(async (read) => {
       const latest = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
       if (!latest.some((t) => t.id === id)) return { writes: [], result: { kind: 'missing' } };
-      let used = 0;
-      for (const k of await listDonationKeys()) {
-        used += ((await read<Donation[]>(k)) ?? []).filter((d) => d.offeringTypeId === id).length;
-      }
+      const used = await countDonationsOfType(id);
       if (used > 0) return { writes: [], result: { kind: 'used', count: used } };
       const list = latest.filter((t) => t.id !== id);
       return { writes: [{ key: KEYS.offeringTypes, value: list }], result: { kind: 'deleted', list } };

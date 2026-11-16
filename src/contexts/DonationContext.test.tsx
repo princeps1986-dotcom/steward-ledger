@@ -8,13 +8,13 @@ import { donationKey, getItem, monthWrite, transact } from '../services/storage/
 import { DonationProvider, useDonationMonths, useDonationSelector } from './DonationContext';
 import type { AuditLog, Donation, DonationDraft } from './types';
 
-// 읽기 실패를 흉내 내기 위해 getItem만 바꿔 끼웁니다(나머지는 실제 저장소 그대로).
+// 읽기 실패를 흉내 내기 위해 readMonth만 바꿔 끼웁니다(나머지는 실제 저장소 그대로).
 const failing = vi.hoisted(() => ({ keys: new Set<string>() }));
 vi.mock('../services/storage/storageService', async (orig) => {
   const real = await orig<typeof import('../services/storage/storageService')>();
   return {
     ...real,
-    getItem: (key: string) => (failing.keys.has(key) ? Promise.reject(new Error('읽기 실패')) : real.getItem(key)),
+    readMonth: (ym: string) => (failing.keys.has(`donations_${ym}`) ? Promise.reject(new Error('읽기 실패')) : real.readMonth(ym)),
   };
 });
 

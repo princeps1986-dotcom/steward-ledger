@@ -3,16 +3,17 @@ import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
 import { collectPayload, replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
 import { db } from './db';
-import { applyPendingMigrations } from './schemaUpgrades';
+import { applyPendingMigrations, moveDonationsToRows } from './schemaUpgrades';
 import {
-  donationKey,
   getItem,
   KEYS,
-  listDonationKeys,
+  listDonationMonths,
   listDonationYears,
   monthWrite,
   readDonationYear,
+  readMonth,
   recoverJournal,
+  rowWrite,
   transact,
 } from './storageService';
 
@@ -24,32 +25,32 @@ describe('monthly donation storage', () => {
     await db.kv.put([d('a', '2025-12-28'), d('b', '2025-01-05'), d('c', '2025-12-21')], 'donations_2025');
     await db.kv.put([d('e', '2026-02-01')], 'donations_2026');
     await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv));
-    expect(await listDonationKeys()).toEqual(['donations_2025-01', 'donations_2025-12', 'donations_2026-02']);
     expect((await getItem<Donation[]>('donations_2025-12'))!.map((x) => x.id)).toEqual(['a', 'c']);
     expect(await getItem('donations_2025')).toBeNull();
-    expect(await listDonationYears()).toEqual(['2025', '2026']);
-    expect((await readDonationYear(getItem, '2025')).map((x) => x.id).sort()).toEqual(['a', 'b', 'c']);
     expect(await getItem(KEYS.migrationDonationsMonthly)).toBe(true);
     await db.transaction('rw', db.kv, () => applyPendingMigrations(db.kv)); // 두 번째는 아무것도 하지 않음
-    expect((await readDonationYear(getItem, '2025')).length).toBe(3);
+    expect((await getItem<Donation[]>('donations_2025-12'))!.length).toBe(2);
+    // 이어서 월 배열을 행으로 옮기면 월 배열은 사라지고 같은 내역이 행으로 남습니다.
+    await db.transaction('rw', db.kv, db.donations, () => moveDonationsToRows(db.kv, db.donations));
+    expect(await getItem('donations_2025-12')).toBeNull();
+    expect(await listDonationMonths()).toEqual(['2025-01', '2025-12', '2026-02']);
+    expect(await listDonationYears()).toEqual(['2025', '2026']);
+    expect((await readDonationYear('2025')).map((x) => x.id).sort()).toEqual(['a', 'b', 'c']);
   });
 
-  it('writes only the touched month and removes the key when the month becomes empty', async () => {
-    const { writes } = await transact(async (read) => {
-      const list = [...((await read<Donation[]>(donationKey('2026-03'))) ?? []), d('n', '2026-03-01')];
-      return { writes: [monthWrite('2026-03', list)], result: 0 };
-    });
+  it('writes only the touched month and the month disappears when its last row is deleted', async () => {
+    const { writes } = await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('n', '2026-03-01')], deletes: [] })], result: 0 }));
     expect(writes.map((w) => w.key)).toEqual(['donations_2026-03']);
-    expect((await getItem<Donation[]>('donations_2026-03'))!.map((x) => x.id)).toEqual(['n']);
-    await transact(async () => ({ writes: [monthWrite('2026-03', [])], result: 0 }));
-    expect(await getItem('donations_2026-03')).toBeNull();
+    expect((await readMonth('2026-03')).map((x) => x.id)).toEqual(['n']);
+    await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [], deletes: [['2026-03-01', 'n']] })], result: 0 }));
+    expect(await listDonationMonths()).not.toContain('2026-03');
   });
 
   it('backup round-trips through month keys (collect → replace → collect)', async () => {
     const before = await collectPayload();
     expect(Object.keys(before.donationsByYear).sort()).toEqual(['2025', '2026']);
     await replaceAllData({ ...before, donationsByYear: { '2024': [d('x', '2024-06-02'), d('y', '2024-07-07')] } });
-    expect(await listDonationKeys()).toEqual(['donations_2024-06', 'donations_2024-07']);
+    expect(await listDonationMonths()).toEqual(['2024-06', '2024-07']);
     const after = await collectPayload();
     expect(Object.fromEntries(Object.entries(after.donationsByYear).map(([y, l]) => [y, l.map((x) => x.id)]))).toEqual({ '2024': ['x', 'y'] });
   });
@@ -121,7 +122,7 @@ describe('power-loss recovery', () => {
       'meta_journal',
     );
     expect(await recoverJournal()).toBe(true);
-    expect((await getItem<Donation[]>('donations_2030-01'))!.map((x) => x.id)).toEqual(['p1']);
+    expect((await readMonth('2030-01')).map((x) => x.id)).toEqual(['p1']);
     expect(await getItem('meta_journal')).toBeNull();
     expect(await recoverJournal()).toBe(false); // 두 번째는 할 일이 없음
   });
@@ -132,7 +133,7 @@ describe('power-loss recovery', () => {
         throw new Error('빌드 도중 실패');
       }),
     ).rejects.toThrow('빌드 도중 실패');
-    expect(await getItem('donations_2031-01')).toBeNull(); // 실패한 트랜잭션은 아무것도 남기지 않음
+    expect(await readMonth('2031-01')).toEqual([]); // 실패한 트랜잭션은 아무것도 남기지 않음
     // 쓰기 도중 오류(값을 복사할 수 없는 함수)가 나면 같은 트랜잭션의 앞선 쓰기도 취소되어야 합니다.
     await expect(
       transact(async () => ({
@@ -140,7 +141,7 @@ describe('power-loss recovery', () => {
         result: 0,
       })),
     ).rejects.toBeTruthy();
-    expect(await getItem('donations_2031-02')).toBeNull();
+    expect(await readMonth('2031-02')).toEqual([]);
   });
 
   it('applies the last write when a key appears twice in one transaction', async () => {
@@ -153,8 +154,8 @@ describe('power-loss recovery', () => {
       ],
       result: 0,
     }));
-    expect(await getItem('donations_2031-03')).toBeNull();
-    expect((await getItem<Donation[]>('donations_2031-04'))!.map((x) => x.id)).toEqual(['r2']);
+    expect(await readMonth('2031-03')).toEqual([]);
+    expect((await readMonth('2031-04')).map((x) => x.id)).toEqual(['r2']);
   });
 });
 

@@ -7,14 +7,16 @@ import { desktop } from '../desktopBridge';
 import { downloadText } from '../excel/downloadBridge';
 import {
   AUDIT_KEY_RE,
-  DONATION_KEY_RE,
   KEYS,
   auditKey,
-  donationKey,
   getItem,
   getMany,
-  listKeys,
+  listAuditKeys,
+  listDonationMonths,
+  listDonationYears,
   monthOfDate,
+  monthWrite,
+  readMonth,
   snapshot,
   transact,
   type Write,
@@ -29,26 +31,15 @@ import { NDJSON_VERSION, sha256Hex } from './validation';
 export async function collectPayload(years?: readonly string[]): Promise<BackupPayload> {
   // 읽기 전용 트랜잭션 하나 안에서 모두 읽으므로, 읽는 도중 다른 저장이 커밋돼도 한 시점의 데이터가 담깁니다.
   return snapshot(async () => {
-    const keys = (await listKeys()).sort();
     const want = years ? new Set(years) : null;
-    const monthKeys = keys.filter((k) => {
-      const ym = DONATION_KEY_RE.exec(k)?.[1];
-      return !!ym && (!want || want.has(ym.slice(0, 4)));
-    });
-    const auditKeys = keys.filter((k) => {
-      const y = AUDIT_KEY_RE.exec(k)?.[1];
-      return !!y && (!want || want.has(y));
-    });
-    const [monthLists, auditLists, meta] = await Promise.all([
-      getMany<Donation[]>(monthKeys),
+    const months = (await listDonationMonths()).filter((ym) => !want || want.has(ym.slice(0, 4)));
+    const auditKeys = (await listAuditKeys()).filter((k) => !want || want.has(AUDIT_KEY_RE.exec(k)![1]));
+    const [auditLists, meta] = await Promise.all([
       getMany<AuditLog[]>(auditKeys),
       getMany<Member[] | OfferingType[]>([KEYS.members, KEYS.offeringTypes]),
     ]);
     const donationsByYear: Record<string, Donation[]> = {};
-    monthKeys.forEach((k, i) => {
-      const year = DONATION_KEY_RE.exec(k)![1].slice(0, 4);
-      (donationsByYear[year] ??= []).push(...(monthLists[i] ?? []));
-    });
+    for (const ym of months) (donationsByYear[ym.slice(0, 4)] ??= []).push(...(await readMonth(ym)));
     const auditLogsByYear: Record<string, AuditLog[]> = {};
     auditKeys.forEach((k, i) => {
       auditLogsByYear[AUDIT_KEY_RE.exec(k)![1]] = auditLists[i] ?? [];
@@ -82,17 +73,14 @@ export async function* backupLines(): AsyncGenerator<string> {
   yield line({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
   yield line({ t: 'members', data: (await getItem<Member[]>(KEYS.members)) ?? [] });
   yield line({ t: 'offeringTypes', data: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [] });
-  const dataKeys = (await listKeys()).sort().filter((k) => DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k));
-  for (let i = 0; i < dataKeys.length; i += BACKUP_READ_BATCH) {
-    const chunk = dataKeys.slice(i, i + BACKUP_READ_BATCH);
-    const values = await getMany<Donation[] | AuditLog[]>(chunk);
-    for (const [j, k] of chunk.entries()) {
-      const ym = DONATION_KEY_RE.exec(k)?.[1];
-      if (ym) yield line({ t: 'donations', ym, data: values[j] ?? [] });
-      const year = AUDIT_KEY_RE.exec(k)?.[1];
-      if (year) yield line({ t: 'audit', year, data: values[j] ?? [] });
-    }
+  // 이력(연도별) → 헌금(월별) 순으로, 한 줄씩 읽어 메모리에는 한 번에 한 덩어리만 올라갑니다.
+  const auditKeys = await listAuditKeys();
+  for (let i = 0; i < auditKeys.length; i += BACKUP_READ_BATCH) {
+    const chunk = auditKeys.slice(i, i + BACKUP_READ_BATCH);
+    const values = await getMany<AuditLog[]>(chunk);
+    for (const [j, k] of chunk.entries()) yield line({ t: 'audit', year: AUDIT_KEY_RE.exec(k)![1], data: values[j] ?? [] });
   }
+  for (const ym of await listDonationMonths()) yield line({ t: 'donations', ym, data: await readMonth(ym) });
 }
 
 /** 연도를 골라 만든 백업은 파일 이름에 연도를 넣습니다: backup_2025_…, backup_2024-2026_… */
@@ -141,13 +129,8 @@ export async function saveBackupFile(prefix: string, years?: readonly string[]):
 
 /** 선택한 연도 하나만 백업해도 저장소의 모든 헌금·이력이 담기는지(다른 연도의 헌금 또는 이력이 없는지) */
 export async function isCompleteYearBackup(year: string): Promise<boolean> {
-  const years = new Set<string>();
-  for (const k of await listKeys()) {
-    const dm = DONATION_KEY_RE.exec(k)?.[1];
-    if (dm) years.add(dm.slice(0, 4));
-    const ay = AUDIT_KEY_RE.exec(k)?.[1];
-    if (ay) years.add(ay);
-  }
+  const years = new Set<string>(await listDonationYears());
+  for (const k of await listAuditKeys()) years.add(AUDIT_KEY_RE.exec(k)![1]);
   return years.size === 0 || (years.size === 1 && years.has(year));
 }
 
@@ -185,12 +168,8 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
   await transact(async (read) => {
     const writes: Write[] = [];
     // 선택한 연도의 기존 월별 헌금 키와 이력 키를 지우고, 백업 내용을 월별로 다시 씁니다.
-    for (const k of await listKeys()) {
-      const dm = DONATION_KEY_RE.exec(k)?.[1];
-      if (dm && years.has(dm.slice(0, 4))) writes.push({ key: k, value: null });
-      const ay = AUDIT_KEY_RE.exec(k)?.[1];
-      if (ay && years.has(ay)) writes.push({ key: k, value: null });
-    }
+    for (const ym of await listDonationMonths()) if (years.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
+    for (const k of await listAuditKeys()) if (years.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
     // 성도·헌금 종류: 현재 데이터는 유지하고, 다른 PC의 백업이면 같은 성도·종류를 현재 id로 대응시켜 중복을 막습니다.
     const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
     const curTypes = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
@@ -203,7 +182,7 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
         byMonth.get(ym)!.push(d);
       }
     }
-    for (const [ym, list] of byMonth) writes.push({ key: donationKey(ym), value: list });
+    for (const [ym, list] of byMonth) writes.push(monthWrite(ym, list));
     for (const [y, list] of Object.entries(auditLogsByYear)) {
       const mapped = remapAudits(list, plan);
       if (mapped.length) writes.push({ key: auditKey(y), value: mapped });
@@ -224,11 +203,9 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
  */
 export async function replaceAllData(payload: BackupPayload): Promise<void> {
   await transact(async () => {
-    const existing = await listKeys();
     const writes: Write[] = [];
-    for (const k of existing) {
-      if (DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k)) writes.push({ key: k, value: null });
-    }
+    for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
+    for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.members, value: payload.members });
     writes.push({ key: KEYS.offeringTypes, value: payload.offeringTypes });
     // 헌금 내역은 월별 키로 나누어 기록합니다.
@@ -240,7 +217,7 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
         byMonth.get(ym)!.push(d);
       }
     }
-    for (const [ym, list] of byMonth) writes.push({ key: donationKey(ym), value: list });
+    for (const [ym, list] of byMonth) writes.push(monthWrite(ym, list));
     for (const [y, list] of Object.entries(payload.auditLogsByYear)) writes.push({ key: auditKey(y), value: list });
     return { writes, result: undefined };
   });

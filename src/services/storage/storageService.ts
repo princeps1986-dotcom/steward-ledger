@@ -1,25 +1,40 @@
+import Dexie from 'dexie';
 import type { Donation } from '../../contexts/types';
 import { db } from './db';
-import { donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS, monthsOfYear } from './keys';
+import { donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS } from './keys';
 import { toStorageError } from './storageErrors';
 import { broadcastChanged } from './tabSyncChannel';
 
 /**
- * 헌금 내역은 월별(donations_YYYY-MM), 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다.
+ * 헌금 내역은 행 단위 테이블(db.donations, 기본키 [날짜, id])에 한 건씩 저장하고, 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다.
+ * 쓰기 목록(Write)의 헌금 키(donations_YYYY-MM)는 '그 달의 행이 바뀐다'는 표시로 쓰이며(다른 창 알림·백업 이후 변경 표시), 값은 저장되지 않습니다.
  * 저장소는 Dexie(IndexedDB)입니다. 여러 키를 읽고 쓰는 한 번의 작업(transact)은 IndexedDB 트랜잭션 하나로 처리되어,
  * 도중에 앱이 종료돼도 전부 반영되거나 전부 반영되지 않습니다(이전 localForage 시절의 저널 방식은 필요 없어졌습니다).
  * 키 이름·키 규칙은 keys.ts, 데이터베이스 정의와 버전 업그레이드는 db.ts·schemaUpgrades.ts에 있습니다.
  */
 export { KEYS, donationKey, auditKey, DONATION_KEY_RE, AUDIT_KEY_RE, monthOfDate, monthsOfYear } from './keys';
 
-/** 월별 목록을 쓰는 값: 비면 키를 지웁니다. */
-export const monthWrite = (ym: string, list: Donation[]): Write => ({ key: donationKey(ym), value: list.length ? list : null });
+/** 행 단위 변경: 넣거나 바꿀 내역과 지울 행의 기본키([날짜, id]). 같은 id를 지우고 넣으면 날짜가 바뀐 것입니다. */
+export interface RowOps {
+  puts: Donation[];
+  deletes: [string, string][];
+}
 
-/** value가 null이면 키 삭제 */
+/**
+ * value가 null이면 키 삭제. 헌금 키(donations_YYYY-MM)는 rowOps가 있으면 그 행만 바꾸고,
+ * 없으면 value(목록)로 그 달 전체를 교체합니다(비면 그 달 삭제 — 백업 복원용).
+ */
 export interface Write {
   key: string;
   value: unknown;
+  rowOps?: RowOps;
 }
+
+/** 그 달 전체를 이 목록으로 교체합니다(비면 그 달의 내역을 모두 지움). 복원처럼 달 전체를 바꿀 때만 쓰세요. */
+export const monthWrite = (ym: string, list: Donation[]): Write => ({ key: donationKey(ym), value: list.length ? list : null });
+
+/** 그 달의 행만 바꿉니다(저장·수정·삭제). */
+export const rowWrite = (ym: string, ops: RowOps): Write => ({ key: donationKey(ym), value: null, rowOps: ops });
 
 export type Reader = <T>(key: string) => Promise<T | null>;
 
@@ -34,46 +49,40 @@ export const getMany = async <T>(keys: string[]): Promise<(T | null)[]> =>
  * 읽기 전용 트랜잭션 하나 안에서 fn을 실행합니다. fn 안에서 getItem·getMany·listKeys로 읽은 값은 모두 같은 시점의 값입니다
  * (읽는 도중 다른 저장이 커밋돼도 섞이지 않음). fn 안에서는 이 파일의 읽기 함수만 기다려야 합니다.
  */
-export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction('r', db.kv, fn).catch((e) => Promise.reject(toStorageError(e)));
+export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction('r', db.kv, db.donations, fn).catch((e) => Promise.reject(toStorageError(e)));
 
 const isDataKey = (k: string): boolean =>
   k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
 
-/**
- * 월 배열(donations_YYYY-MM)이 바뀔 때 행 단위 테이블(db.donations)도 같은 트랜잭션에서 맞춥니다(이중 기록).
- * 이전 배열과 비교해 바뀐 행만 쓰고 사라진 행만 지웁니다. 읽기는 아직 월 배열만 씁니다.
- * shortcut: 비교 비용이 월 건수에 비례합니다. 쓰기를 행 단위로 전환하는 단계에서 이 함수는 없어집니다.
- */
-async function mirrorMonth(key: string, next: Donation[]): Promise<void> {
-  const prev = ((await db.kv.get(key)) as Donation[] | undefined) ?? [];
-  const before = new Map(prev.map((d) => [d.id, { json: JSON.stringify(d), date: d.date }]));
-  const puts: Donation[] = [];
-  const removes: [string, string][] = [];
-  for (const d of next) {
-    const old = before.get(d.id);
-    if (!old || old.json !== JSON.stringify(d)) {
-      puts.push(d);
-      if (old && old.date !== d.date) removes.push([old.date, d.id]); // 같은 달 안에서 날짜가 바뀌면 이전 키를 지웁니다
-    }
-    before.delete(d.id);
+const monthRange = (ym: string) => db.donations.where('[date+id]').between([`${ym}-`, Dexie.minKey], [`${ym}-￿`, Dexie.maxKey], true, true);
+
+async function applyDonationWrite(w: Write): Promise<void> {
+  if (w.rowOps) {
+    if (w.rowOps.deletes.length) await db.donations.bulkDelete(w.rowOps.deletes);
+    if (w.rowOps.puts.length) await db.donations.bulkPut(w.rowOps.puts);
+    return;
   }
-  for (const [id, old] of before) removes.push([old.date, id]);
-  if (removes.length) await db.donations.bulkDelete(removes);
-  if (puts.length) await db.donations.bulkPut(puts);
+  await monthRange(DONATION_KEY_RE.exec(w.key)![1]).delete();
+  const list = w.value as Donation[] | null;
+  if (list?.length) await db.donations.bulkPut(list);
 }
 
-/** 쓰기 목록을 적용합니다(같은 키는 마지막 쓰기만). 반드시 열려 있는 쓰기 트랜잭션 안에서 부릅니다. */
+/**
+ * 쓰기 목록을 적용합니다. 반드시 열려 있는 쓰기 트랜잭션 안에서 부릅니다.
+ * 헌금 키는 주어진 순서대로 적용하고(삭제→쓰기 순서 유지), 나머지 키는 같은 키의 마지막 쓰기만 적용합니다.
+ */
 async function applyWrites(writes: Write[]): Promise<void> {
   const last = new Map<string, Write>();
-  for (const w of writes) last.set(w.key, w);
+  for (const w of writes) {
+    if (DONATION_KEY_RE.test(w.key)) await applyDonationWrite(w);
+    else last.set(w.key, w);
+  }
   const puts: Write[] = [];
   const removes: string[] = [];
   for (const w of last.values()) {
     if (w.value === null) removes.push(w.key);
     else puts.push(w);
   }
-  for (const k of removes) if (DONATION_KEY_RE.test(k)) await mirrorMonth(k, []);
-  for (const w of puts) if (DONATION_KEY_RE.test(w.key)) await mirrorMonth(w.key, w.value as Donation[]);
   if (removes.length) await db.kv.bulkDelete(removes);
   if (puts.length) await db.kv.bulkPut(puts.map((w) => w.value), puts.map((w) => w.key));
 }
@@ -138,21 +147,51 @@ export async function listKeys(): Promise<string[]> {
   return (await db.kv.toCollection().primaryKeys()).map(String);
 }
 
-/** 저장된 월별 헌금 키 전체(시간 순). 'donations_' 범위만 읽습니다. */
-export async function listDonationKeys(): Promise<string[]> {
-  const keys = await db.kv.where(':id').startsWith('donations_').primaryKeys();
-  return keys.map(String).filter((k) => DONATION_KEY_RE.test(k)).sort();
+const byEntryOrder = (a: Donation, b: Donation): number =>
+  a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+/** 한 달('YYYY-MM')의 헌금을 입력한 순서(만든 시각)대로 읽습니다. 날짜 범위만 읽습니다. */
+export async function readMonth(ym: string): Promise<Donation[]> {
+  return (await monthRange(ym).toArray()).sort(byEntryOrder);
+}
+
+/** 한 해('YYYY')의 헌금(입력한 순서) */
+export async function readDonationYear(year: string): Promise<Donation[]> {
+  const rows = await db.donations.where('[date+id]').between([`${year}-`, Dexie.minKey], [`${year}-￿`, Dexie.maxKey], true, true).toArray();
+  return rows.sort(byEntryOrder);
+}
+
+/** 기본키([날짜, id])로 한 건 읽기(없으면 null) */
+export const readRow = async (date: string, id: string): Promise<Donation | null> => (await db.donations.get([date, id])) ?? null;
+
+/** id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 전체를 훑으므로 드문 경우에만 쓰세요. */
+export const findDonationById = async (id: string): Promise<Donation | null> => (await db.donations.filter((d) => d.id === id).first()) ?? null;
+
+/** 헌금 종류를 쓰는 내역 수(색인 사용) */
+export const countDonationsOfType = (offeringTypeId: string): Promise<number> => db.donations.where('offeringTypeId').equals(offeringTypeId).count();
+
+/** 헌금이 있는 달 전체('YYYY-MM', 오름차순). 달마다 한 건만 찾으며 건너뛰므로 내역 수에 상관없이 빠릅니다. */
+export async function listDonationMonths(): Promise<string[]> {
+  const out: string[] = [];
+  let from: [string, unknown] = ['', Dexie.minKey];
+  for (;;) {
+    const row = await db.donations.where('[date+id]').aboveOrEqual(from as never).first();
+    if (!row) break;
+    const ym = row.date.slice(0, 7);
+    out.push(ym);
+    const next = `${ym}-￿`;
+    from = [next > row.date ? next : `${row.date} `, Dexie.minKey]; // 어떤 날짜 문자열이어도 앞으로 나아가게
+  }
+  return out;
 }
 
 export async function listDonationYears(): Promise<string[]> {
-  const years = new Set((await listDonationKeys()).map((k) => DONATION_KEY_RE.exec(k)![1].slice(0, 4)));
-  return [...years].sort();
+  return [...new Set((await listDonationMonths()).map((m) => m.slice(0, 4)))].sort();
 }
 
-/** 한 해의 헌금 내역(월별 키 12개를 읽어 합침) */
-export async function readDonationYear(read: Reader, year: string): Promise<Donation[]> {
-  const lists = await Promise.all(monthsOfYear(year).map((ym) => read<Donation[]>(donationKey(ym))));
-  return lists.flatMap((l) => l ?? []);
+/** 수정/삭제 이력이 있는 연도 키 전체(audit_logs_YYYY) */
+export async function listAuditKeys(): Promise<string[]> {
+  return (await listKeys()).filter((k) => AUDIT_KEY_RE.test(k)).sort();
 }
 
 export async function isDirtySinceBackup(): Promise<boolean> {
@@ -163,15 +202,6 @@ export async function clearDirty(): Promise<void> {
   await serialize(() => db.kv.put(false, KEYS.dirty).then(() => undefined));
 }
 
-/**
- * [날짜+성도+헌금 종류]가 같은 기존 내역을 행 테이블의 색인으로 찾습니다(무명은 중복 없음).
- * 행 테이블이 월 배열과 같게 채워졌다는 표시가 없으면 null을 돌려주니, 부르는 쪽이 월 배열 방식으로 찾으세요.
- */
-export async function findDuplicatesByIndex(drafts: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>[]): Promise<(Donation | undefined)[] | null> {
-  if ((await getItem<boolean>(KEYS.donationRowsReady)) !== true) return null;
-  return Promise.all(
-    drafts.map((d) =>
-      d.memberId === null ? undefined : db.donations.where('[date+memberId+offeringTypeId]').equals([d.date, d.memberId, d.offeringTypeId]).first(),
-    ),
-  );
-}
+/** [날짜+성도+헌금 종류]가 같은 기존 내역을 색인으로 찾습니다(무명은 중복 없음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */
+export const findDuplicateRow = (d: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>): Promise<Donation | undefined> =>
+  d.memberId === null ? Promise.resolve(undefined) : db.donations.where('[date+memberId+offeringTypeId]').equals([d.date, d.memberId, d.offeringTypeId]).first();

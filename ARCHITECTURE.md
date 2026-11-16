@@ -164,12 +164,12 @@ interface BackupEnvelope {    // 백업 파일
 | 키 | 내용 |
 | :--- | :--- |
 | `members`, `offering_types`, `settings` | 성도 / 헌금 종류 / 설정 |
-| `donations_YYYY-MM` | **월 단위** 헌금 (`donationKey(ym)`, 비면 키 삭제) |
+| (테이블 `donations`) | **한 건이 한 행**인 헌금. 기본키 `[date, id]`, 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`. 쓰기 목록(`Write`)의 `donations_YYYY-MM` 키는 '그 달의 행이 바뀐다'는 표시일 뿐 값은 저장되지 않음 |
 | `audit_logs_YYYY` | 연도 단위 수정·삭제 이력 |
 | `meta_journal` | 이전(localForage) 버전이 커밋 도중 종료되어 남긴 기록. 시작할 때 한 번 적용하고 지움(새 버전은 만들지 않음) |
 | `meta_migration_*` | 1회 보정 완료 표시(백업 대상 아님) |
 
-한 건을 저장·수정·삭제하면 **그 달의 키 하나만** 다시 씁니다(월이 바뀌는 수정은 두 키). 연도 전체를 다시 쓰지 않으므로 연 1만 4천 건 기준 저장이 약 45ms → 3ms가 되었습니다. 신규 입력은 현재 날짜가 아니라 `donation.date`의 달에 저장해 1월의 전년도 12월 소급 입력도 정확합니다.
+한 건을 저장·수정·삭제하면 **그 행만** 씁니다(`rowWrite`; 날짜가 바뀌면 이전 행을 지우고 새 행을 만듦). 달 전체 교체(`monthWrite`)는 백업 복원에서만 씁니다. 월 1.2만 건에서 저장이 월 배열 방식 약 35ms → 0.6ms입니다(fake-indexeddb 측정).
 
 ### 6.2 원자적 트랜잭션 (`transact`)
 1. IndexedDB 쓰기 트랜잭션 하나를 연다(`db.transaction('rw', db.kv, …)`).
@@ -183,7 +183,7 @@ interface BackupEnvelope {    // 백업 파일
 
 값이 키마다 따로 저장되므로 저널 시절의 값 크기 한도(약 128MB) 문제가 없습니다. 월별 이전은 데이터베이스 업그레이드 안에서 처리합니다(14장).
 
-**이전 데이터와의 호환:** 데이터베이스 이름(`church-offering-ledger`)과 저장소(`kv`, 외부 키)를 localForage 때와 같게 두어 기존 데이터를 옮기지 않고 그대로 읽습니다(`legacyUpgrade.test.ts`). 첫 실행 때 데이터베이스 버전이 올라가며(localForage 2 → Dexie 10 → 20) localForage의 빈 확인용 저장소가 지워집니다. 한 번 연 데이터는 이전 버전 앱으로 다시 열 수 없습니다. 버전 3~5(Dexie 50)는 행 단위 헌금 테이블 `donations`(기본키 `[date+id]`, 인덱스 `memberId`, `[date+memberId+offeringTypeId]`)을 만들고, 업그레이드 때 기존 월 배열 전체를 행으로 채웁니다(`buildDonationRows`; 월 배열은 그대로 두고, 건수가 같을 때만 `meta_donation_rows_ready_v1` 표시). 기본키를 날짜 앞세운 복합키로 둔 것은 월·연 로드가 날짜 범위 읽기라 `id` 키보다 약 2배 빠르기 때문입니다. 월 배열을 쓸 때 `applyWrites`가 같은 트랜잭션에서 바뀐 행만 이 테이블에도 기록합니다(이중 기록). 중복 검사(`findDuplicatesByIndex`)는 준비 표시가 있으면 `[date+memberId+offeringTypeId]` 색인으로 찾고(월 전체를 읽지 않음), 없으면 월 배열로 찾습니다. 그 밖의 읽기(월·연 로드, 보고서, 백업)는 아직 월 배열을 씁니다.
+**이전 데이터와의 호환:** 데이터베이스 이름(`church-offering-ledger`)과 저장소(`kv`, 외부 키)를 localForage 때와 같게 두어 기존 데이터를 옮기지 않고 그대로 읽습니다(`legacyUpgrade.test.ts`). 첫 실행 때 데이터베이스 버전이 올라가며(localForage 2 → Dexie 10 → 20) localForage의 빈 확인용 저장소가 지워집니다. 한 번 연 데이터는 이전 버전 앱으로 다시 열 수 없습니다. 버전 4~6(Dexie 60)이 헌금을 행 단위 테이블 `donations`로 옮깁니다. Dexie는 기본키를 직접 못 바꿔 테이블을 지웠다가 `[date+id]`로 다시 만들고, 버전 6 업그레이드(`moveDonationsToRows`)가 기존 월 배열 전체를 행으로 옮긴 뒤 월 배열을 지웁니다. 옮긴 행 수가 (날짜+id가 다른) 내역 수와 다르면 오류를 던져 업그레이드 전체를 취소합니다(아무것도 바뀌지 않음). 기본키를 날짜 앞세운 복합키로 둔 것은 월·연 로드가 날짜 범위 읽기라 `id` 키보다 약 2배 빠르기 때문입니다(월 1.2만 건 기준 한 달 로드 약 43ms로, 월 배열 방식 12ms보다는 느림). 중복 검사는 색인(`findDuplicateRow`), 달 목록은 달마다 한 건씩 건너뛰며(`listDonationMonths`), 헌금 종류 사용 수는 색인으로 셉니다. 월 안의 표시 순서는 입력 시각(`createdAt`) 순입니다.
 
 **일관된 읽기와 오류 안내:** 백업은 `snapshot()`(읽기 전용 트랜잭션)과 `getMany()`(`bulkGet`)로 한 시점의 데이터를 묶음으로 읽습니다. 저장소 오류(공간 부족·더 새로운 버전·열기 실패)는 `storageErrors.ts`의 `StorageError`로 바뀌어 한글 안내가 나가고, 업무 규칙 오류는 그대로 전달됩니다.
 
@@ -328,7 +328,7 @@ Dexie `version(2).upgrade`(`db.ts`)가 화면이 뜨기 전에 `schemaUpgrades.t
 | 헌금 종류 (v21~v24) | 건축·선교헌금 기본 나열·금액 단추, 십일조 단추, 구제·특별헌금 추가(같은 이름이 있으면 건드리지 않음) |
 | 설정 | 큰 금액 기준의 옛 기본값(1억)만 1천만으로 보정 |
 | 직분 | 저장된 ‘성도’를 빈 값으로 정리 |
-| 헌금 월별 이전 | `donations_YYYY` → `donations_YYYY-MM` (연도마다 별도 커밋, 시작 때 화면 그리기 전에 실행) |
+| 헌금 월별 이전 | `donations_YYYY` → `donations_YYYY-MM`(버전 2 업그레이드), 이어서 행 테이블로 이전하고 월 키 삭제(버전 6 업그레이드) |
 
 시작 때 이전 작업이 실패하면 빈 화면 대신 오류 안내를 보여 줍니다. 내역의 날짜 형식이 깨져 있으면 월 키를 정할 수 없어 그 내역은 이전되지 않습니다(17장).
 
@@ -354,7 +354,7 @@ Dexie `version(2).upgrade`(`db.ts`)가 화면이 뜨기 전에 `schemaUpgrades.t
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
 | 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·마이그레이션·월 캐시·월별 행렬 = 주별 합 |
-| 저장소 | `storage/monthly.test.ts` | 월별 이전, 월 단위 쓰기, 연도 백업·복원 왕복 |
+| 저장소 | `storage/monthly.test.ts`, `donationsTable.test.ts`, `rowsUpgrade.test.ts` | 월별→행 이전, 행 단위 쓰기·롤백, 색인 중복 검사, 연도 백업·복원 왕복, 버전 3→6 업그레이드 |
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
 | 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신 |

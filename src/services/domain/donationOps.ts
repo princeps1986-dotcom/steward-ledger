@@ -9,6 +9,26 @@ export function findDuplicate(shard: Donation[], draft: DonationDraft): Donation
   );
 }
 
+/**
+ * 메모리에 있는 한 달 목록에 행 단위 변경을 반영합니다. 같은 id를 바꾸면 그 자리에서 교체하고(날짜만 바뀐 경우 포함),
+ * 지우기만 한 id는 빼며, 새 내역은 끝에 붙입니다.
+ */
+export function applyRowOps(list: Donation[], puts: Donation[], deletes: readonly (readonly [string, string])[]): Donation[] {
+  const putById = new Map(puts.map((p) => [p.id, p]));
+  const del = new Set(deletes.map(([, id]) => id));
+  const out: Donation[] = [];
+  const used = new Set<string>();
+  for (const d of list) {
+    const p = putById.get(d.id);
+    if (p) {
+      out.push(p);
+      used.add(d.id);
+    } else if (!del.has(d.id)) out.push(d);
+  }
+  for (const p of puts) if (!used.has(p.id)) out.push(p);
+  return out;
+}
+
 export function buildDonation(draft: DonationDraft, id = newId(), now = nowIso()): Donation {
   const memo = draft.memo?.trim();
   return {

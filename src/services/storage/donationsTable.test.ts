@@ -1,85 +1,117 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
+import { applyRowOps, findDuplicate } from '../domain/donationOps';
 import { db } from './db';
-import { donationKey, getItem, monthWrite, transact } from './storageService';
+import {
+  countDonationsOfType,
+  findDonationById,
+  findDuplicateRow,
+  getItem,
+  listDonationMonths,
+  listDonationYears,
+  monthWrite,
+  readDonationYear,
+  readMonth,
+  readRow,
+  rowWrite,
+  transact,
+} from './storageService';
 
-const d = (id: string, date: string, amount = 1000): Donation =>
-  ({ id, date, memberId: 'm1', donorDisplayName: '김', offeringTypeId: 't1', amount, createdAt: 'x', updatedAt: 'x' }) as Donation;
-
-/** 월 배열과 행 테이블이 같은 내용인지 */
-async function expectInSync() {
-  const keys = (await db.kv.toCollection().primaryKeys()).map(String).filter((k) => k.startsWith('donations_'));
-  const fromArrays = (await Promise.all(keys.map((k) => getItem<Donation[]>(k)))).flatMap((l) => l ?? []);
-  const rows = await db.donations.toArray();
-  const byId = (a: Donation, b: Donation) => a.id.localeCompare(b.id);
-  expect(rows.sort(byId)).toEqual(fromArrays.sort(byId));
-}
-const put = (ym: string, list: Donation[]) => transact(async () => ({ writes: [monthWrite(ym, list)], result: null }));
+const d = (id: string, date: string, extra: Partial<Donation> = {}): Donation =>
+  ({ id, date, memberId: 'm1', donorDisplayName: '김', offeringTypeId: 't1', amount: 1000, createdAt: `c${id}`, updatedAt: 'x', ...extra }) as Donation;
+const ids = (l: Donation[]) => l.map((x) => x.id);
+const put = (ym: string, ...list: Donation[]) => transact(async () => ({ writes: [rowWrite(ym, { puts: list, deletes: [] })], result: null }));
 
 beforeEach(async () => {
   await db.kv.clear();
   await db.donations.clear();
 });
 
-it('has an indexed donations table next to kv', async () => {
-  await db.open();
-  expect(db.tables.map((t) => t.name).sort()).toEqual(['donations', 'kv']);
-  await db.donations.put(d('a', '2026-01-04'));
-  expect(await db.donations.where('[date+memberId+offeringTypeId]').equals(['2026-01-04', 'm1', 't1']).count()).toBe(1);
+describe('row-per-donation storage', () => {
+  it('reads one month by date range, in entry order, without touching neighbours', async () => {
+    await put('2026-01', d('b', '2026-01-11'), d('a', '2026-01-04'));
+    await put('2026-02', d('c', '2026-02-01'));
+    await put('2025-01', d('z', '2025-01-31'));
+    expect(ids(await readMonth('2026-01'))).toEqual(['a', 'b']); // 만든 시각(c a < c b) 순서
+    expect(ids(await readMonth('2026-02'))).toEqual(['c']);
+    expect(await readMonth('2026-03')).toEqual([]);
+    expect(ids(await readDonationYear('2026'))).toEqual(['a', 'b', 'c']);
+    expect(await listDonationMonths()).toEqual(['2025-01', '2026-01', '2026-02']);
+    expect(await listDonationYears()).toEqual(['2025', '2026']);
+  });
+
+  it('writes only the given rows: add, edit in place, change date inside a month, delete', async () => {
+    await put('2026-01', d('a', '2026-01-04'), d('b', '2026-01-11'));
+    await put('2026-01', d('a', '2026-01-04', { amount: 5000 }));
+    expect((await readRow('2026-01-04', 'a'))!.amount).toBe(5000);
+    expect((await readMonth('2026-01')).length).toBe(2);
+
+    // 같은 달 안에서 날짜 변경: 이전 행을 지우고 새 날짜의 행을 만듭니다.
+    await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('a', '2026-01-25')], deletes: [['2026-01-04', 'a']] })], result: null }));
+    expect(await readRow('2026-01-04', 'a')).toBeNull();
+    expect((await readRow('2026-01-25', 'a'))!.id).toBe('a');
+    expect((await readMonth('2026-01')).length).toBe(2);
+
+    await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [], deletes: [['2026-01-25', 'a']] })], result: null }));
+    expect(ids(await readMonth('2026-01'))).toEqual(['b']);
+    expect((await findDonationById('b'))!.date).toBe('2026-01-11');
+  });
+
+  it('replaces or empties a whole month with monthWrite (restore)', async () => {
+    await put('2026-01', d('a', '2026-01-04'), d('b', '2026-01-05'));
+    await put('2026-02', d('keep', '2026-02-02'));
+    await transact(async () => ({ writes: [monthWrite('2026-01', [d('n', '2026-01-09')])], result: null }));
+    expect(ids(await readMonth('2026-01'))).toEqual(['n']);
+    await transact(async () => ({ writes: [monthWrite('2026-01', [])], result: null }));
+    expect(await listDonationMonths()).toEqual(['2026-02']);
+    expect(ids(await readMonth('2026-02'))).toEqual(['keep']);
+  });
+
+  it('keeps the order of delete then write for the same month in one transaction', async () => {
+    await put('2026-03', d('old', '2026-03-01'));
+    await transact(async () => ({ writes: [monthWrite('2026-03', []), monthWrite('2026-03', [d('new', '2026-03-02')])], result: null }));
+    expect(ids(await readMonth('2026-03'))).toEqual(['new']);
+  });
+
+  it('rolls rows back together with the other keys when the transaction fails', async () => {
+    await put('2026-01', d('a', '2026-01-04'));
+    await expect(
+      transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('z', '2026-01-05')], deletes: [['2026-01-04', 'a']] }), { key: 'bad', value: () => 1 }], result: null })),
+    ).rejects.toBeTruthy();
+    expect(ids(await readMonth('2026-01'))).toEqual(['a']);
+  });
+
+  it('marks the data as changed since the last backup when only rows change', async () => {
+    await put('2026-01', d('a', '2026-01-04'));
+    expect(await getItem('meta_dirty_since_backup')).toBe(true);
+  });
+
+  it('finds duplicates by index exactly like the in-memory search does', async () => {
+    const list = [d('a', '2026-01-04'), d('b', '2026-01-04', { offeringTypeId: 't2' }), d('c', '2026-01-11', { memberId: null })];
+    await put('2026-01', ...list);
+    const drafts = [
+      { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't1' },
+      { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't2' },
+      { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't9' },
+      { date: '2026-01-11', memberId: null, offeringTypeId: 't1' },
+    ];
+    const byIndex = await Promise.all(drafts.map((x) => findDuplicateRow(x)));
+    expect(byIndex.map((x) => x?.id)).toEqual(drafts.map((x) => findDuplicate(list, x as never)?.id));
+    expect(byIndex.map((x) => x?.id)).toEqual(['a', 'b', undefined, undefined]);
+  });
+
+  it('counts donations of an offering type by index', async () => {
+    await put('2026-01', d('a', '2026-01-04'), d('b', '2026-01-05', { offeringTypeId: 't2' }), d('c', '2026-01-06'));
+    expect(await countDonationsOfType('t1')).toBe(2);
+    expect(await countDonationsOfType('nope')).toBe(0);
+  });
 });
 
-it('mirrors add, edit, delete, month move and emptying a month into rows', async () => {
-  await put('2026-01', [d('a', '2026-01-04'), d('b', '2026-01-11')]);
-  await expectInSync();
-  expect(await db.donations.count()).toBe(2);
-
-  await put('2026-01', [d('a', '2026-01-04', 5000), d('b', '2026-01-11'), d('c', '2026-01-18')]); // 수정 + 추가
-  await expectInSync();
-  expect((await db.donations.get(['2026-01-04', 'a']))!.amount).toBe(5000);
-
-  await put('2026-01', [d('a', '2026-01-04', 5000)]); // 삭제
-  await expectInSync();
-  expect(await db.donations.count()).toBe(1);
-
-  // 월 이동: 1월에서 빼고 2월에 넣기를 한 번에
-  await transact(async () => ({ writes: [monthWrite('2026-01', []), monthWrite('2026-02', [d('a', '2026-02-01', 5000)])], result: null }));
-  await expectInSync();
-  expect(await db.kv.get(donationKey('2026-01'))).toBeUndefined();
-  expect((await db.donations.get(['2026-02-01', 'a']))!.date).toBe('2026-02-01');
-});
-
-it('rolls the rows back together with the month array when the transaction fails', async () => {
-  await put('2026-01', [d('a', '2026-01-04')]);
-  await expect(
-    transact(async () => ({ writes: [monthWrite('2026-01', [d('a', '2026-01-04'), d('z', '2026-01-05')]), { key: 'bad', value: () => 1 }], result: null })),
-  ).rejects.toBeTruthy();
-  await expectInSync();
-  expect(await db.donations.count()).toBe(1);
-});
-
-it('removes the old key when a donation date changes inside the same month', async () => {
-  await put('2026-01', [d('a', '2026-01-04')]);
-  await put('2026-01', [d('a', '2026-01-25')]);
-  await expectInSync();
-  expect(await db.donations.count()).toBe(1);
-  expect(await db.donations.get(['2026-01-04', 'a'])).toBeUndefined();
-});
-
-it('finds duplicates by index like the month-array search does, and defers when rows are not ready', async () => {
-  const { findDuplicate } = await import('../domain/donationOps');
-  const { findDuplicatesByIndex } = await import('./storageService');
-  const list = [d('a', '2026-01-04'), { ...d('b', '2026-01-04'), offeringTypeId: 't2' } as Donation, { ...d('c', '2026-01-11'), memberId: null } as Donation];
-  await put('2026-01', list);
-  const drafts = [
-    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't1' },
-    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't2' },
-    { date: '2026-01-04', memberId: 'm1', offeringTypeId: 't9' },
-    { date: '2026-01-11', memberId: null, offeringTypeId: 't1' },
-  ];
-  expect(await findDuplicatesByIndex(drafts)).toBeNull(); // 준비 표시가 없으면 월 배열 방식으로
-  await db.kv.put(true, 'meta_donation_rows_ready_v1');
-  const byIndex = await findDuplicatesByIndex(drafts);
-  expect(byIndex!.map((x) => x?.id)).toEqual(drafts.map((x) => findDuplicate(list, x as never)?.id));
-  expect(byIndex!.map((x) => x?.id)).toEqual(['a', 'b', undefined, undefined]);
+describe('applyRowOps (in-memory month list)', () => {
+  it('replaces in place, removes deleted ids and appends new rows', () => {
+    const list = [d('a', '2026-01-01'), d('b', '2026-01-02'), d('c', '2026-01-03')];
+    const out = applyRowOps(list, [d('b', '2026-01-09'), d('n', '2026-01-10')], [['2026-01-02', 'b'], ['2026-01-03', 'c']]);
+    expect(out.map((x) => [x.id, x.date])).toEqual([['a', '2026-01-01'], ['b', '2026-01-09'], ['n', '2026-01-10']]);
+  });
 });

@@ -26,24 +26,25 @@ describe('upgrade from localForage data', () => {
     expect(before.version).toBeGreaterThanOrEqual(1);
     before.close();
 
-    const { getItem, listDonationKeys, listDonationYears, transact, monthWrite, isDirtySinceBackup } = await import('./storageService');
+    const { getItem, listDonationMonths, listDonationYears, readMonth, transact, rowWrite, isDirtySinceBackup } = await import('./storageService');
     // 업그레이드 때 1회 보정이 실행됩니다: 직분 '성도' 정리, 큰 금액 기준 보정, 연도 키 → 월 키
     expect(await getItem('members')).toEqual([{ id: 'm1', name: '김철수', position: '', isActive: true }]);
     expect(((await getItem('settings')) as { largeAmountThreshold: number }).largeAmountThreshold).toBe(10_000_000);
     expect(await getItem('donations_2025')).toBeNull();
-    expect((await getItem<{ id: string }[]>('donations_2025-12'))!.map((x) => x.id)).toEqual(['y1']);
-    expect((await getItem<{ id: string }[]>('donations_2025-01'))!.map((x) => x.id)).toEqual(['y2']);
+    expect((await readMonth('2025-12')).map((x) => x.id)).toEqual(['y1']);
+    expect((await readMonth('2025-01')).map((x) => x.id)).toEqual(['y2']);
     expect(await getItem('meta_migration_donations_monthly_v1')).toBe(true);
-    expect(await listDonationKeys()).toEqual(['donations_2025-01', 'donations_2025-12', 'donations_2026-03']);
+    expect(await getItem('donations_2026-03')).toBeNull(); // 월 배열은 행으로 옮겨진 뒤 지워집니다
+    expect(await listDonationMonths()).toEqual(['2025-01', '2025-12', '2026-03']);
     expect(await listDonationYears()).toEqual(['2025', '2026']);
     expect(await isDirtySinceBackup()).toBe(true);
 
     // 새 코드로 쓴 값도 정상이며, 기존 값은 그대로입니다.
-    await transact(async (read) => {
-      const cur = (await read<unknown[]>('donations_2026-03')) ?? [];
-      return { writes: [monthWrite('2026-03', [...cur, { id: 'd2', date: '2026-03-08', memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 20000 }] as never)], result: 0 };
-    });
-    expect(((await getItem<unknown[]>('donations_2026-03')) ?? []).length).toBe(2);
+    await transact(async () => ({
+      writes: [rowWrite('2026-03', { puts: [{ id: 'd2', date: '2026-03-08', memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 20000, createdAt: 'x', updatedAt: 'x' } as never], deletes: [] })],
+      result: 0,
+    }));
+    expect((await readMonth('2026-03')).length).toBe(2);
     expect(((await getItem('offering_types')) as { name: string }[]).some((t) => t.name === '십일조')).toBe(true);
   });
 });

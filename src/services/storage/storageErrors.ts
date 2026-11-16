@@ -32,7 +32,7 @@ export function toStorageError(e: unknown): unknown {
   if (name === 'VersionError') {
     return new StorageError('VERSION', '이 데이터는 더 새로운 버전의 앱에서 만들어졌습니다. 앱을 최신 버전으로 업데이트한 뒤 다시 실행하세요.', e);
   }
-  if (['DatabaseClosedError', 'OpenFailedError', 'UnknownError', 'InvalidStateError', 'AbortError', 'MissingAPIError', 'SecurityError'].includes(name)) {
+  if (['DatabaseClosedError', 'OpenFailedError', 'UnknownError', 'InvalidStateError', 'AbortError', 'MissingAPIError', 'SecurityError', 'UpgradeError'].includes(name)) {
     return new StorageError(
       'UNAVAILABLE',
       `저장소를 열거나 쓰지 못했습니다(${name}). 앱을 닫았다가 다시 실행해 보세요. 계속되면 최근 백업 파일로 복원하세요. 이미 저장된 데이터는 지워지지 않았습니다.`,
