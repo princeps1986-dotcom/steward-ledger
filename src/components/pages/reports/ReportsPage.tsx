@@ -144,6 +144,11 @@ export function ReportsPage() {
             {t.label}
           </button>
         ))}
+        {/* 선택이 바뀐 뒤 보고서가 새로 계산되기 전까지 표시합니다. 자리를 유지해 화면이 흔들리지 않게 합니다. */}
+        <span className={`ml-auto flex items-center gap-1.5 self-center pr-1 text-xs text-gray-500 ${f.pending ? '' : 'invisible'}`} role="status" aria-live="polite">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" aria-hidden="true" />
+          {f.pending ? '보고서를 불러오는 중…' : ''}
+        </span>
       </nav>
 
       {tab === 'SUMMARY' ? (
@@ -162,10 +167,12 @@ export function ReportsPage() {
           ) : null}
         </div>
       ) : null}
-      {tab === 'SUMMARY' ? <SummaryTab f={f} hidden={hidden} /> : null}
-      {tab === 'LIST' ? <ListTab f={f} /> : null}
-      {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
-      {tab === 'AUDIT' ? <AuditTab f={f} /> : null}
+      <div className={f.pending ? 'opacity-50 transition-opacity' : 'transition-opacity'} aria-busy={f.pending}>
+        {tab === 'SUMMARY' ? <SummaryTab f={f} hidden={hidden} /> : null}
+        {tab === 'LIST' ? <ListTab f={f} /> : null}
+        {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
+        {tab === 'AUDIT' ? <AuditTab f={f} /> : null}
+      </div>
 
     </div>
   );

@@ -1,0 +1,371 @@
+# 청지기 장부 — 아키텍처 명세서 v1.0
+
+> 오프라인 우선 교회 헌금 회계 데스크톱 앱의 **구조와 설계 결정**을 설명합니다.
+> 무엇을 만드는지는 [PRD.md](PRD.md), 사용법은 앱 안의 [사용 설명서]를 보세요.
+
+## 목차
+1. [한눈에 보기](#1-한눈에-보기)
+2. [설계 원칙](#2-설계-원칙)
+3. [기술 스택](#3-기술-스택)
+4. [코드 구조](#4-코드-구조)
+5. [데이터 모델](#5-데이터-모델)
+6. [저장소 설계](#6-저장소-설계)
+7. [화면 데이터 관리 (DonationContext)](#7-화면-데이터-관리-donationcontext)
+8. [보고서](#8-보고서)
+9. [엑셀](#9-엑셀)
+10. [백업 · 복원 · 초기화](#10-백업--복원--초기화)
+11. [입력 화면 설계](#11-입력-화면-설계)
+12. [인쇄, 테마, 달력](#12-인쇄-테마-달력)
+13. [Electron 셸](#13-electron-셸)
+14. [1회 보정(마이그레이션)](#14-1회-보정마이그레이션)
+15. [성능 측정과 설계 근거](#15-성능-측정과-설계-근거)
+16. [테스트](#16-테스트)
+17. [알려진 한계](#17-알려진-한계)
+18. [빌드 · 실행 · 배포](#18-빌드--실행--배포)
+
+---
+
+## 1. 한눈에 보기
+
+```text
+┌─────────────── Electron (main.cjs, preload.cjs) ───────────────┐
+│  단일 인스턴스 잠금 · CSP · 자동 백업 파일 쓰기 · 파일 열기      │
+│  ┌────────────────── 렌더러 (React 19 + Vite) ──────────────┐  │
+│  │ components (보기만)  ←  hooks (화면 로직)                  │  │
+│  │                         ↓                                  │  │
+│  │ contexts (상태)  →  services (규칙·저장·엑셀·백업)          │  │
+│  │                         ↓                                  │  │
+│  │ localForage → IndexedDB (이 PC 안에만 저장)                 │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+서버·네트워크가 없습니다. 모든 데이터는 렌더러의 IndexedDB에 있고, 같은 코드가 일반 브라우저(시연용 GitHub Pages, 개발용)에서도 그대로 동작합니다.
+
+## 2. 설계 원칙
+
+1. **오프라인 우선:** 외부 API·서버 없이 로컬에서 즉시 영구 저장.
+2. **로직과 보기의 분리:** `components/`의 `.tsx`에는 비즈니스 로직이 없고 값과 이벤트 핸들러를 연결만 합니다. 판단·상태는 `hooks/`, 규칙은 `services/domain/`(순수 함수, 단위 테스트 대상).
+3. **필요한 곳만 다시 그리기:** `use-context-selector`로 값이 바뀐 조각을 구독하는 컴포넌트만 렌더링합니다.
+4. **전부 아니면 전무:** 여러 키를 바꾸는 작업은 저널 기반 트랜잭션으로 원자적으로 처리합니다.
+5. **회계 정합성:** 모든 수정·삭제는 이력(AuditLog)에 남고, 납부 당시 세대 정보(스냅샷)를 보존합니다.
+6. **보안:** `script-src 'self'` CSP, XSS·엑셀 수식 인젝션 방어. 단 가상 스크롤 좌표·인쇄 레이아웃을 위한 제한적 인라인 스타일(`style={{…}}`)은 허용합니다.
+7. **라이선스:** 상업적 이용이 자유로운 MIT 계열 패키지만 사용합니다.
+8. **연타·경합에 안전:** 사용자의 반복 입력과 비동기 읽기·쓰기 겹침에도 중복 실행·옛 값 덮어쓰기가 없어야 합니다(7장, 11장).
+
+## 3. 기술 스택
+
+| 분류 | 사용 | 이유 |
+| :--- | :--- | :--- |
+| 기반 | React 19 + TypeScript + Vite | 정적 타입, 빠른 빌드 |
+| 저장 | localForage (IndexedDB) | 대용량 저장, 키 단위 분할 |
+| 상태 | use-context-selector | 전역 리렌더링 방지 |
+| 스타일 | Tailwind CSS 4 + Radix UI(Dialog·Switch·Tabs) | 접근성 있는 헤드리스 컴포넌트 |
+| 가상 스크롤 | @tanstack/react-virtual | 수천 행에서도 보이는 행만 그림 |
+| 엑셀 | exceljs | 브라우저에서 `.xlsx` 생성(수식 + 캐시 값) |
+| CSV | papaparse | 명단 가져오기 (CP949는 `TextDecoder('euc-kr')`) |
+| 날짜·유틸 | date-fns, lodash-es | 날짜 계산, 그룹화 |
+| 달력 | 자체 `DatePicker` | 브라우저 기본 달력은 일요일을 빨갛게 칠할 수 없음 |
+| 데스크톱 | Electron 45 + electron-builder(NSIS) | Windows 설치 파일 |
+| 테스트 | Vitest, fake-indexeddb, jsdom, @testing-library/react | 저장소·화면 상태까지 자동 검증 |
+
+## 4. 코드 구조
+
+```text
+src/
+├── main.tsx            시작: 저널 복구 → 월별 이전(1회) → 화면 렌더 (실패 시 오류 안내)
+├── App.tsx             메뉴, 페이지 전환
+├── contexts/           [상태] 데이터 보관과 변경
+│   ├── DonationContext.tsx   헌금: 달 단위 메모리 모델, 저장·수정·삭제·되돌리기
+│   ├── MemberContext.tsx / OfferingTypeContext.tsx / SettingsContext.tsx
+│   ├── AppProviders.tsx      위 컨텍스트를 한 번에 묶음
+│   └── types.ts              데이터 모델·앱 버전·스키마 버전
+├── hooks/              [화면 로직] useDonationInput, useReports, useSettingsPage,
+│                       useMemberForm, exclusive(연타 방지) …
+├── services/
+│   ├── domain/         [순수 규칙] 금액·검색·세대·집계·마이그레이션·월 캐시 …
+│   ├── storage/        storageService(저널 트랜잭션·월 키), tabSyncChannel(창 간 동기화)
+│   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
+│   ├── excel/          excelService, downloadBridge, mailtoProtocol
+│   ├── import/         memberImportService (CSV·xlsx 명단)
+│   ├── demo/           demoData (시연 데이터)
+│   └── theme.ts, desktopBridge.ts
+└── components/
+    ├── shared/         DatePicker, Modal, Notice, InfoTip, ThemePicker, MemberFormFields …
+    └── pages/          donation-input · reports · members · offerings · settings · help
+electron/               main.cjs, preload.cjs
+scripts/                testdata-core.mjs(생성 규칙), generate-test-data.mjs(파일 생성)
+.github/workflows/      pages.yml (시연 페이지 자동 배포)
+```
+
+`pages/help`의 `helpContent.ts`는 사용 설명서의 정적 데이터이며, **기능이 바뀌면 이 파일도 함께 고칩니다.**
+
+## 5. 데이터 모델
+
+`src/contexts/types.ts`
+
+```typescript
+interface Member {            // 성도
+  id: string; name: string;
+  position: string;           // 직분. 빈 값 = 없음 ('성도'는 직분이 아님)
+  birthDate?: string;         // YYYY-MM-DD
+  phoneLast4?: string;        // 동명이인 구분
+  familyGroupId?: string;     // 세대 그룹 = 최초 세대주의 id (세대주가 바뀌어도 유지)
+  isFamilyHead: boolean;
+  isActive: boolean;          // false = 비활성화(과거 통계 보존)
+  createdAt: string; updatedAt: string;
+}
+
+interface OfferingType {      // 헌금 종류
+  id: string; name: string;
+  displayArea: 'PRIMARY' | 'DROPDOWN';   // 기본 나열 / 기타 선택
+  quickAmounts: number[];                // 자주 쓰는 금액 단추
+  sortOrder: number; isActive: boolean;
+}
+
+interface Donation {          // 헌금 1건 (종류별 1건)
+  id: string;
+  date: string;               // YYYY-MM-DD — 저장 위치(달)를 정하는 기준
+  memberId: string | null;    // 무명·방문자는 null
+  donorDisplayName: string;   // '김철수', '무명1', '방문자-홍길동'
+  familyGroupIdSnapshot?: string | null;  // 입력 당시 세대 (연말정산 이력 보존)
+  offeringTypeId: string; amount: number; // 원 단위 정수
+  memo?: string; createdAt: string;
+}
+
+interface AuditLog {          // 수정·삭제 이력
+  id: string; targetId: string;
+  action: 'UPDATE' | 'DELETE';
+  beforeSnapshot: Donation; afterSnapshot: Donation | null;
+  reason: string;             // 필수(합산·되돌리기는 자동 기입)
+  timestamp: string;
+}
+
+interface BackupEnvelope {    // 백업 파일
+  appVersion: string;         // 현재 "1.0.0"
+  schemaVersion: number;      // 현재 2
+  exportedAt: string;
+  checksum: string;           // payload의 SHA-256
+  payload: { members; offeringTypes;
+             donationsByYear: Record<'YYYY', Donation[]>;
+             auditLogsByYear: Record<'YYYY', AuditLog[]> };
+}
+```
+
+* 한 번의 저장(봉투)은 종류마다 독립된 `Donation`을 만듭니다(묶음 ID 없음). 같은 날짜·성도·종류의 중복 감지도 기록 단위입니다.
+* 세대 그룹은 별도 엔티티 없이 세대주의 `Member.id`를 그룹 ID로 씁니다. 세대주 변경은 `isFamilyHead`만 옮기고, 분가·이동해도 과거 기록은 스냅샷 덕분에 영향이 없습니다.
+* **백업 파일 형식(`schemaVersion` 2)은 저장 방식이 바뀌어도 그대로**입니다. 연도별 `donationsByYear`로 담고 읽을 때 월 키로 나눕니다.
+
+## 6. 저장소 설계
+
+`services/storage/storageService.ts`
+
+### 6.1 키 구성
+| 키 | 내용 |
+| :--- | :--- |
+| `members`, `offering_types`, `settings` | 성도 / 헌금 종류 / 설정 |
+| `donations_YYYY-MM` | **월 단위** 헌금 (`donationKey(ym)`, 비면 키 삭제) |
+| `audit_logs_YYYY` | 연도 단위 수정·삭제 이력 |
+| `meta_journal` | 진행 중인 트랜잭션의 재실행 기록 |
+| `meta_migration_*` | 1회 보정 완료 표시(백업 대상 아님) |
+
+한 건을 저장·수정·삭제하면 **그 달의 키 하나만** 다시 씁니다(월이 바뀌는 수정은 두 키). 연도 전체를 다시 쓰지 않으므로 연 1만 4천 건 기준 저장이 약 45ms → 3ms가 되었습니다. 신규 입력은 현재 날짜가 아니라 `donation.date`의 달에 저장해 1월의 전년도 12월 소급 입력도 정확합니다.
+
+### 6.2 원자적 트랜잭션 (`transact`)
+1. 읽기 함수로 값을 읽어 **쓸 목록(writes)을 계산**한다.
+2. 쓸 목록을 `meta_journal`에 먼저 기록한다.
+3. 각 키에 쓴다.
+4. 저널을 지운다.
+
+도중에 앱이 멈추면 다음 시작 때 `recoverJournal`이 저널을 다시 실행해 **전부 반영된 상태**로 맞춥니다. 같은 키에 대한 삭제→쓰기는 마지막 쓰기만 남깁니다. 커밋된 키 목록은 `tabSyncChannel`(BroadcastChannel)로 다른 창에 알려 같은 데이터를 보게 합니다.
+
+저널 값은 IndexedDB의 값 크기 한도(약 128MB)를 넘을 수 없으므로, 아주 큰 작업(104만 건 전체 교체)은 한 번에 못 합니다. 그래서 **월별 이전은 연도마다 따로 커밋**하고, **복원은 연도 하나씩** 합니다.
+
+### 6.3 연도 경계 수정
+날짜를 고쳐 월·연도가 바뀌면 한 트랜잭션에서 ① 이전 달에서 제거 ② 새 달에 삽입 ③ 새 연도 이력에 기록합니다.
+
+## 7. 화면 데이터 관리 (DonationContext)
+
+### 7.1 달 단위 메모리 모델
+* 상태: `months: Record<'YYYY-MM', Donation[]>`, `epoch`(전체 다시 읽기 때 +1), `audits`, `years`, `history`(최근 저장 10건, 메모리 전용).
+* **저장 시 그 달 배열만 교체**하고 다른 달 배열은 같은 객체를 유지합니다. 이를 소비하는 훅(`useDonationMonths`)은 달 배열이 바뀌지 않으면 같은 결과 배열을 돌려주므로 다른 달에 저장해도 집계가 다시 계산되지 않습니다.
+* 화면은 필요한 달만 불러옵니다: 주별 1~2달, 월별 1달, 분기 3달, 연도 12달, 입력 화면은 선택일의 달.
+
+### 7.2 연도 해제
+화면이 쓰는 연도는 `pinMonths`로 “사용 중” 표시하고, `evictOldYears`가 순수 함수 `yearsToEvict`로 **메모리에 남기는 연도를 최대 3개**로 유지합니다(마지막 사용이 오래된 연도부터 해제). 사용 중이거나 읽는 중인 연도는 내리지 않으며, 요청한 연도는 가장 최근 사용으로 칩니다. 필요하면 다시 읽습니다.
+
+### 7.3 경합 방어
+| 상황 | 방어 |
+| :--- | :--- |
+| 달을 읽는 도중 저장이 커밋됨 | `staleMonths`로 표시하고 다시 읽는다 |
+| 읽는 도중 복원·초기화(`reloadAll`) | `generation`이 바뀌면 읽은 결과를 버린다 |
+| 읽기 실패 | `finally`에서 “읽는 중” 표시를 지워 다음에 다시 시도한다 |
+| 연도 목록을 여러 번 새로 읽음 | `refreshYears` 토큰으로 마지막 요청만 반영한다 |
+| 저장 후 [수정]으로 달이 바뀐 내역을 되돌리기 | 저장한 달을 먼저 읽고, 못 찾은 내역만 나머지 달에서 찾는다 |
+
+### 7.4 연타 방지
+React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못합니다. `hooks/exclusive.ts`의 `createExclusive(ref)`가 **진행 중에 들어온 호출을 즉시 무시**하고 끝나면(실패해도) 풀립니다. 헌금 저장(Enter·Ctrl+Enter·[저장]·큰 금액/중복 확인창)과 되돌리기, 성도 등록·수정 폼에 적용합니다.
+
+## 8. 보고서
+
+### 8.1 선택과 계산의 분리 (250ms 지연)
+`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·엑셀·메일 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
+
+### 8.2 종류별 표
+| 기간 | 표 | 집계 |
+| :--- | :--- | :--- |
+| 주별 | 성도명 × 종류 | `buildWeeklyMatrix` |
+| 월별 | 성도명 × 종류 | 같은 함수를 `personRange`(그 달 1일~말일)로 재사용 → 주별 합과 일치 |
+| 분기·연도 | 종류 × 월 + 세대별 집계 | `useSummaryReport` |
+
+* `ReportFilters.personKind('WEEK'|'MONTH'|null)`/`personRange`로 화면·엑셀이 같은 코드를 씁니다.
+* 열 = 활성 종류 + 기간에 쓰인 비활성 종류(`sortOrder` 순) + 장부에만 있는 종류(`(삭제된 종류)`, 합계 일치 보장). 행 키는 `memberId`(동명이인 분리) 또는 `anon:표기명`(같은 무명 합산).
+* 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 엑셀이 같은 `useMemberOrderKey()`를 씁니다.
+* **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·엑셀·메일이 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
+* **세대 집계 기준**(현재/납부 당시)은 분기·연도 요약과 개인별·세대별 탭에만 쓰이며, 주별·월별 종합 보고서에서는 숨깁니다.
+* 탭은 `reportKey`(주별은 주 시작일, 그 외 `기간:연도:값`)가 바뀌면 [종합 보고서]로 돌아갑니다.
+
+### 8.3 큰 표의 속도
+* **가상 스크롤:** `WeeklySummary`는 `useVirtualizer`로 보이는 행만 `<tbody>`에 그리고 위·아래를 높이만 가진 빈 행(`padTop/padBottom`)으로 채웁니다. 실제 행 높이는 `measureElement`로 재어 글자 크기 125%에서도 행이 가려지지 않으며, 합계 행은 `sticky bottom-0`로 유지됩니다. `useIsPrinting`이 `beforeprint`에서 켜지면 가상화를 끄고 **모든 행**을 그립니다.
+* **전체 입력 내역:** 정렬 결과와 합계만 메모하고 보이는 행의 종류 이름·금액 글자·구분 표기는 `rowAt(i)`로 그때그때 계산합니다. 정렬은 ISO 날짜 문자열 직접 비교입니다.
+* **스크롤 영역 높이:** `useFitHeight`가 영역 위치부터 화면 아래까지 남은 높이(최소 240px)를 `--fit-h`로 정해, 위쪽 내용이 길어도 고정 합계 행이 항상 화면 안에 있습니다.
+* **고정 셀:** 합계 행은 `sticky bottom-0`, 머리글 `top-0`, 번호·성도명 열 `left-0/left-10`. `border-collapse` 때문에 사라지는 윗선은 그림자(`shadow`)로 대신 그립니다.
+
+### 8.4 수정·삭제 이력 범위
+`auditLogsForPeriod`가 변경 전·후 날짜 중 하나라도 기간에 속하면 포함합니다(연도를 옮긴 수정은 두 보고서 모두에 나옴). 이력은 새 연도의 장부에 기록되므로 모든 연도의 이력을 불러온 뒤 거릅니다.
+
+### 8.5 동명이인 표기
+`duplicateNames`(비활성 포함)와 `nameDisambiguator`(연락처 뒷4자리 → 직분)가 구분 값을 만들고 `useNameTag`가 화면에 붙입니다. 엑셀에는 넣지 않습니다(이름 열을 집계 키로 쓰기 때문).
+
+## 9. 엑셀
+
+`services/excel/excelService.ts`
+
+* **파일:** 주별 `buildWeeklyWorkbook`(교차표 + 주간 상세), 월별 `buildWeeklyWorkbook({kind:'MONTH'})`(교차표 1개), 분기·연도 `buildReportWorkbook`(`종합결산요약` + `세대별_기부금집계`). 연·분기·월에는 **개별 내역 시트가 없습니다.**
+* **수식 + 캐시 값:** 합계는 `SUM` 수식에 JavaScript로 계산한 `result`를 함께 넣어 한셀·구버전 뷰어에서도 0으로 보이지 않게 합니다. 본문 금액은 값입니다(행 키가 `memberId`라 같은 이름의 동명이인을 이름 기준 `SUMIFS`로 합치면 오집계되기 때문).
+* **한 번만 훑기:** 종류×월·세대×종류 합계를 한 번에 Map으로 모은 뒤 값으로 기록합니다. 셀마다 전체를 훑던 방식은 18만 건에서 65초였고 지금은 0.4초입니다.
+* **수식 인젝션 방어:** 텍스트가 `= + - @ \t \r`로 시작하면 앞에 `'`를 붙입니다(`sanitizeCellText`).
+* **열 너비:** `fitNameColumn`이 이름 데이터만으로 폭을 정합니다(한글 2칸, 여유 6칸, 최소 18·최대 60).
+* **파일명 보호:** OS 금지 문자 `\ / : * ? " < > |`를 `_`로 바꾼 뒤 UTF-8 Blob으로 내려받습니다(`downloadBridge`).
+* [메일 저장]은 `mailtoProtocol`로 기본 메일 앱을 열고, 데스크톱 앱에서는 저장 완료 후 [파일 열기]/[폴더 열기]를 보여 줍니다.
+
+## 10. 백업 · 복원 · 초기화
+
+`services/backup/`
+
+| 기능 | 함수 | 설명 |
+| :--- | :--- | :--- |
+| 만들기 | `collectPayload(years?)`, `createBackupJson`, `downloadBackup(prefix, years?)` | 선택 연도의 월 키를 연도별로 합쳐 담고 체크섬을 붙인다. 성도·종류는 항상 전부. |
+| 검사 | `validation.parseAndValidateBackup` | SHA-256 체크섬과 형식 검증, 이전 스키마(v1→v2) 자동 변환 |
+| 복원 | `restoreBackup(payload, {years, mode})` | 화면은 `mode: 'YEARS'`, 연도 하나 |
+| 전체 교체 | `replaceAllData(payload)` | 시연 데이터·초기화용(단일 트랜잭션, 큰 데이터에는 한도 있음) |
+| 초기화 | `resetAllData()` | 빈 성도·내역·이력 + 새 id의 기본 헌금 종류로 교체(설정 유지) |
+| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 파일로 저장, 최근 10개 보관 |
+
+### 10.1 연도 복원(YEARS)과 다른 PC 백업 병합
+한 트랜잭션에서 ① 선택 연도의 기존 월 키·이력 키를 지우고 ② 백업 내용을 월별로 쓰고 ③ 성도·종류를 **현재 데이터와 대응**시킵니다. 대응 규칙(`mergeRules.planMerge`)은 다음과 같습니다.
+
+| 대상 | 같은 것으로 보는 조건 | 아닐 때 |
+| :--- | :--- | :--- |
+| 헌금 종류 | id 같음 또는 **이름 같음** | 새 종류로 추가 |
+| 성도 | id 같음 또는 **이름 + 연락처 뒷4자리 같음** | 새 성도로 추가 (이름만 같으면 동명이인일 수 있어 합치지 않음) |
+
+대응된 백업 id는 `remapDonations`/`remapAudits`로 **현재 id로 바꿔** 헌금·이력(스냅샷 포함)에 쓰므로 중복 없이 올바른 성도·종류에 연결됩니다. 새로 추가되는 성도의 세대 그룹이 대응된 성도를 가리키면 현재 id로 바꿉니다. `previewMerge`가 복원 창에 연결·추가·동명이인 가능 수를 미리 보여 줍니다.
+
+### 10.2 원칙
+* 복원·초기화·시연 데이터 교체 전에는 **항상 긴급 백업**(`emergency_before_*`)을 내려받습니다(시연 데이터는 기존 데이터가 있을 때만).
+* 복원이 연도 하나씩인 이유: 104만 건 전체를 한 번에 쓰면 저널 값이 IndexedDB 한도(약 128MB)를 넘기 때문입니다. 연도 하나(약 33MB)는 안전합니다.
+* 연도 하나 백업이 저장소 전체와 같을 때만 “마지막 백업” 기록을 갱신합니다(`isCompleteYearBackup`).
+* 설정과 1회 보정 플래그는 백업에 포함되지 않으므로 복원 후 보정이 다시 일어나지 않습니다.
+
+## 11. 입력 화면 설계
+
+* **저장 흐름:** `requestSave` → 검증(`buildDrafts`) → 큰 금액 확인 → 중복 확인(`findDuplicates`) → `saveBatch`. 전체가 `exclusive`로 감싸여 연타에 안전합니다.
+* **되돌리기:** `SaveBatch { createdIds, mergedBefore, lines }`를 메모리에 최대 10개 보관. `undoLast`는 생성분 삭제 + 합산 전 스냅샷 복원을 한 트랜잭션으로 하며 사유 “입력 직후 되돌리기”를 기록합니다. Ctrl+Z는 입력 칸이 모두 비어 있을 때만 가로챕니다.
+* **최근 입력:** `useHistoryItems`가 저장 묶음의 id로 **현재 값**을 찾아 줄을 만들어(수정·월 이동 반영) 못 찾으면 저장 당시 내용을 읽기 전용으로 보입니다. [수정]은 보고서와 같은 `useDonationEditor`(사유 필수)를 씁니다.
+* **무명 번호:** 선택일의 `무명N` 최댓값 + 1(`nextAnonymousName`). 카운터를 저장하지 않으므로 삭제·되돌리기·날짜 변경과 항상 맞습니다. 문자열만 구독해 번호가 바뀔 때만 다시 그립니다.
+* **금액:** `parseAmount`(쉼표 제거 후 안전 정수·양수), `addQuickAmount`(15자리 초과 시 무시), `amountToKorean`(표시 전용).
+* **단축키:** 전역 keydown에서 처리하되 열린 대화상자(`[role=dialog][data-state=open]`)가 있으면 무시합니다. 한글 조합 중 Enter(`isComposing`)는 무시하고, 금액 단추는 `tabIndex={-1}` + `onMouseDown preventDefault`로 포커스를 유지합니다. 진입 시에는 어느 칸에도 포커스를 두지 않습니다.
+* **모바일 안내:** `useIsMobileDevice`(사용자 에이전트 또는 좁은 터치 화면)가 true면 입력 카드 위에 빨간 안내를 그립니다.
+* **현금 계수:** 선택일 합계는 파생 값(`dailyTotals`)을 구독하는 별도 컴포넌트가 계산해 입력 칸 변경에는 다시 그리지 않습니다. 계수 금액은 컴포넌트 로컬 상태입니다.
+
+## 12. 인쇄, 테마, 달력
+
+* **인쇄:** `@page { size: A4 landscape; margin: 0 }`로 브라우저 머리글·바닥글이 들어갈 자리를 없애고, 실제 여백은 `main`의 `print:p-[12mm]`와 표의 `thead/tfoot` 간격 행(5mm, 쪽마다 반복)으로 줍니다. 표는 9.5pt·낮은 행 높이로 한 쪽에 약 34행. `print-color-adjust: exact`로 배경이 인쇄됩니다. `PrintHeader`가 한 줄 머리글(제목·요약·출력일시)을 그리며 출력일시는 `beforeprint`에서 갱신합니다. 실제 쪽 나눔과 프린터 여백은 인쇄해서 확인해야 합니다.
+* **테마:** Tailwind 4가 색을 `var(--color-*)`로 컴파일하므로 `index.css`가 `:root[data-theme]`별로 변수만 덮어씁니다(컴포넌트 수정 없음). 화면 테마 변수는 `@media screen`에만 있어 인쇄에는 영향이 없고, 인쇄 색은 `data-print-theme`의 8개 변수로만 정해집니다. 마지막 테마는 `localStorage`에 기록해 `main.tsx`가 렌더 전에 먼저 적용하므로 색이 깜빡이지 않습니다.
+* **달력:** 일요일 시작 6주(42칸) 고정 그리드, 일요일 빨간색. 입력 칸은 숫자만 받아 `YYYY-MM-DD`로 정리합니다. `pickOnly`는 읽기 전용으로 달력으로만 고르게 합니다(헌금 입력 날짜). 일반 화면은 아래에 겹쳐 띄우고, Radix `Dialog` 안(`inline`)에서는 흐름 안에 펼칩니다(스크롤 잘림·포커스 트랩 충돌 방지).
+* **글자 크기:** 설정이 루트 글자 크기(100%/112.5%/125%)를 바꾸며 Tailwind가 `rem` 기반이라 화면 전체가 함께 커집니다.
+* **접근성:** 주 메뉴 `aria-current`, 보고서 탭 `role=tablist/tab` + `aria-selected`, 토글 `aria-pressed`, 성도 열 제목 `aria-sort`, 검색 `role=combobox/listbox`, 결과 알림 `aria-live`.
+
+## 13. Electron 셸
+
+* `requestSingleInstanceLock()`으로 중복 실행 차단. `contextIsolation: true`, `nodeIntegration: false`. CSP는 응답 헤더로 강제. 서비스 워커·PWA·자동 업데이트 없음.
+* **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
+* **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(최대 5초 대기, 초과·실패 시 종료를 막지 않고 다음 실행에 경고).
+* **파일 열기:** `will-download`가 완료된 `.xlsx`의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
+
+## 14. 1회 보정(마이그레이션)
+
+`meta_migration_*` 플래그로 한 번만 실행하며, 보정과 플래그 기록은 같은 트랜잭션입니다. 사용자가 바꾼 설정은 덮어쓰지 않는 것이 원칙입니다.
+
+| 보정 | 내용 |
+| :--- | :--- |
+| 헌금 종류 (v21~v24) | 건축·선교헌금 기본 나열·금액 단추, 십일조 단추, 구제·특별헌금 추가(같은 이름이 있으면 건드리지 않음) |
+| 설정 | 큰 금액 기준의 옛 기본값(1억)만 1천만으로 보정 |
+| 직분 | 저장된 ‘성도’를 빈 값으로 정리 |
+| 헌금 월별 이전 | `donations_YYYY` → `donations_YYYY-MM` (연도마다 별도 커밋, 시작 때 화면 그리기 전에 실행) |
+
+시작 때 이전 작업이 실패하면 빈 화면 대신 오류 안내를 보여 줍니다. 내역의 날짜 형식이 깨져 있으면 월 키를 정할 수 없어 그 내역은 이전되지 않습니다(17장).
+
+## 15. 성능 측정과 설계 근거
+
+성도 1,000명, 매주 4,000건 × 260주(104만 건), 연 약 18만 건. 개발 화면 기준 측정이며 시험 데이터 생성은 `test-data/seed-large.mjs`(저장소에 포함되지 않음).
+
+| 문제(변경 전) | 원인 | 조치 | 결과 |
+| :--- | :--- | :--- | :--- |
+| 저장 시 연도 전체를 다시 씀 | 연도 단위 키 | **월 단위 키** | 저장 45ms → 3ms (연 1.4만 건) |
+| 연도 엑셀 65초 + 화면 정지 | 셀마다 전체 재탐색 | 한 번 훑어 Map 집계, 2시트 요약 | 0.4초, 파일 5.7MB → 76KB |
+| 되돌리기 1.5초 | 모든 달을 읽음 | 저장한 달 먼저 | 0.06초 |
+| 주·월 이동 0.9초 | 1,000행 전체 렌더 | 가상 스크롤 + 행 높이 측정 | 0.25초 |
+| 연 단위 전체 입력 내역 4초 | 18만 건 정렬·행 생성 | 문자열 비교, 보이는 행만 계산 | 0.06초 |
+| 메모리 70MB, 연도가 계속 쌓임(200MB+) | 연도 배열을 해제하지 않음 | 달 단위 + 최대 3개 연도 | 입력 화면 35~40MB, 5개 연도 열어도 210~230MB |
+| 104만 건 복원 실패 | 저널 값이 IndexedDB 한도 초과 | 연도 하나씩 복원·이전 | 연도 33MB 복원 0.3초 |
+| 저장 233ms | 연도 배열 재구성 | 달 배열만 교체 | 83ms |
+
+## 16. 테스트
+
+`npm test` (Vitest, 17개 파일, 125건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
+
+| 영역 | 파일 | 검증 |
+| :--- | :--- | :--- |
+| 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·마이그레이션·월 캐시·월별 행렬 = 주별 합 |
+| 저장소 | `storage/monthly.test.ts` | 월별 이전, 월 단위 쓰기, 연도 백업·복원 왕복 |
+| 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
+| 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
+| 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신 |
+| 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
+
+**자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, Electron 설치본 전체 흐름. 이 부분은 직접 확인해야 합니다.
+
+## 17. 알려진 한계
+
+* 날짜 형식이 깨진 옛 데이터는 월별 이전에서 제외될 수 있다.
+* 메모리에서 내려간 연도의 내역은 “최근 입력” 줄에서 저장 당시 내용(읽기 전용)으로 표시된다.
+* 새로 저장한 내역을 되돌리면 생성 기록이 없는데도 이력에 `DELETE(입력 직후 되돌리기)`가 남는다.
+* 복원은 설정을 포함하지 않는다. 오래된 백업을 복원하면 그 뒤에 추가된 금액 단추 등은 헌금 종류 화면에서 다시 추가해야 한다.
+* 이름만 같고 연락처가 없는 성도는 다른 PC 백업 병합 때 새 성도로 추가된다(복원 창이 안내).
+* 서명되지 않은 설치 파일은 Windows 스마트 앱 컨트롤에서 막힐 수 있다.
+
+## 18. 빌드 · 실행 · 배포
+
+| 명령 | 용도 |
+| :--- | :--- |
+| `npm run dev` | 개발 서버 (http://localhost:5173) |
+| `npm run build` | 타입 검사 + 웹 빌드 |
+| `npm test` | 전체 테스트 |
+| `npm run testdata` | 시험 데이터 백업 파일 생성 |
+| `npm run electron:dev` / `electron:start` | 데스크톱 앱 실행(개발 / 빌드 후) |
+| `npm run dist` | Windows 설치 파일(`release/`, NSIS, 설치 경로 변경 가능, 삭제해도 데이터 보존) |
+
+* **시연 페이지:** `main`에 올리면 `.github/workflows/pages.yml`이 빌드해 GitHub Pages에 배포합니다(저장소 Settings → Pages의 Source가 “GitHub Actions”여야 함).
+* **버전:** `package.json`의 `version`과 `contexts/types.ts`의 `APP_VERSION`을 함께 바꾸고, 백업 파일 형식을 바꿀 때만 `SCHEMA_VERSION`을 올립니다.

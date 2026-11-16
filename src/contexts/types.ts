@@ -1,4 +1,4 @@
-// 핵심 데이터 모델 (architecture_spec §4)
+// 핵심 데이터 모델 (ARCHITECTURE.md §5)
 
 /** 성도 마스터 데이터 */
 export interface Member {
@@ -125,5 +125,5 @@ export interface SaveBatch {
 
 export type DuplicateResolution = 'MERGE' | 'SEPARATE';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.0.0';
 export const SCHEMA_VERSION = 2;
