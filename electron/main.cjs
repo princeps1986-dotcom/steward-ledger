@@ -10,6 +10,7 @@ const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
+const { execFile } = require('node:child_process');
 const { pickBackupDir, resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
 const { verifyBackupFile } = require('./backupVerify.cjs');
 
@@ -413,7 +414,27 @@ if (!app.requestSingleInstanceLock()) {
     return true;
   });
 
+  // 외부 공유(카카오톡 등): 현재 화면을 PDF로 임시 폴더에 만들고 파일 자체를 클립보드에 올립니다(대화창에서 Ctrl+V).
+  // 임시 폴더는 공유할 때마다·앱을 시작할 때 비웁니다.
+  const shareDir = () => path.join(app.getPath('temp'), 'StewardLedgerShare');
+  ipcMain.handle('report:share-pdf', async (event, name) => {
+    if (typeof name !== 'string' || !/^[^\\/:*?"<>|]+\.pdf$/i.test(name)) throw new Error('잘못된 파일 이름');
+    if (process.platform !== 'win32') throw new Error('Windows에서만 파일을 복사할 수 있습니다.');
+    await fs.rm(shareDir(), { recursive: true, force: true });
+    await fs.mkdir(shareDir(), { recursive: true });
+    const file = path.join(shareDir(), name);
+    await fs.writeFile(file, await event.sender.printToPDF({ preferCSSPageSize: true, printBackground: true }));
+    // 경로는 환경변수로 넘겨 명령어 문자열에 섞이지 않게 합니다.
+    await new Promise((resolve, reject) =>
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -LiteralPath $env:SL_FILE'], { env: { ...process.env, SL_FILE: file }, timeout: 15000 }, (err) =>
+        err ? reject(new Error('파일을 클립보드에 복사하지 못했습니다.')) : resolve(true),
+      ),
+    );
+    return true;
+  });
+
   app.whenReady().then(() => {
+    void fs.rm(shareDir(), { recursive: true, force: true }).catch(() => undefined);
     // 이 앱은 카메라·위치·알림 같은 권한이 필요 없으므로 모든 권한 요청을 거부합니다.
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);

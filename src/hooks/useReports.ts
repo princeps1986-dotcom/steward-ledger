@@ -363,7 +363,9 @@ export function useAuditLogTab(f: ReportFilters) {
   }, [audits, typeById, tagOf, isRange, week, year, months]);
 }
 
-/** 인쇄·PDF 저장 */
+const SHARE_WARNING = '(개인별 헌금 내역이 포함된 파일입니다. 받는 사람을 확인하세요.)';
+
+/** 인쇄·PDF 저장·외부 공유 */
 export function useReportExport(f: ReportFilters) {
   const [busy, setBusy] = useState(false);
   const [message, setMessageState] = useState<string | null>(null);
@@ -407,26 +409,49 @@ export function useReportExport(f: ReportFilters) {
       ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.pdf`
       : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.pdf`;
 
+  // 데스크톱 앱은 PDF를 만드는 동안 인쇄와 같은 상태로 화면을 그립니다. 인쇄 중에만 전체 행을 그리는 화면이 있어 이벤트를 직접 보냅니다.
+  const withPrintState = useCallback(
+    async (run: (d: NonNullable<ReturnType<typeof desktop>>) => Promise<void>, failText: string) => {
+      const d = desktop();
+      if (!d) return;
+      setBusy(true);
+      window.dispatchEvent(new Event('beforeprint'));
+      try {
+        await run(d);
+      } catch (err) {
+        say(`${failText}: ${(err as Error).message}`);
+      } finally {
+        window.dispatchEvent(new Event('afterprint'));
+        setBusy(false);
+      }
+    },
+    [say],
+  );
+
   // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 고르게 합니다.
   const savePdf = useCallback(async () => {
-    const d = desktop();
-    if (!d) {
+    if (!desktop()) {
       say("인쇄 창에서 대상을 'PDF로 저장'으로 고르세요.");
       window.print();
       return;
     }
-    setBusy(true);
-    // 인쇄 중에만 전체 행을 그리는 화면이 있어, 인쇄와 같은 상태가 되도록 이벤트를 직접 보냅니다.
-    window.dispatchEvent(new Event('beforeprint'));
-    try {
+    await withPrintState(async (d) => {
       if (await d.savePdf(fileName)) say('PDF를 저장하는 중입니다…');
-    } catch (err) {
-      say(`PDF 저장 실패: ${(err as Error).message}`);
-    } finally {
-      window.dispatchEvent(new Event('afterprint'));
-      setBusy(false);
+    }, 'PDF 저장 실패');
+  }, [fileName, say, withPrintState]);
+
+  // 외부 공유(카카오톡 등). 데스크톱: PDF 파일을 클립보드에 복사. 웹: 파일을 만들 수 없어 인쇄 창의 PDF 저장 후 직접 첨부하도록 안내.
+  const sharePdf = useCallback(async () => {
+    if (!desktop()) {
+      say(`인쇄 창에서 대상을 'PDF로 저장'으로 저장한 뒤, 그 파일을 카카오톡 등 대화창에 끌어다 놓거나 첨부하세요. ${SHARE_WARNING}`);
+      window.print();
+      return;
     }
-  }, [fileName, say]);
+    await withPrintState(async (d) => {
+      await d.sharePdf(fileName);
+      say(`PDF 파일을 복사했습니다. 카카오톡 등 대화창을 열고 Ctrl+V로 붙여 넣으세요. ${SHARE_WARNING}`);
+    }, '외부 공유 실패');
+  }, [fileName, say, withPrintState]);
 
   const fileActions = saved
     ? [
@@ -435,5 +460,5 @@ export function useReportExport(f: ReportFilters) {
       ]
     : undefined;
 
-  return { busy, message, fileActions, savePdf, print: () => window.print() };
+  return { busy, message, fileActions, savePdf, sharePdf, print: () => window.print() };
 }

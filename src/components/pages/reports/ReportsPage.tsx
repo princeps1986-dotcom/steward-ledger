@@ -113,7 +113,7 @@ export function ReportsPage() {
           </div>
         ) : null}
         <div className="flex-1" />
-        {/* 인쇄·PDF 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
+        {/* 인쇄·PDF 저장·외부 공유는 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
         {tab === 'SUMMARY' ? (
           <>
             <button className="btn-primary" onClick={ex.print} disabled={f.pending}>
@@ -121,6 +121,9 @@ export function ReportsPage() {
             </button>
             <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || f.pending}>
               PDF 저장
+            </button>
+            <button className="btn-accent" onClick={() => void ex.sharePdf()} disabled={ex.busy || f.pending}>
+              외부 공유
             </button>
           </>
         ) : null}

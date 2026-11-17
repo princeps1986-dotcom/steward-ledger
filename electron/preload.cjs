@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('desktop', {
   selectBackupDir: () => ipcRenderer.invoke('backup:select-dir'),
   getAutoBackupStatus: () => ipcRenderer.invoke('backup:get-status'),
   ackAutoBackupStatus: () => ipcRenderer.invoke('backup:ack-status'),
+  sharePdf: (name) => ipcRenderer.invoke('report:share-pdf', name),
   savePdf: (name) => ipcRenderer.invoke('report:save-pdf', name),
   openFile: (file) => ipcRenderer.invoke('file:open', file),
   showInFolder: (file) => ipcRenderer.invoke('file:show', file),

@@ -34,6 +34,8 @@ export interface DesktopApi {
   showInFolder(path: string): Promise<boolean>;
   /** 현재 화면을 PDF로 저장합니다(저장 창에서 취소하면 false). 저장되면 onDownloadDone으로도 알립니다. */
   savePdf(name: string): Promise<boolean>;
+  /** 현재 화면을 PDF로 만들어 파일 자체를 클립보드에 복사합니다(카카오톡 대화창에서 Ctrl+V). 실패하면 reject. */
+  sharePdf(name: string): Promise<boolean>;
   /** PDF 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
   onDownloadDone(handler: (info: SavedFileInfo) => void): () => void;
   getDefaultBackupDir(): Promise<string>;
