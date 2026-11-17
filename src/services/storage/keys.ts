@@ -5,6 +5,8 @@ export const KEYS = {
   offeringTypes: 'offering_types',
   settings: 'settings',
   dirty: 'meta_dirty_since_backup',
+  /** 줄 단위 복원이 진행 중이면 시작 시각 등이 들어 있고, 끝나면 지워집니다(남아 있으면 복원이 중간에 중단된 것). */
+  restoreMarker: 'meta_restore_in_progress',
 } as const;
 
 /** 헌금 내역 키: ym = 'YYYY-MM' */

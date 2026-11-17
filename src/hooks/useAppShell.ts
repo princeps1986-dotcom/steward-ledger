@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDonationYears } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useSettings, useSettingsActions, useSettingsSelector } from '../contexts/SettingsContext';
+import { interruptedRestore } from '../services/backup/streamRestore';
 import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from '../services/backup/autoBackupService';
 import { saveBackupFile } from '../services/backup/backupService';
 import { formatDateTime } from '../services/domain/dates';
@@ -85,6 +86,14 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       await api.ackAutoBackupStatus();
     })();
   }, [loaded, markBackupDone]);
+
+  // 지난 복원이 끝나지 않고 중단됐는지 시작할 때 한 번 알려 줍니다(복원 직전의 긴급 백업으로 되돌릴 수 있음).
+  useEffect(() => {
+    if (!loaded) return;
+    void interruptedRestore()
+      .then((m) => m && setFailure(`지난 복원(${m.years.join(', ')}년)이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 데이터가 일부만 복원되었을 수 있습니다. 설정에서 같은 백업으로 다시 복원하거나, 백업 폴더의 emergency_before_restore 파일로 되돌리세요.`))
+      .catch(() => undefined);
+  }, [loaded]);
 
   const skipBackup = useCallback(() => desktop()?.skipBackup(), []);
   return { failure, closing, skipBackup };

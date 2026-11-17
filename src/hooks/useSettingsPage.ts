@@ -9,11 +9,16 @@ import { formatAmountInput, formatNumber, parseAmount } from '../services/domain
 import { formatDateTime } from '../services/domain/dates';
 import { buildDemoPayload } from '../services/demo/demoData';
 import { hasAnyData, isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
+import { isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan } from '../services/backup/streamRestore';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
+import type { MergePlan } from '../services/backup/mergeRules';
 
 interface RestoreCandidate {
-  envelope: BackupEnvelope;
+  /** 한 덩어리 JSON 백업(작은 파일)은 전체를 읽어 둔 내용, 줄 단위 백업은 null(복원할 때 파일을 다시 읽음) */
+  envelope: BackupEnvelope | null;
+  /** 줄 단위 백업: 검증을 마친 파일과 그 요약 */
+  stream?: { file: File; scan: BackupScan };
   fileName: string;
   migratedFrom: number | null;
   summary: string;
@@ -24,6 +29,15 @@ interface RestoreCandidate {
 }
 
 const RESET_WAIT_SECONDS = 10;
+
+/** 성도·헌금 종류 합치기 결과 안내문(다른 PC의 백업이면 같은 성도·종류를 현재 데이터와 대응시킴) */
+function mergeNoticeOf(plan: MergePlan): string {
+  const parts: string[] = [];
+  if (plan.memberIdMap.size + plan.typeIdMap.size > 0) parts.push(`현재 데이터와 같은 성도 ${plan.memberIdMap.size}명·헌금 종류 ${plan.typeIdMap.size}개는 기존 항목에 연결됩니다.`);
+  if (plan.addMembers.length + plan.addTypes.length > 0) parts.push(`새로 추가되는 항목: 성도 ${plan.addMembers.length}명·헌금 종류 ${plan.addTypes.length}개.`);
+  if (plan.sameNameAdded > 0) parts.push(`새로 추가되는 성도 중 ${plan.sameNameAdded}명은 현재 데이터에 이름이 같은 성도가 있습니다(연락처 뒷4자리가 달라 같은 사람으로 보지 않음). 같은 사람이면 복원 후 성도 화면에서 확인해 주세요.`);
+  return parts.join(' ');
+}
 
 export function useSettingsPage() {
   const settings = useSettings();
@@ -110,19 +124,38 @@ export function useSettingsPage() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    setRestoreYearPick('');
+    if (await isNdjsonFile(file)) {
+      // 줄 단위 백업: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음).
+      setBusy(true);
+      try {
+        const scan = await scanBackupFile(file);
+        if (!scan.ok) return setMessage({ kind: 'error', text: `복원 불가: ${scan.error}` });
+        const years = Object.keys(scan.yearCounts).sort();
+        setRestore({
+          mergeNotice: mergeNoticeOf(await planFor(scan)),
+          envelope: null,
+          stream: { file, scan },
+          fileName: file.name,
+          migratedFrom: null,
+          summary: `백업 일시 ${formatDateTime(scan.exportedAt ?? '')} · 성도 ${scan.members.length}명 · 헌금 종류 ${scan.offeringTypes.length}개 · 헌금 내역 ${Object.values(scan.yearCounts).reduce((s, n) => s + n, 0)}건`,
+          yearRows: years.map((year) => ({ year, count: scan.yearCounts[year] })),
+        });
+      } catch (err) {
+        setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const res = await parseAndValidateBackup(await readBackupText(file));
     if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
     const p = res.envelope.payload;
     const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
-    setRestoreYearPick('');
     // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
     const plan = await previewMerge(p);
-    const parts: string[] = [];
-    if (plan.memberIdMap.size + plan.typeIdMap.size > 0) parts.push(`현재 데이터와 같은 성도 ${plan.memberIdMap.size}명·헌금 종류 ${plan.typeIdMap.size}개는 기존 항목에 연결됩니다.`);
-    if (plan.addMembers.length + plan.addTypes.length > 0) parts.push(`새로 추가되는 항목: 성도 ${plan.addMembers.length}명·헌금 종류 ${plan.addTypes.length}개.`);
-    if (plan.sameNameAdded > 0) parts.push(`새로 추가되는 성도 중 ${plan.sameNameAdded}명은 현재 데이터에 이름이 같은 성도가 있습니다(연락처 뒷4자리가 달라 같은 사람으로 보지 않음). 같은 사람이면 복원 후 성도 화면에서 확인해 주세요.`);
     setRestore({
-      mergeNotice: parts.join(' '),
+      mergeNotice: mergeNoticeOf(plan),
       envelope: res.envelope,
       fileName: file.name,
       migratedFrom: res.migratedFrom,
@@ -180,7 +213,8 @@ export function useSettingsPage() {
     try {
       // 복원 직전 현재 데이터를 긴급 백업으로 내려받습니다.
       await saveEmergencyBackup('emergency_before_restore');
-      await restoreBackup(restore.envelope.payload, { years: picked, mode: 'YEARS' });
+      if (restore.stream) await restoreFromFile(restore.stream.file, restore.stream.scan, picked);
+      else await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS' });
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({
         kind: 'info',

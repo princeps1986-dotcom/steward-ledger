@@ -270,6 +270,7 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
     const writes: Write[] = [];
     for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
+    writes.push({ key: KEYS.restoreMarker, value: null }); // 전체 교체가 끝났으므로 중단된 복원 표시도 지웁니다.
     writes.push({ key: KEYS.members, value: payload.members });
     writes.push({ key: KEYS.offeringTypes, value: payload.offeringTypes });
     // 헌금 내역은 월별 키로 나누어 기록합니다.

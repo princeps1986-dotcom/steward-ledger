@@ -8,7 +8,7 @@ export async function sha256Hex(text: string): Promise<string> {
 
 /** 자동 백업(줄 단위 JSON, v3)의 머리글에 들어가는 형식 번호 */
 export const NDJSON_VERSION = 3;
-const NDJSON_PREFIX = `{"ndjson":${NDJSON_VERSION}`;
+export const NDJSON_PREFIX = `{"ndjson":${NDJSON_VERSION}`;
 
 /**
  * 줄 단위 백업을 기존 백업과 같은 모양({schemaVersion, payload})으로 되돌립니다. 마지막 줄의 SHA-256으로 온전한지 먼저 확인합니다.
@@ -61,13 +61,13 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const YEAR_RE = /^\d{4}$/;
 
-function isMember(v: unknown): v is Member {
+export function isMember(v: unknown): v is Member {
   return isObj(v) && isStr(v.id) && isStr(v.name) && typeof v.isActive === 'boolean';
 }
-function isOfferingType(v: unknown): v is OfferingType {
+export function isOfferingType(v: unknown): v is OfferingType {
   return isObj(v) && isStr(v.id) && isStr(v.name) && Array.isArray(v.quickAmounts);
 }
-function isDonation(v: unknown): v is Donation {
+export function isDonation(v: unknown): v is Donation {
   return (
     isObj(v) &&
     isStr(v.id) &&
@@ -78,7 +78,7 @@ function isDonation(v: unknown): v is Donation {
     Number.isSafeInteger(v.amount)
   );
 }
-function isAuditLike(v: unknown): v is AuditLog {
+export function isAuditLike(v: unknown): v is AuditLog {
   return isObj(v) && isStr(v.id) && isStr(v.targetId) && isDonation(v.beforeSnapshot);
 }
 
@@ -99,7 +99,7 @@ function validateV2Payload(p: unknown): string | null {
   return null;
 }
 
-const fillReason = (logs: AuditLog[]): AuditLog[] =>
+export const fillReason = (logs: AuditLog[]): AuditLog[] =>
   logs.map((l) => (isStr(l.reason) && l.reason.trim() ? l : { ...l, reason: '(사유 미기록)' }));
 
 /**
