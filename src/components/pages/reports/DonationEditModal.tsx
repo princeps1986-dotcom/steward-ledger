@@ -5,14 +5,14 @@ import { Modal } from '../../shared/Modal';
 
 const OTHER = '기타(직접 입력)';
 /** 자주 쓰는 사유. 고르면 입력 칸에 채워지고 그대로 고쳐 쓸 수 있습니다. */
-const EDIT_REASONS = ['금액 오기입 정정', '헌금 종류 오기입 정정', '날짜 오기입 정정', '메모 수정', OTHER];
+const EDIT_REASONS = ['금액 오기입', '헌금 종류 오기입', '날짜 오기입', '메모 수정', OTHER];
 const DELETE_REASONS = ['중복 입력 삭제', '성도 잘못 선택(삭제 후 다시 입력)', '금액 오기입(삭제 후 다시 입력)', OTHER];
 
 export function DonationEditModal({ editor: e }: { editor: DonationEditorController }) {
   const d = e.draft;
   const isDelete = e.mode === 'DELETE';
   const reasonRef = useRef<HTMLInputElement>(null);
-  const reasonMissing = !!e.error && !!d && !d.reason.trim();
+  const reasonMissing = !!e.error?.startsWith('사유');
   // 목록에서 고른 문구. 입력 칸의 글자가 이것과 다르면(직접 쓴 경우) 목록은 "기타"로 바뀌고 잠깁니다.
   const [picked, setPicked] = useState('');
   useEffect(() => setPicked(''), [e.isOpen]);
@@ -108,9 +108,13 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
               autoFocus
               aria-label={`${isDelete ? '삭제' : '수정'} 사유`}
               aria-invalid={reasonMissing}
-              placeholder="직접 입력할 수도 있습니다 (예: 금액 오기입 정정)"
+              onBlur={(ev) => {
+                const t = ev.target.value.trim(); // 양 옆 공백 제거
+                if (t !== ev.target.value) e.setField('reason')(t);
+              }}
+              placeholder="직접 입력할 수도 있습니다 (한글 4글자 이상)"
             />
-            <p className="mt-1 text-xs text-gray-600">목록에서 고르거나 직접 입력하세요. 입력한 사유는 수정·삭제 이력에 남습니다.</p>
+            <p className="mt-1 text-xs text-gray-600">목록에서 고르거나 직접 입력하세요. (한글 4글자 이상) 입력한 사유는 수정·삭제 이력에 남습니다.</p>
           </div>
           {e.error ? <p className="col-span-2 text-sm text-red-600">{e.error}</p> : null}
         </div>

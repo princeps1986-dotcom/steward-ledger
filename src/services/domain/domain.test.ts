@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Donation, DonationDraft, Member } from '../../contexts/types';
 import { formatAmountInput, parseAmount } from './amount';
 import { lastSunday, monthsOfPeriod } from './dates';
-import { buildDonation, findDuplicate, makeAudit, mergeDonation } from './donationOps';
+import { buildDonation, findDuplicate, makeAudit, mergeDonation, validateReason } from './donationOps';
 import { buildFamilyLabels, familyKeyOf } from './family';
 import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT } from './memberRules';
 import { matchMember, memberLabel } from './search';
@@ -91,6 +91,15 @@ describe('donationOps', () => {
   it('requires an audit reason', () => {
     expect(() => makeAudit('DELETE', existing, null, '   ')).toThrow();
     expect(makeAudit('DELETE', existing, null, '오기입').reason).toBe('오기입');
+  });
+});
+
+describe('validateReason', () => {
+  it('requires 4+ Hangul syllables after trimming', () => {
+    expect(validateReason('   ')).toContain('필수');
+    expect(validateReason(' 오기입 ')).toContain('4글자');
+    expect(validateReason('abcd 1234 오기')).toContain('4글자');
+    expect(validateReason('  금액 오기입  ')).toBeNull();
   });
 });
 

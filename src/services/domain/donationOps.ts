@@ -72,3 +72,14 @@ export function makeAudit(
 
 export const REASON_MERGE = '동일 내역 복수 헌금 합산';
 export const REASON_UNDO = '입력 직후 되돌리기';
+
+/** 수정·삭제 사유에 들어가야 하는 한글 글자 수(공백·숫자·영문은 세지 않음) */
+export const MIN_REASON_HANGUL = 4;
+
+/** 사유 검사: 양 옆 공백을 뺀 글자가 비어 있지 않고 한글이 4글자 이상이어야 합니다. 통과하면 null, 아니면 안내 문구. */
+export function validateReason(raw: string): string | null {
+  const r = raw.trim();
+  if (!r) return '사유를 입력하세요. (필수)';
+  const hangul = (r.match(/[가-힣]/g) ?? []).length;
+  return hangul < MIN_REASON_HANGUL ? `사유에는 한글이 ${MIN_REASON_HANGUL}글자 이상 들어가야 합니다.` : null;
+}

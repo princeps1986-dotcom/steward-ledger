@@ -5,6 +5,7 @@ import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 import { formatAmountInput, formatNumber, formatWon, parseAmount } from '../services/domain/amount';
 import { isValidDateString } from '../services/domain/dates';
+import { validateReason } from '../services/domain/donationOps';
 import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
 
@@ -83,7 +84,8 @@ export function useDonationEditor() {
   const submit = useCallback(async () => {
     if (!target || !draft || busy) return;
     const reason = draft.reason.trim();
-    if (!reason) return setError('사유를 입력하세요. (필수)');
+    const reasonError = validateReason(reason);
+    if (reasonError) return setError(reasonError);
     setBusy(true);
     try {
       if (mode === 'DELETE') {
