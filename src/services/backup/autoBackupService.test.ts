@@ -92,3 +92,71 @@ describe('runPeriodicBackup', () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe('collectPayloadChunked (주기 백업 읽기)', () => {
+  const ids = (p: { donationsByYear: Record<string, Donation[]> }) => Object.values(p.donationsByYear).flat().map((x) => x.id).sort();
+
+  it('does not block saves while it reads (a save finishes between two months)', async () => {
+    const { collectPayloadChunked } = await import('./backupService');
+    let savedWhileReading = false;
+    const p = await collectPayloadChunked({
+      onMonthRead: async (ym) => {
+        if (ym !== '2026-01') return;
+        // 단일 읽기 트랜잭션이었다면 이 저장이 백업이 끝날 때까지 기다려 여기서 멈춥니다.
+        await transact(async () => ({ writes: [rowWrite('2026-02', { puts: [d('late', '2026-02-02')], deletes: [] })], result: 0 }));
+        savedWhileReading = true;
+      },
+    });
+    expect(savedWhileReading).toBe(true);
+    expect(ids(p)).toContain('a');
+  });
+
+  it('reads again when a donation moved to another month during the read, so it appears exactly once', async () => {
+    const { collectPayloadChunked } = await import('./backupService');
+    let reads = 0;
+    let moved = false;
+    const p = await collectPayloadChunked({
+      onMonthRead: async (ym) => {
+        reads++;
+        if (ym !== '2026-01' || moved) return;
+        moved = true; // 1월 내역 a를 읽은 직후 2월로 옮깁니다(옮긴 뒤에 읽는 2월에도 a가 있어 그대로면 두 번 담김).
+        await transact(async () => ({
+          writes: [rowWrite('2026-01', { puts: [], deletes: [['2026-01-04', 'a']] }), rowWrite('2026-02', { puts: [d('a', '2026-02-09')], deletes: [] })],
+          result: 0,
+        }));
+      },
+    });
+    expect(ids(p).filter((x) => x === 'a')).toHaveLength(1);
+    expect(reads).toBeGreaterThan(2); // 다시 읽음
+  });
+
+  it('does not count same-month edits as a reason to read again', async () => {
+    const { collectPayloadChunked } = await import('./backupService');
+    let reads = 0;
+    await collectPayloadChunked({
+      onMonthRead: async (ym) => {
+        reads++;
+        if (ym === '2026-01') await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('n', '2026-01-18')], deletes: [] })], result: 0 }));
+      },
+    });
+    expect(reads).toBe(2); // 1월, 2월 한 번씩
+  });
+
+  it('gives up with a clear error when moves keep happening', async () => {
+    const { collectPayloadChunked } = await import('./backupService');
+    await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('k', '2026-01-11')], deletes: [] })], result: 0 })); // 1월이 비지 않게
+    let flip = false;
+    await expect(
+      collectPayloadChunked({
+        maxAttempts: 2,
+        onMonthRead: async (ym) => {
+          if (ym !== '2026-01') return;
+          flip = !flip;
+          const [from, to] = flip ? ['2026-01-04', '2026-02-09'] : ['2026-02-09', '2026-01-04'];
+          const [fm, tm] = flip ? ['2026-01', '2026-02'] : ['2026-02', '2026-01'];
+          await transact(async () => ({ writes: [rowWrite(fm, { puts: [], deletes: [[from, 'a']] }), rowWrite(tm, { puts: [d('a', to)], deletes: [] })], result: 0 }));
+        },
+      }),
+    ).rejects.toThrow('옮겨지는 변경');
+  });
+});

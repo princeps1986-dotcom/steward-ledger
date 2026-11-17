@@ -18,6 +18,7 @@ import {
   monthWrite,
   readMonth,
   snapshot,
+  structuralCommitCount,
   transact,
   type Write,
 } from '../storage/storageService';
@@ -53,6 +54,45 @@ export async function collectPayload(years?: readonly string[]): Promise<BackupP
   });
 }
 
+/**
+ * collectPayload와 같은 내용을 만들되, 읽기 트랜잭션 하나로 오래 붙잡지 않고 달마다 짧게 나누어 읽습니다.
+ * 한 트랜잭션으로 읽으면 읽는 동안(5년 130만 건에서 약 8초) 저장이 기다려야 해서 입력이 멈추기 때문입니다.
+ * 읽는 도중 내역이 달을 넘어 옮겨졌거나 복원이 있었다면(structuralCommitCount가 바뀜) 중복·누락이 생길 수 있으니 다시 읽고,
+ * 같은 달 안의 추가·수정·삭제는 어느 시점이든 일관되므로 그냥 둡니다(그 변경은 '변경 표시'로 다음 백업에 담김).
+ * 이력(audit)·성도·헌금 종류는 내역과 같은 시점이 아닐 수 있습니다.
+ */
+export async function collectPayloadChunked(opts: { onMonthRead?: (ym: string) => Promise<void>; maxAttempts?: number } = {}): Promise<BackupPayload> {
+  const maxAttempts = opts.maxAttempts ?? 3;
+  for (let attempt = 1; ; attempt++) {
+    const seq = structuralCommitCount();
+    const months = await listDonationMonths();
+    const auditKeys = await listAuditKeys();
+    const [auditLists, meta] = await Promise.all([
+      getMany<AuditLog[]>(auditKeys),
+      getMany<Member[] | OfferingType[]>([KEYS.members, KEYS.offeringTypes]),
+    ]);
+    const donationsByYear: Record<string, Donation[]> = {};
+    for (const ym of months) {
+      (donationsByYear[ym.slice(0, 4)] ??= []).push(...(await readMonth(ym)));
+      await opts.onMonthRead?.(ym);
+    }
+    if (structuralCommitCount() !== seq) {
+      if (attempt >= maxAttempts) throw new Error('백업하는 동안 내역이 다른 달로 옮겨지는 변경이 계속되어 백업하지 못했습니다. 잠시 뒤 다시 시도됩니다.');
+      continue;
+    }
+    const auditLogsByYear: Record<string, AuditLog[]> = {};
+    auditKeys.forEach((k, i) => {
+      auditLogsByYear[AUDIT_KEY_RE.exec(k)![1]] = auditLists[i] ?? [];
+    });
+    return {
+      members: (meta[0] as Member[] | null) ?? [],
+      offeringTypes: (meta[1] as OfferingType[] | null) ?? [],
+      donationsByYear,
+      auditLogsByYear,
+    };
+  }
+}
+
 export async function createBackupJson(years?: readonly string[]): Promise<string> {
   // payload는 한 번만 문자열로 만들어 체크섬을 구하고 그대로 봉투에 끼웁니다(큰 데이터에서 메모리·시간 절약).
   // 결과는 JSON.stringify(envelope)와 같은 글자이므로 형식·호환성은 그대로입니다.
@@ -71,12 +111,12 @@ const BACKUP_READ_BATCH = 6;
 const ndjsonLine = (o: unknown): string => `${JSON.stringify(o)}\n`;
 
 /**
- * 앱을 쓰는 중에 만드는 주기 백업용 줄: 한 시점의 데이터(collectPayload, 읽기 트랜잭션 하나)를 먼저 읽고 줄로 나눕니다.
- * 읽는 도중 다른 저장이 끼어들어도 한 달에서 다른 달로 옮겨진 내역이 중복되거나 빠지지 않습니다(대신 전체가 한 번에 메모리에 올라갑니다).
+ * 앱을 쓰는 중에 만드는 주기 백업용 줄: 데이터를 달마다 짧게 나누어 읽고(collectPayloadChunked, 저장을 막지 않음) 줄로 나눕니다.
+ * 읽는 도중 내역이 달을 넘어 옮겨지면 다시 읽으므로 중복·누락이 없습니다(대신 전체가 한 번에 메모리에 올라갑니다).
  * 형식은 backupLines와 같습니다.
  */
 export async function* snapshotBackupLines(): AsyncGenerator<string> {
-  const p = await collectPayload();
+  const p = await collectPayloadChunked();
   yield ndjsonLine({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
   yield ndjsonLine({ t: 'members', data: p.members });
   yield ndjsonLine({ t: 'offeringTypes', data: p.offeringTypes });

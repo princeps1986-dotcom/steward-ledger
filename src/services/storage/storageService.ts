@@ -87,6 +87,28 @@ async function applyWrites(writes: Write[]): Promise<void> {
   if (puts.length) await db.kv.bulkPut(puts.map((w) => w.value), puts.map((w) => w.key));
 }
 
+/**
+ * 내역이 달을 넘어 옮겨졌거나(날짜 수정·되돌리기) 달 전체가 교체된(복원) 커밋의 누적 횟수.
+ * 달마다 따로 읽는 주기 백업이 읽는 도중 이런 커밋이 있었는지 알아내, 옮겨진 내역이 두 번 담기거나 빠지지 않게 다시 읽도록 합니다.
+ * 같은 달 안의 추가·수정·삭제는 어느 시점에 읽어도 일관되므로 세지 않습니다.
+ */
+let structuralCommits = 0;
+export const structuralCommitCount = (): number => structuralCommits;
+
+function movesAcrossMonths(writes: Write[]): boolean {
+  const deleted = new Map<string, string>(); // id → 지운 달
+  const put = new Map<string, string>(); // id → 넣은 달
+  for (const w of writes) {
+    const ym = DONATION_KEY_RE.exec(w.key)?.[1];
+    if (!ym) continue;
+    if (!w.rowOps) return true; // 달 전체 교체
+    for (const [, id] of w.rowOps.deletes) deleted.set(id, ym);
+    for (const p of w.rowOps.puts) put.set(p.id, ym);
+  }
+  for (const [id, ym] of deleted) if (put.has(id) && put.get(id) !== ym) return true;
+  return false;
+}
+
 // 한 번에 하나씩 커밋합니다(앞 작업이 끝난 뒤의 최신 값을 읽도록 하고, 다른 창 알림 순서를 유지).
 let queue: Promise<unknown> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -115,8 +137,9 @@ export function transact<R>(
           all.push({ key: KEYS.dirty, value: true });
         }
         if (all.length > 0) await applyWrites(all);
-        return { writes, result, keys: all.map((w) => w.key) };
+        return { writes, result, keys: all.map((w) => w.key), moved: movesAcrossMonths(writes) };
       });
+      if (out.moved) structuralCommits++;
       if (out.keys.length > 0) broadcastChanged(out.keys);
       return { writes: out.writes, result: out.result };
     } catch (e) {
