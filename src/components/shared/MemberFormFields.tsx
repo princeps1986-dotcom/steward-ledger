@@ -26,14 +26,11 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
         <input className="input" inputMode="numeric" value={draft.phoneLast4} onChange={(e) => setField('phoneLast4')(e.target.value)} />
       </label>
       <p className="col-span-2 -mt-1 text-xs text-gray-500">직분과 연락처 뒷 4자리는 이름이 같은 성도를 구분하기 위한 용도입니다.</p>
-      <label className="col-span-2 text-sm">
-        <span className="flex items-center gap-2">
-          <input type="checkbox" checked={draft.isFamilyHead} onChange={(e) => setField('isFamilyHead')(e.target.checked)} />
-          세대주로 지정
-        </span>
-        <span className="mt-0.5 block text-xs text-gray-500">(기존 세대의 구성원을 지정하면 세대주가 변경되고 세대는 유지됩니다)</span>
+      <label className="flex items-center gap-2 pb-2 text-sm self-end">
+        <input type="checkbox" checked={draft.isFamilyHead} onChange={(e) => setField('isFamilyHead')(e.target.checked)} />
+        세대주로 지정
       </label>
-      <label className="col-span-2">
+      <label>
         <span className="label">소속 세대주 연결</span>
         <select
           className="input"
@@ -49,6 +46,7 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
           ))}
         </select>
       </label>
+      <p className="col-span-2 -mt-1 text-xs text-gray-500">(기존 세대의 구성원을 지정하면 세대주가 변경되고 세대는 유지됩니다)</p>
       {error ? <p className="col-span-2 text-sm text-red-600">{error}</p> : null}
     </div>
   );
