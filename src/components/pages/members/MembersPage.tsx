@@ -1,7 +1,9 @@
+import { useRef } from 'react';
 import { useMembersPage } from '../../../hooks/useMembersPage';
 import type { MemberSortKey } from '../../../services/domain/memberSort';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
+import { REPORT_SCROLL, useFitHeight } from '../reports/reportScroll';
 import { MemberEditModal } from './MemberEditModal';
 import { MemberImportModal } from './MemberImportModal';
 import { normalizePosition } from '../../../services/domain/positions';
@@ -24,6 +26,8 @@ function SortMark({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 
 export function MembersPage() {
   const p = useMembersPage();
+  const scrollRef = useRef<HTMLElement>(null);
+  const fit = useFitHeight(scrollRef); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
   return (
     <div className="space-y-4">
       <section className="card flex flex-wrap items-end gap-3">
@@ -45,9 +49,9 @@ export function MembersPage() {
         </button>
       </section>
       <Notice message={p.message} />
-      <section className="card overflow-x-auto p-0">
+      <section ref={scrollRef} style={fit} className={`card p-0 ${REPORT_SCROLL}`}>
         <table className="w-full">
-          <thead>
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10">
             <tr>
               <th className="th w-12 text-center">No</th>
               {COLUMNS.map((c) => (
