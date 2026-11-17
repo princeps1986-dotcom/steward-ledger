@@ -23,6 +23,9 @@ export function SettingsPage() {
           <button className="btn-primary" onClick={() => void s.saveGeneral()} disabled={!s.dirty}>
             설정 저장
           </button>
+          <button className="btn" onClick={s.cancelGeneral} disabled={!s.dirty}>
+            입력 취소
+          </button>
           {s.dirty ? <span className="text-sm text-amber-700">저장하지 않은 변경이 있습니다.</span> : null}
         </div>
       </section>

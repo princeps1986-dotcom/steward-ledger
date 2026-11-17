@@ -93,6 +93,9 @@ export function useSettingsPage() {
     void desktop()?.getDefaultBackupDir().then(setDefaultDir);
   }, []);
 
+  /** 저장하지 않은 입력을 버리고 저장된 값으로 되돌립니다. */
+  const cancelGeneral = useCallback(() => setThreshold(formatNumber(settings.largeAmountThreshold)), [settings.largeAmountThreshold]);
+
   const saveGeneral = useCallback(async () => {
     const t = parseAmount(threshold);
     if (t.kind !== 'ok') return setMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
@@ -281,6 +284,7 @@ export function useSettingsPage() {
     threshold,
     setThreshold: (v: string) => setThreshold(formatAmountInput(v)),
     saveGeneral,
+    cancelGeneral,
     /** [설정 저장]을 눌러야 반영되는 항목(큰 금액 기준·백업 주기)에 저장하지 않은 변경이 있는지 */
     dirty: isGeneralDirty(),
     isDesktop,
