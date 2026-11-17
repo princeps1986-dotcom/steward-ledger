@@ -34,26 +34,30 @@ export function ListTab({ f }: { f: ReportFilters }) {
     scrollMargin: HEAD_HEIGHT, // 머리글이 같은 스크롤 영역 안(맨 위)에 있으므로 그만큼 시작 위치를 뺍니다.
   });
 
-  const cells = (row: Row, no: number) => (
+  const cells = (row: Row, no: number) =>
+    !row.donation ? (
+      // 그 달의 내역을 읽는 중(스크롤로 막 들어온 행)
+      <span className="col-span-full pl-3 text-xs text-gray-400">{no}번 불러오는 중…</span>
+    ) : (
     <>
       <span className="rpt-num text-center text-xs text-gray-500">{no}</span>
-      <span>{row.donation.date}</span>
+      <span>{row.donation!.date}</span>
       <span className="truncate">
-        <NameWithTag name={row.donation.donorDisplayName} tag={row.tag} />
+        <NameWithTag name={row.donation!.donorDisplayName} tag={row.tag} />
       </span>
       <span className="truncate">{row.typeName}</span>
       <span className="text-right tabular-nums">{row.amountLabel}</span>
-      <span className="truncate pl-3 text-gray-600">{row.donation.memo}</span>
+      <span className="truncate pl-3 text-gray-600">{row.donation!.memo}</span>
       <span className="no-print flex justify-end gap-1">
-        <button className="btn px-2 py-0.5 text-xs" onClick={() => editor.open(row.donation, 'EDIT')}>
+        <button className="btn px-2 py-0.5 text-xs" onClick={() => editor.open(row.donation!, 'EDIT')}>
           수정
         </button>
-        <button className="btn px-2 py-0.5 text-xs" onClick={() => editor.open(row.donation, 'DELETE')}>
+        <button className="btn px-2 py-0.5 text-xs" onClick={() => editor.open(row.donation!, 'DELETE')}>
           삭제
         </button>
       </span>
     </>
-  );
+    );
   const rowClass = (no: number) => `${GRID} w-full border-b border-gray-100 px-2 text-sm row-hover ${no % 10 === 0 ? 'row-sep' : ''}`;
 
   return (
@@ -63,12 +67,14 @@ export function ListTab({ f }: { f: ReportFilters }) {
           className="input w-72"
           value={r.query}
           onChange={(e) => r.setQuery(e.target.value)}
-          placeholder="이름 또는 초성 (예: 김철수, ㄱㅊㅅ, 무명)"
-          aria-label="이름 또는 초성으로 거르기"
+          placeholder="이름 (예: 김철수, 무명)"
+          aria-label="이름으로 거르기"
         />
         <p className="pb-2 text-sm text-gray-600">
           <b>{f.label}</b> · {formatNumber(r.count)}건 · 합계 <b>{formatWon(r.total)}</b>
+          {r.loading ? <span className="ml-2 text-xs text-gray-400">불러오는 중…</span> : null}
         </p>
+        {!r.complete ? <p className="hidden pb-2 text-sm text-red-600 print:block">내역이 많아 인쇄에는 일부만 담겼습니다. 월·분기 단위로 나누어 인쇄하세요.</p> : null}
       </div>
 
       <div ref={parentRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
@@ -89,7 +95,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
           Array.from({ length: r.count }, (_, i) => {
             const row = r.rowAt(i);
             return (
-              <div key={row.donation.id} className={rowClass(i + 1)} style={{ height: `${ROW_HEIGHT}px` }}>
+              <div key={row.donation?.id ?? i} className={rowClass(i + 1)} style={{ height: `${ROW_HEIGHT}px` }}>
                 {cells(row, i + 1)}
               </div>
             );
@@ -100,7 +106,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
               const row = r.rowAt(vi.index);
               return (
                 <div
-                  key={row.donation.id}
+                  key={row.donation?.id ?? vi.index}
                   className={`${rowClass(vi.index + 1)} absolute left-0 top-0`}
                   style={{ height: `${vi.size}px`, transform: `translateY(${vi.start - virtualizer.options.scrollMargin}px)` }}
                 >

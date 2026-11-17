@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAllData } from '../services/backup/backupService';
 import { donationKey, getItem, monthWrite, transact } from '../services/storage/storageService';
-import { DonationProvider, useDonationMonths, useDonationSelector } from './DonationContext';
+import { DonationProvider, useDonationMonths, useDonationSelector, useMonthVersions } from './DonationContext';
 import type { AuditLog, Donation, DonationDraft } from './types';
 
 // 읽기 실패를 흉내 내기 위해 readMonth만 바꿔 끼웁니다(나머지는 실제 저장소 그대로).
@@ -178,5 +178,17 @@ describe('DonationContext', () => {
     await waitFor(() => expect(result.current.years).toEqual(['2025']));
     await act(() => result.current.actions.deleteDonation(only, '삭제'));
     await waitFor(() => expect(result.current.years).toEqual([]));
+  });
+});
+
+describe('monthVersions', () => {
+  it('bumps the version of a month on save even when that month is not loaded in memory', async () => {
+    const { result } = renderHook(() => ({ s: useAll(), v: useMonthVersions() }), { wrapper });
+    expect(result.current.v['2025-09']).toBeUndefined();
+    await act(async () => {
+      await result.current.s.actions.saveBatch([draft('2025-09-07')], 'MERGE');
+    });
+    expect(result.current.v['2025-09']).toBe(1);
+    expect(result.current.v['2025-10']).toBeUndefined();
   });
 });

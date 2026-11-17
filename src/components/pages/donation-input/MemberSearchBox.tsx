@@ -3,7 +3,7 @@ import type { DonationInputController } from '../../../hooks/useDonationInput';
 export function MemberSearchBox({ c }: { c: DonationInputController }) {
   return (
     <div className="relative">
-      <span className="label">{c.anonymous ? '무명/방문자 표기명' : '성도 검색 (이름·초성·연락처 뒷자리)'}</span>
+      <span className="label">{c.anonymous ? '무명/방문자 표기명' : '성도 검색 (이름·연락처 뒷자리)'}</span>
       <div className="flex gap-2">
         {c.anonymous ? (
           <input
@@ -28,7 +28,7 @@ export function MemberSearchBox({ c }: { c: DonationInputController }) {
             onChange={(e) => c.onQueryChange(e.target.value)}
             onKeyDown={c.onSearchKeyDown}
             onBlur={() => setTimeout(c.closeDropdown, 150)}
-            placeholder="예: 김철수, ㄱㅊㅅ, 1234"
+            placeholder="예: 김철수, 1234"
             role="combobox"
             aria-expanded={c.dropdownOpen}
             aria-controls="member-search-list"

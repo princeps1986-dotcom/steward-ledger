@@ -186,6 +186,11 @@ export async function saveBackupFile(prefix: string, years?: readonly string[]):
   return saved;
 }
 
+/** 성도나 헌금 내역이 하나라도 있는지(전체를 읽지 않고 확인) */
+export async function hasAnyData(): Promise<boolean> {
+  return ((await getItem<Member[]>(KEYS.members)) ?? []).length > 0 || (await listDonationMonths()).length > 0;
+}
+
 /** 선택한 연도 하나만 백업해도 저장소의 모든 헌금·이력이 담기는지(다른 연도의 헌금 또는 이력이 없는지) */
 export async function isCompleteYearBackup(year: string): Promise<boolean> {
   const years = new Set<string>(await listDonationYears());

@@ -18,8 +18,9 @@ const TABS: { key: ReportTab; label: string }[] = [
 ];
 
 export function ReportsPage() {
-  const f = useReportFilters();
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
+  // 전체 입력 내역 탭은 기간의 헌금을 메모리에 올리지 않고 달 단위로 직접 읽습니다(큰 연도에서도 메모리가 작음).
+  const f = useReportFilters(tab !== 'LIST');
   // 표시할 헌금 종류(종합 보고서 전용). 기본값은 헌금 종류의 활성 여부(활성=체크, 비활성=해제)이고,
   // 사용자가 바꾼 종류만 flippedIds에 기억합니다. 다른 보고서·다른 탭으로 가거나 이 화면을 떠나면 기본값으로 돌아갑니다.
   const typeOptions = useTypeToggleOptions(f);

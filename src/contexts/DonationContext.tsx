@@ -59,6 +59,8 @@ interface DonationState {
   months: Record<string, Donation[]>;
   /** reloadAll 때마다 1씩 올라가 화면이 필요한 달을 다시 불러오게 합니다. */
   epoch: number;
+  /** 달별 변경 횟수(메모리에 올리지 않은 달도 포함). 달을 직접 읽는 화면(전체 입력 내역)이 다시 읽을 달을 알아내는 데 씁니다. */
+  monthVersions: Record<string, number>;
   audits: Record<string, AuditLog[]>;
   years: string[];
   /** 이번 실행 중 저장한 묶음 (최신순, 메모리 전용) */
@@ -71,6 +73,14 @@ const DonationCtx = createContext<DonationState | null>(null);
 export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: { children: ReactNode; maxLoadedRows?: number }) {
   const [months, setMonths] = useState<Record<string, Donation[]>>({});
   const [epoch, setEpoch] = useState(0);
+  const [monthVersions, setMonthVersions] = useState<Record<string, number>>({});
+  const bumpVersions = useCallback((yms: Iterable<string>) => {
+    setMonthVersions((prev) => {
+      const next = { ...prev };
+      for (const ym of yms) next[ym] = (next[ym] ?? 0) + 1;
+      return next;
+    });
+  }, []);
   const [audits, setAudits] = useState<Record<string, AuditLog[]>>({});
   const [years, setYears] = useState<string[]>([]);
   const [history, setHistory] = useState<SaveBatch[]>([]);
@@ -163,6 +173,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       if (ay) aPatch[ay] = (w.value as AuditLog[] | null) ?? null;
     }
     if (monthPatch.size) {
+      bumpVersions(monthPatch.keys());
       const apply = new Map<string, ((list: Donation[]) => Donation[])[]>();
       for (const [ym, fns] of monthPatch) {
         if (loadingMonths.current.has(ym)) staleMonths.current.add(ym);
@@ -191,7 +202,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         return next;
       });
     }
-  }, [refreshYears]);
+  }, [bumpVersions, refreshYears]);
 
   const ensureMonths = useCallback(async (yms: readonly string[]) => {
     // 한 달씩 차례로 읽습니다: 여러 달을 동시에 읽으면 읽은 원본이 한꺼번에 메모리에 올라 일시적으로 최대치가 커집니다.
@@ -257,9 +268,10 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         else if (ay && loadedAuditYears.current.has(ay)) writes.push({ key: k, value: await getItem(k) });
       }
       applyWrites(writes);
+      bumpVersions(keys.flatMap((k) => DONATION_KEY_RE.exec(k)?.[1] ?? []).filter((ym) => !writes.some((w) => w.key === `donations_${ym}`)));
       if (keys.some((k) => DONATION_KEY_RE.test(k))) refreshYears();
     });
-  }, [applyWrites, refreshYears]);
+  }, [applyWrites, bumpVersions, refreshYears]);
 
   // 색인으로 찾으므로 월 전체를 읽지 않습니다. 무명 헌금은 중복이 없습니다.
   const findDuplicates = useCallback(async (drafts: DonationDraft[]) => Promise.all(drafts.map((d) => findDuplicateRow(d))), []);
@@ -400,7 +412,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     () => ({ ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll }),
     [ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll],
   );
-  const value = useMemo(() => ({ months, epoch, audits, years, history, actions }), [months, epoch, audits, years, history, actions]);
+  const value = useMemo(() => ({ months, epoch, monthVersions, audits, years, history, actions }), [months, epoch, monthVersions, audits, years, history, actions]);
   return <DonationCtx.Provider value={value}>{children}</DonationCtx.Provider>;
 }
 
@@ -443,5 +455,7 @@ export function useDonationMonths(yms: readonly string[]): Donation[] {
 export const useAllAudits = (): Record<string, AuditLog[]> => useDonationSelector((s) => s.audits);
 export const useAuditShard =(year: string): AuditLog[] => useDonationSelector((s) => s.audits[year] ?? EMPTY);
 export const useDonationYears = () => useDonationSelector((s) => s.years);
+export const useMonthVersions = () => useDonationSelector((s) => s.monthVersions);
+export const useDonationEpoch = () => useDonationSelector((s) => s.epoch);
 export const useDonationMonthsRecord = () => useDonationSelector((s) => s.months);
 export const useSaveHistory = () => useDonationSelector((s) => s.history);

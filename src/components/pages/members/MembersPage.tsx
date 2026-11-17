@@ -28,7 +28,7 @@ export function MembersPage() {
     <div className="space-y-4">
       <section className="card flex flex-wrap items-end gap-3">
         <label className="w-72">
-          <span className="label">검색 (이름·초성·연락처 뒷자리)</span>
+          <span className="label">검색 (이름·연락처 뒷자리)</span>
           <input className="input" value={p.query} onChange={(e) => p.setQuery(e.target.value)} />
         </label>
         <label className="flex items-center gap-2 pb-2 text-sm">

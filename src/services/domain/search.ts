@@ -1,36 +1,10 @@
 import type { Member } from '../../contexts/types';
 import { normalizePosition } from './positions';
 
-const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
-
-export function toChosung(s: string): string {
-  return [...s]
-    .map((ch) => {
-      const code = ch.charCodeAt(0) - 0xac00;
-      return code >= 0 && code < 11172 ? CHO[Math.floor(code / 588)] : ch;
-    })
-    .join('');
-}
-
-// 같은 이름의 초성 변환을 반복하지 않도록 캐시합니다(이름 종류는 내역·성도 수보다 훨씬 적음).
-const chosungCache = new Map<string, string>();
-export function chosungOf(s: string): string {
-  let v = chosungCache.get(s);
-  if (v === undefined) {
-    if (chosungCache.size > 20000) chosungCache.clear();
-    v = toChosung(s);
-    chosungCache.set(s, v);
-  }
-  return v;
-}
-
-const isChosungOnly = (q: string): boolean => /^[ㄱ-ㅎ]+$/.test(q);
-
-/** 자동 완성·초성 검색. 연락처 뒷4자리로도 찾을 수 있습니다. */
+/** 자동 완성. 연락처 뒷4자리로도 찾을 수 있습니다. */
 export function matchMember(m: Member, query: string): boolean {
   const q = query.replace(/\s/g, '');
   if (q === '') return false;
-  if (isChosungOnly(q)) return chosungOf(m.name).includes(q);
   if (/^\d{2,4}$/.test(q) && m.phoneLast4?.includes(q)) return true;
   return m.name.includes(q);
 }

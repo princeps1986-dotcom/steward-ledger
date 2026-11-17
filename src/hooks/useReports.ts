@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { useAllAudits, useDonationActions, useDonationMonths, useDonationYears } from '../contexts/DonationContext';
+import { useAllAudits, useDonationActions, useDonationEpoch, useDonationMonths, useDonationYears, useMonthVersions } from '../contexts/DonationContext';
 import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useMemberOrderKey, useNameTag } from './useNameTag';
 import { useOfferingTypeById, useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { AuditLog, Donation, Member } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
-import { filterByDonor, sortForList } from '../services/domain/donationList';
+import { ListPager } from '../services/domain/listPager';
+import { readMonth } from '../services/storage/storageService';
 import { monthRangeOf, shiftWeek, weekRangeOf } from '../services/domain/calendar';
 import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
@@ -33,7 +34,10 @@ function useDebouncedValue<T>(value: T, delay: number): T {
 }
 
 /** 보고서 공통 필터: 연도 + 기간(연/분기/월/주) + 세대 집계 기준 */
-export function useReportFilters() {
+const NO_MONTHS: string[] = [];
+
+/** loadData가 false이면 이 화면은 보고서 기간의 헌금을 메모리에 올리지 않습니다(전체 입력 내역 탭은 달 단위로 직접 읽음). */
+export function useReportFilters(loadData = true) {
   const years = useDonationYears();
   const currentYear = String(new Date().getFullYear());
   const [selYear, setYear] = useState(currentYear);
@@ -65,7 +69,8 @@ export function useReportFilters() {
     () => (isWeek ? [...new Set([week.start.slice(0, 7), week.end.slice(0, 7)])] : months.map((m) => `${year}-${String(m).padStart(2, '0')}`)),
     [isWeek, week, months, year],
   );
-  const source = useDonationMonths(neededMonths);
+  const source = useDonationMonths(loadData ? neededMonths : NO_MONTHS);
+  const listMonths = useMemo(() => [...neededMonths].sort().reverse(), [neededMonths]); // 전체 입력 내역 탭이 직접 읽는 달(최신 달부터)
 
   const yearOptions = useMemo(() => [...new Set([...years, currentYear])].sort().reverse(), [years, currentYear]);
   // 월·분기·연도는 불러온 달이 곧 그 기간이므로 그대로 쓰고(다른 달에 저장해도 배열이 바뀌지 않음), 주별만 날짜로 거릅니다.
@@ -117,6 +122,8 @@ export function useReportFilters() {
     periodValueOptions,
     months,
     donations,
+    listMonths,
+    listRange: isWeek ? week : null,
     basis,
     setBasis,
     // 성도명 × 헌금 종류 표로 보여 주는 보고서(주별·월별)의 집계 기간. 연·분기는 null
@@ -207,33 +214,48 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
   }, [f.donations, types, range, orderKey, hidden, f.personKind]);
 }
 
-/** 전체 입력 내역 탭: 현재 보고서 기간의 모든 헌금 내역(무명/방문자 포함)을 최신순으로, 이름·초성으로 거를 수 있음 */
+/**
+ * 전체 입력 내역 탭: 현재 보고서 기간의 모든 헌금 내역(무명/방문자 포함)을 최신순으로, 이름으로 거를 수 있음.
+ * 기간 전체를 메모리에 올리지 않고 달 단위로 읽습니다(ListPager): 달마다 건수·합계만 구해 두고, 화면에 보이는 행의 달만 읽습니다.
+ */
 export function useDonationListReport(f: ReportFilters) {
   const typeById = useOfferingTypeById();
   const tagOf = useNameTag();
+  const versions = useMonthVersions();
+  const epoch = useDonationEpoch();
   const [query, setQuery] = useState('');
-  // 정렬·거르기는 헌금 배열만 만들고, 종류 이름·금액 글자·구분 표기는 화면에 그려지는 행만 계산합니다(수십만 건에서도 빠르게).
-  // 입력 칸은 바로 반영하고, 수십만 건을 거르는 계산은 입력이 잠시 멈춘 뒤에 합니다.
+  const [, setTick] = useState(0);
+  const [done, setDone] = useState(false);
+  // 입력 칸은 바로 반영하고, 달들을 다시 거르는 계산은 입력이 잠시 멈춘 뒤에 합니다.
   const appliedQuery = useDebouncedValue(query, 150);
-  const { donations, total } = useMemo(() => {
-    const sorted = sortForList(filterByDonor(f.donations, appliedQuery));
-    let sum = 0;
-    for (const d of sorted) sum += d.amount;
-    return { donations: sorted, total: sum };
-  }, [f.donations, appliedQuery]);
-  const rowAt = useCallback(
-    (i: number) => {
-      const d = donations[i];
-      return {
-        donation: d,
-        typeName: typeById.get(d.offeringTypeId)?.name ?? '(삭제된 종류)',
-        amountLabel: formatWon(d.amount),
-        tag: tagOf(d.memberId),
-      };
-    },
-    [donations, typeById, tagOf],
-  );
-  return { query, setQuery, count: donations.length, total, rowAt };
+  const pager = useMemo(() => new ListPager(readMonth, undefined, () => setTick((t) => t + 1)), []);
+  const { listMonths, listRange } = f;
+  const versionKey = listMonths.map((ym) => `${versions[ym] ?? 0}:${epoch}`).join(',');
+  const rangeStart = listRange?.start ?? '';
+  const rangeEnd = listRange?.end ?? '';
+  useEffect(() => {
+    let stop = false;
+    setDone(false);
+    const range = rangeStart ? { start: rangeStart, end: rangeEnd } : null;
+    const keys = versionKey.split(',');
+    void pager
+      .refresh(listMonths, (ym) => keys[listMonths.indexOf(ym)], { query: appliedQuery, range }, () => stop)
+      .catch(() => undefined) // 읽기 실패: 읽은 달까지만 보입니다.
+      .then(() => !stop && setDone(true));
+    return () => {
+      stop = true;
+    };
+  }, [pager, listMonths, versionKey, appliedQuery, rangeStart, rangeEnd]);
+  const rowAt = (i: number) => {
+    const d = pager.rowAt(listMonths, i);
+    return {
+      donation: d,
+      typeName: d ? typeById.get(d.offeringTypeId)?.name ?? '(삭제된 종류)' : '',
+      amountLabel: d ? formatWon(d.amount) : '',
+      tag: d ? tagOf(d.memberId) : null,
+    };
+  };
+  return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done, complete: pager.complete };
 }
 
 /** 개인별·세대별 조회 */

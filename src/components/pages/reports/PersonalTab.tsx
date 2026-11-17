@@ -34,7 +34,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             value={r.query}
             onChange={(e) => r.onQueryChange(e.target.value)}
             onKeyDown={r.onSearchKeyDown}
-            placeholder="이름 또는 초성 (↑↓ 이동 · Enter 선택)"
+            placeholder="이름 (↑↓ 이동 · Enter 선택)"
             role="combobox"
             aria-expanded={r.dropdownOpen}
             aria-controls="personal-search-list"

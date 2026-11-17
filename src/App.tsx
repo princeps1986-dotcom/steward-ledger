@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { BackupReminderBanner } from './components/shared/BackupReminderBanner';
@@ -6,15 +6,24 @@ import { GlobalErrorBanner } from './components/shared/GlobalErrorBanner';
 import { DonationInputPage } from './components/pages/donation-input/DonationInputPage';
 import { PAGES, useAppNav, useAutoBackupBridge, useBackupReminder } from './hooks/useAppShell';
 
-// 첫 화면(헌금 입력) 외의 화면은 처음 열 때 불러와 시작이 가벼워집니다.
-const HelpPage = lazy(() => import('./components/pages/help/HelpPage').then((m) => ({ default: m.HelpPage })));
-const MembersPage = lazy(() => import('./components/pages/members/MembersPage').then((m) => ({ default: m.MembersPage })));
-const OfferingsPage = lazy(() => import('./components/pages/offerings/OfferingsPage').then((m) => ({ default: m.OfferingsPage })));
-const ReportsPage = lazy(() => import('./components/pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
-const SettingsPage = lazy(() => import('./components/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+// 첫 화면(헌금 입력) 외의 화면은 따로 불러와 시작이 가벼워집니다. 첫 화면이 뜬 직후 나머지를 미리 불러와 메뉴를 옮길 때 기다리지 않게 합니다.
+const loadHelp = () => import('./components/pages/help/HelpPage').then((m) => ({ default: m.HelpPage }));
+const loadMembers = () => import('./components/pages/members/MembersPage').then((m) => ({ default: m.MembersPage }));
+const loadOfferings = () => import('./components/pages/offerings/OfferingsPage').then((m) => ({ default: m.OfferingsPage }));
+const loadReports = () => import('./components/pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage }));
+const loadSettings = () => import('./components/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage }));
+const HelpPage = lazy(loadHelp);
+const MembersPage = lazy(loadMembers);
+const OfferingsPage = lazy(loadOfferings);
+const ReportsPage = lazy(loadReports);
+const SettingsPage = lazy(loadSettings);
 
 export function App() {
   const nav = useAppNav();
+  useEffect(() => {
+    const id = window.setTimeout(() => [loadReports, loadMembers, loadOfferings, loadSettings, loadHelp].forEach((load) => void load().catch(() => undefined)), 300);
+    return () => window.clearTimeout(id);
+  }, []);
   const backup = useAutoBackupBridge();
   const reminder = useBackupReminder(backup.failure);
   return (

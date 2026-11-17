@@ -8,7 +8,7 @@ import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { buildDemoPayload } from '../services/demo/demoData';
-import { collectPayload, isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
+import { hasAnyData, isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
 
@@ -143,8 +143,7 @@ export function useSettingsPage() {
     setBusy(true);
     try {
       // 지금 데이터가 있을 때만 긴급 백업을 저장습니다(빈 상태에서는 불필요한 파일을 만들지 않음).
-      const cur = await collectPayload();
-      const hasData = cur.members.length > 0 || Object.values(cur.donationsByYear).some((l) => l.length > 0);
+      const hasData = await hasAnyData();
       if (hasData) await saveEmergencyBackup('emergency_before_demo');
       await replaceAllData(buildDemoPayload());
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);

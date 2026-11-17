@@ -222,3 +222,13 @@ describe('runPeriodicBackup', () => {
     expect(specs).toEqual([]);
   });
 });
+
+describe('hasAnyData', () => {
+  it('is true with donations, false when empty', async () => {
+    const { hasAnyData } = await import('./backupService');
+    expect(await hasAnyData()).toBe(true);
+    await db.kv.clear();
+    await db.donations.clear();
+    expect(await hasAnyData()).toBe(false);
+  });
+});

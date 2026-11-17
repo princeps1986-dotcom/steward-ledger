@@ -5,7 +5,7 @@ import { lastSunday, monthsOfPeriod } from './dates';
 import { buildDonation, findDuplicate, makeAudit, mergeDonation } from './donationOps';
 import { buildFamilyLabels, familyKeyOf } from './family';
 import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT } from './memberRules';
-import { matchMember, memberLabel, toChosung } from './search';
+import { matchMember, memberLabel } from './search';
 
 const member = (p: Partial<Member>): Member => ({
   id: p.id ?? 'm1',
@@ -59,10 +59,9 @@ describe('dates', () => {
 });
 
 describe('search', () => {
-  it('chosung and phone search', () => {
-    expect(toChosung('김철수')).toBe('ㄱㅊㅅ');
+  it('name and phone search, no initial-consonant search', () => {
     const m = member({ phoneLast4: '1234' });
-    expect(matchMember(m, 'ㄱㅊ')).toBe(true);
+    expect(matchMember(m, 'ㄱㅊ')).toBe(false);
     expect(matchMember(m, '철수')).toBe(true);
     expect(matchMember(m, '1234')).toBe(true);
     expect(matchMember(m, 'ㅇㅇ')).toBe(false);

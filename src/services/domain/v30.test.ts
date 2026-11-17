@@ -26,8 +26,7 @@ describe('filterByDonor', () => {
     expect(filterByDonor(list, '무명').map((x) => x.id)).toEqual(['b', 'c', 'e']);
     expect(filterByDonor(list, '철').map((x) => x.id)).toEqual(['a']);
   });
-  it('matches by initial consonants', () => {
-    expect(filterByDonor(list, 'ㄱㅊㅅ').map((x) => x.id)).toEqual(['a']);
-    expect(filterByDonor(list, 'ㅁㅁ').map((x) => x.id)).toEqual(['b', 'c', 'e']);
+  it('does not match by initial consonants', () => {
+    expect(filterByDonor(list, 'ㄱㅊㅅ')).toEqual([]);
   });
 });
