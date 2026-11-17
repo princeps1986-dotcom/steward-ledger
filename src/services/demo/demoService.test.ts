@@ -5,9 +5,12 @@ import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact, wipeDonationsWrites } from '../storage/storageService';
 import { sha256Hex } from '../backup/validation';
+import { DEFAULT_SETTINGS } from '../../contexts/types';
+import { buildAutoBackup, runPeriodicBackup } from '../backup/autoBackupService';
+import { restoreBackup, saveBackupFile } from '../backup/backupService';
 import { createDemoData, removeDemoData } from './demoService';
 import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, type DemoSpec } from './demoData';
-import { hasDemoData, readDemoRestore } from './demoState';
+import { hasDemoData, isDemoBusy, readDemoRestore } from './demoState';
 
 const NOW = new Date(2026, 10, 17); // 2026-11-17(화)
 /** 서비스 시험용 작은 규격(주 6개, 성도 30명) */
@@ -201,5 +204,23 @@ describe('newest-first creation', () => {
     await removal;
     expect(await hasDemoData()).toBe(false);
     expect(await listDonationMonths()).toEqual([]);
+  }, 60000);
+});
+
+describe('backups are blocked while demo data exists', () => {
+  it('blocks auto backups (close and periodic), manual backup and restore, and allows them again after removal', async () => {
+    fakeDesktop();
+    await transact(async () => ({ writes: [{ key: KEYS.members, value: [real] }, monthWrite('2026-01', [don('a', '2026-01-04', 'real-1')])], result: 0 }));
+    const settings = { ...DEFAULT_SETTINGS, autoBackupEnabled: true };
+    expect(await isDemoBusy()).toBe(false);
+    await createDemoData({ spec: SMALL, today: NOW });
+    expect(await isDemoBusy()).toBe(true);
+    expect(await buildAutoBackup(settings)).toBeNull();
+    expect(await runPeriodicBackup(settings)).toBeNull();
+    await expect(saveBackupFile('backup')).rejects.toThrow('시연 데이터를 쓰는 동안');
+    await expect(restoreBackup({ members: [], offeringTypes: [], donationsByYear: {}, auditLogsByYear: {} }, { years: [], mode: 'FULL' })).rejects.toThrow('시연 데이터를 쓰는 동안');
+    await removeDemoData();
+    expect(await isDemoBusy()).toBe(false);
+    await expect(saveBackupFile('backup')).resolves.toBeTruthy();
   }, 60000);
 });

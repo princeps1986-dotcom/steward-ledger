@@ -18,8 +18,9 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
   const { matrix: m, rangeLabel, hasData } = useWeeklyMatrix(f, hidden);
   const tagOf = useNameTag();
   const isMonth = f.personKind === 'MONTH';
-  const kindLabel = isMonth ? '월별' : '주별';
-  const periodWord = isMonth ? '월간' : '주간';
+  const isDay = f.personKind === 'DAY';
+  const kindLabel = isMonth ? '월별' : isDay ? '일별' : '주별';
+  const periodWord = isMonth ? '월간' : isDay ? '당일' : '주간';
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fit = useFitHeight(scrollRef);
   const printing = useIsPrinting();

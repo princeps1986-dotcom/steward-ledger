@@ -31,7 +31,7 @@ export function ReportsPage() {
   }, [typeOptions, flippedIds]);
   const ex = useReportExport(f, hidden);
   // 보고서(기간 종류·연도·분기/월·주)가 바뀌면 항상 [종합 보고서] 탭부터 보여 줍니다.
-  const reportKey = f.isWeek ? `W:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
+  const reportKey = f.isRange ? `${f.periodType}:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
   useEffect(() => {
     setTab('SUMMARY');
     setFlippedIds([]);
@@ -48,7 +48,7 @@ export function ReportsPage() {
   return (
     <div className="space-y-4">
       <section className="card no-print flex flex-wrap items-end gap-3">
-        {f.sel.isWeek ? null : (
+        {f.sel.isRange ? null : (
           <label>
             <span className="label">연도</span>
             <select className="input" value={f.sel.year} onChange={(e) => f.setYear(e.target.value)}>
@@ -67,6 +67,7 @@ export function ReportsPage() {
             <option value="QUARTER">분기별</option>
             <option value="MONTH">월별</option>
             <option value="WEEK">주별</option>
+            <option value="DAY">일별</option>
           </select>
         </label>
         {f.periodValueOptions.length ? (
@@ -81,17 +82,17 @@ export function ReportsPage() {
             </select>
           </label>
         ) : null}
-        {f.sel.isWeek ? (
+        {f.sel.isRange ? (
           <>
             <div className="w-52">
-              <span className="label">주 선택 (해당 날짜가 속한 주)</span>
-              <DatePicker value={f.weekDate} onChange={f.setWeekDate} ariaLabel="주별 보고서 날짜" pickOnly />
+              <span className="label">{f.sel.isDay ? '일 선택' : '주 선택 (해당 날짜가 속한 주)'}</span>
+              <DatePicker value={f.weekDate} onChange={f.setWeekDate} ariaLabel={f.sel.isDay ? '일별 보고서 날짜' : '주별 보고서 날짜'} pickOnly />
             </div>
-            <button className="btn" onClick={f.prevWeek}>
-              ‹ 이전 주
+            <button className="btn" onClick={f.sel.isDay ? f.prevDay : f.prevWeek}>
+              {f.sel.isDay ? '‹ 이전 일' : '‹ 이전 주'}
             </button>
-            <button className="btn" onClick={f.nextWeek}>
-              다음 주 ›
+            <button className="btn" onClick={f.sel.isDay ? f.nextDay : f.nextWeek}>
+              {f.sel.isDay ? '다음 일 ›' : '다음 주 ›'}
             </button>
             <button className="btn" onClick={f.goLastSunday}>
               지난 주일

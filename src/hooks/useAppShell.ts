@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDemoActive, useDemoCreating } from '../services/demo/demoState';
 import { useDonationYears } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useSettings, useSettingsActions, useSettingsSelector } from '../contexts/SettingsContext';
@@ -110,12 +111,18 @@ export function useBackupReminder(autoBackupFailure: string | null) {
   const members = useMembers();
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 시연 중에는 백업을 권하지 않고 [지금 백업]도 없습니다(시연 데이터는 백업하지 않음).
+  const demoActive = useDemoActive();
+  const demoCreating = useDemoCreating() !== null;
+  const demoBlocked = demoActive || demoCreating;
 
   let text: string | null = null;
   let tone: 'warn' | 'error' = 'warn';
   if (autoBackupFailure) {
     text = autoBackupFailure;
     tone = 'error';
+  } else if (demoBlocked) {
+    text = null;
   } else if (loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
     text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
   } else if (settings.lastBackupAt) {
@@ -136,5 +143,5 @@ export function useBackupReminder(autoBackupFailure: string | null) {
     }
   }, [markBackupDone]);
 
-  return { visible: !!text && !dismissed, text, tone, busy, backupNow, dismiss: () => setDismissed(true) };
+  return { visible: !!text && !dismissed, text, tone, busy, canBackup: !demoBlocked, backupNow, dismiss: () => setDismissed(true) };
 }

@@ -17,17 +17,18 @@ export function isValidDateString(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && isValid(parseISO(s));
 }
 
-export type PeriodType = 'YEAR' | 'QUARTER' | 'MONTH' | 'WEEK';
+export type PeriodType = 'YEAR' | 'QUARTER' | 'MONTH' | 'WEEK' | 'DAY';
 
 /** 기간 필터에 포함되는 월 목록 (주별은 월 단위가 아니므로 빈 목록) */
 export function monthsOfPeriod(type: PeriodType, value: number): number[] {
-  if (type === 'WEEK') return [];
+  if (type === 'WEEK' || type === 'DAY') return [];
   if (type === 'MONTH') return [value];
   if (type === 'QUARTER') return [1, 2, 3].map((i) => (value - 1) * 3 + i);
   return Array.from({ length: 12 }, (_, i) => i + 1);
 }
 
 export function periodLabel(year: string, type: PeriodType, value: number): string {
+  if (type === 'DAY') return `${year}년 일별`;
   if (type === 'WEEK') return `${year}년 주별`; // 실제 표시는 주 범위(시작~종료)를 사용
   if (type === 'MONTH') return `${year}년 ${value}월`;
   if (type === 'QUARTER') return `${year}년 ${value}분기`;

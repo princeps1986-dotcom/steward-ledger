@@ -15,6 +15,19 @@ export async function hasDemoData(): Promise<boolean> {
   return hasDonationWithPrefix(DEMO_PREFIX);
 }
 
+/** 시연 중에 백업·복원을 막을 때의 안내 문구 */
+export const DEMO_BLOCK_MESSAGE = '시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다. 먼저 [시연 데이터 제거]를 누르세요.';
+
+/** 시연 데이터가 있거나 만드는 중인지(저장소에서 직접 확인하므로 앱 시작 직후에도 정확) */
+export async function isDemoBusy(): Promise<boolean> {
+  return creating !== null || (await hasDemoData());
+}
+
+/** 시연 중이면 오류를 던집니다(수동 백업·복원 서비스의 마지막 방어선) */
+export async function assertNoDemo(): Promise<void> {
+  if (await isDemoBusy()) throw new Error(DEMO_BLOCK_MESSAGE);
+}
+
 /** 시연 데이터를 만들기 직전의 원래 데이터를 어디에 백업했는지(제거할 때 이 파일로 복구) */
 export interface DemoRestoreInfo {
   /** 데스크톱 앱: 백업 폴더(before-demo)에 저장한 파일 이름. 원래 데이터가 없었으면 null */

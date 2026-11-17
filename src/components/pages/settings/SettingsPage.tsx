@@ -55,22 +55,23 @@ export function SettingsPage() {
           자동 로컬 백업 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
         </h3>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.autoBackupEnabled} disabled={!s.isDesktop} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
+          <input type="checkbox" checked={s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
           앱 종료 시 변경 사항이 있으면 자동 백업 (최근 10개 보관)
         </label>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-600">저장 폴더:</span>
           <code className="flex-1 truncate rounded bg-gray-100 px-2 py-1">{s.backupDir}</code>
-          <button className="btn" onClick={() => void s.selectDir()} disabled={!s.isDesktop}>
+          <button className="btn" onClick={() => void s.selectDir()} disabled={!s.isDesktop || s.backupBlocked}>
             폴더 선택
           </button>
           {s.isCustomDir ? (
-            <button className="btn" onClick={s.resetDir}>
+            <button className="btn" onClick={s.resetDir} disabled={s.backupBlocked}>
               기본 폴더로
             </button>
           ) : null}
         </div>
         <p className="text-sm text-gray-600">마지막 백업: {s.lastBackupLabel}</p>
+        {s.backupBlocked ? <p className="text-sm font-semibold text-red-700">시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다. [시연 데이터 제거] 후 다시 쓸 수 있습니다.</p> : null}
       </section>
 
       <section className="card space-y-3">
@@ -79,19 +80,19 @@ export function SettingsPage() {
           <InfoTip label="백업·복원 안내" text={s.backupHelp} />
         </h3>
         <div className="flex gap-2">
-          <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear}>
+          <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear || s.backupBlocked}>
             백업 파일 저장
           </button>
-          <label className="btn cursor-pointer">
+          <label className={`btn ${s.backupBlocked ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`} aria-disabled={s.backupBlocked}>
             백업 파일 복원
-            <input type="file" accept=".json,.gz,application/json" className="hidden" onChange={(e) => void s.onRestoreFile(e)} />
+            <input type="file" accept=".json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="text-gray-600" htmlFor="backup-year">
             백업할 연도
           </label>
-          <select id="backup-year" className="input w-28" value={s.backupYear} onChange={(e) => s.setBackupYear(e.target.value)} disabled={s.backupYearOptions.length === 0}>
+          <select id="backup-year" className="input w-28" value={s.backupYear} onChange={(e) => s.setBackupYear(e.target.value)} disabled={s.backupYearOptions.length === 0 || s.backupBlocked}>
             {s.backupYearOptions.length === 0 ? <option value="">연도 없음</option> : null}
             {s.backupYearOptions.map((y) => (
               <option key={y} value={y}>

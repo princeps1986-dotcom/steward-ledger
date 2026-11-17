@@ -8,7 +8,7 @@ import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
-import { refreshDemoState, useDemoActive } from '../services/demo/demoState';
+import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
 import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan } from '../services/backup/streamRestore';
 import { parseAndValidateBackup } from '../services/backup/validation';
@@ -65,6 +65,9 @@ export function useSettingsPage() {
   const [demoProgress, setDemoProgress] = useState<{ done: number; total: number } | null>(null);
   // 시연 데이터가 한 건이라도 있으면 시연 중(전체 데이터를 훑지 않고 색인으로 판정). 설정 화면에 들어올 때 다시 확인합니다.
   const demoActive = useDemoActive();
+  // 시연 데이터를 쓰거나 만드는 동안에는 백업·복원·자동 백업을 쓸 수 없습니다.
+  const demoCreating = useDemoCreating() !== null;
+  const backupBlocked = demoActive || demoCreating;
   useEffect(() => {
     void refreshDemoState();
   }, []);
@@ -100,15 +103,17 @@ export function useSettingsPage() {
     );
   }
 
-  const toggleAutoBackup = useCallback((v: boolean) => void update({ autoBackupEnabled: v }), [update]);
+  const toggleAutoBackup = useCallback((v: boolean) => !backupBlocked && void update({ autoBackupEnabled: v }), [update, backupBlocked]);
 
   const selectDir = useCallback(async () => {
+    if (backupBlocked) return;
     const dir = await desktop()?.selectBackupDir();
     if (dir) await update({ autoBackupDir: dir });
-  }, [update]);
+  }, [update, backupBlocked]);
   const resetDir = useCallback(() => void update({ autoBackupDir: '' }), [update]);
 
   const backupNow = useCallback(async () => {
+    if (backupBlocked) return;
     if (!backupYear) return setMessage({ kind: 'error', text: '백업할 연도가 없습니다. 헌금 내역이 있는 연도만 백업할 수 있습니다.' });
     setBusy(true);
     try {
@@ -122,7 +127,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [markBackupDone, years, backupYear]);
+  }, [markBackupDone, years, backupYear, backupBlocked]);
 
   /** 자동 백업(.json.gz)은 압축을 풀어서, 그 외(.json)는 그대로 읽습니다. */
   const readBackupText = (file: File): Promise<string> =>
@@ -131,7 +136,7 @@ export function useSettingsPage() {
   const onRestoreFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    if (!file || backupBlocked) return;
     setRestoreYearPick('');
     if (await isNdjsonFile(file)) {
       // 줄 단위 백업: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음).
@@ -320,6 +325,7 @@ export function useSettingsPage() {
     resetOpen,
     resetLeft,
     demoActive,
+    backupBlocked,
     demoProgress,
     demoBrowser: !desktop(),
     removeDemoOpen,

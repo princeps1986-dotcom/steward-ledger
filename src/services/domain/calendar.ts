@@ -71,6 +71,11 @@ export function weekdayLabelOf(date: string): { label: string; isSunday: boolean
   return { label: WEEKDAY_LABELS[d.getDay()], isSunday: d.getDay() === 0 };
 }
 
+/** n일 앞/뒤 날짜 */
+export function shiftDay(date: string, n: number): string {
+  return fmt(addDays(parseISO(date), n));
+}
+
 /** n주 앞/뒤 날짜 */
 export function shiftWeek(date: string, n: number): string {
   return fmt(addWeeks(parseISO(date), n));

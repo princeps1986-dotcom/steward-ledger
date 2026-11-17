@@ -73,12 +73,14 @@ export interface ExcelWeeklyInput {
   donations: Donation[];
   offeringTypes: OfferingType[];
   /** 'MONTH'(월별 보고서)이면 제목을 월별로 쓰고 개별 내역 시트를 만들지 않습니다. 기본 'WEEK' */
-  kind?: 'WEEK' | 'MONTH';
+  kind?: 'WEEK' | 'MONTH' | 'DAY';
 }
 
 const MONTH_SHEET1 = '월별헌금보고서';
 const WEEK_SHEET1 = '주별헌금보고서';
 const WEEK_SHEET2 = '주간상세내역';
+const DAY_SHEET1 = '일별헌금보고서';
+const DAY_SHEET2 = '일간상세내역';
 const THIN_BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } as const;
 
 /**
@@ -88,16 +90,17 @@ const THIN_BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: {
 export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob> {
   const { range, matrix, donations, offeringTypes, kind = 'WEEK' } = input;
   const isMonth = kind === 'MONTH';
+  const isDay = kind === 'DAY';
   const typeName = (id: string): string => offeringTypes.find((t) => t.id === id)?.name ?? '(삭제된 종류)';
 
   const wb = new (await import('exceljs')).default.Workbook();
   wb.creator = '청지기 장부';
   wb.created = new Date();
-  const ws1 = wb.addWorksheet(isMonth ? MONTH_SHEET1 : WEEK_SHEET1);
-  const ws2 = isMonth ? null : wb.addWorksheet(WEEK_SHEET2, { views: [{ state: 'frozen', ySplit: 1 }] });
+  const ws1 = wb.addWorksheet(isMonth ? MONTH_SHEET1 : isDay ? DAY_SHEET1 : WEEK_SHEET1);
+  const ws2 = isMonth ? null : wb.addWorksheet(isDay ? DAY_SHEET2 : WEEK_SHEET2, { views: [{ state: 'frozen', ySplit: 1 }] });
 
   // ── Sheet 1: 성도명 × 헌금 종류 ─────────────────────────
-  ws1.addRow([isMonth ? `${range.start.slice(0, 7)} 월별 헌금 보고서` : `${range.start} ~ ${range.end} 주별 헌금 보고서`]).font = { bold: true, size: 14 };
+  ws1.addRow([isMonth ? `${range.start.slice(0, 7)} 월별 헌금 보고서` : isDay ? `${range.start} 일별 헌금 보고서` : `${range.start} ~ ${range.end} 주별 헌금 보고서`]).font = { bold: true, size: 14 };
   ws1.addRow([]);
   const colCount = matrix.columns.length;
   const header = ws1.addRow(['성도명', ...matrix.columns.map((c) => sanitizeCellText(c.name)), '합계']);

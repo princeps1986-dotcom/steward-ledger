@@ -1,4 +1,5 @@
 import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
+import { assertNoDemo } from '../demo/demoState';
 import type { DesktopApi } from '../desktopBridge';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
 import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
@@ -170,6 +171,7 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 호출 전에 긴급 백업을 저장해야 합니다. 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
 export async function restoreFromFile(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> {
+  await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
   // 시작: 표시를 남기고, 선택한 연도의 기존 헌금·이력을 지우며, 백업에만 있는 성도·종류를 추가합니다(한 트랜잭션).

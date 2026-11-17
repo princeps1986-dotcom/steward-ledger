@@ -8,7 +8,7 @@ import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
 import { readMonth } from '../services/storage/storageService';
-import { monthRangeOf, shiftWeek, weekRangeOf } from '../services/domain/calendar';
+import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
 import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
@@ -60,21 +60,24 @@ export function useReportFilters(loadData = true) {
   const pending = applied !== selection;
   const { year, periodType, periodValue, weekBase } = applied;
   const isWeek = periodType === 'WEEK';
-  const week = useMemo(() => weekRangeOf(weekBase), [weekBase]);
+  const isDay = periodType === 'DAY';
+  const isRange = isWeek || isDay; // 날짜 범위(주·하루)로 거르는 보고서
+  // 주별은 그 날짜가 속한 주(일~토), 일별은 그 하루(시작=종료). 이 범위가 주별·일별 보고서의 집계 기간입니다.
+  const week = useMemo(() => (isDay ? { start: weekBase, end: weekBase } : weekRangeOf(weekBase)), [isDay, weekBase]);
   const monthRange = useMemo(() => monthRangeOf(year, periodValue), [year, periodValue]);
 
   const months = useMemo(() => monthsOfPeriod(periodType, periodValue), [periodType, periodValue]);
   // 이 보고서가 쓰는 달('YYYY-MM')만 메모리로 불러옵니다: 주별은 시작·종료일이 속한 달(1~2개), 월·분기·연도는 그 기간의 달들.
   const neededMonths = useMemo(
-    () => (isWeek ? [...new Set([week.start.slice(0, 7), week.end.slice(0, 7)])] : months.map((m) => `${year}-${String(m).padStart(2, '0')}`)),
-    [isWeek, week, months, year],
+    () => (isRange ? [...new Set([week.start.slice(0, 7), week.end.slice(0, 7)])] : months.map((m) => `${year}-${String(m).padStart(2, '0')}`)),
+    [isRange, week, months, year],
   );
   const source = useDonationMonths(loadData ? neededMonths : NO_MONTHS);
   const listMonths = useMemo(() => [...neededMonths].sort().reverse(), [neededMonths]); // 전체 입력 내역 탭이 직접 읽는 달(최신 달부터)
 
   const yearOptions = useMemo(() => [...new Set([...years, currentYear])].sort().reverse(), [years, currentYear]);
   // 월·분기·연도는 불러온 달이 곧 그 기간이므로 그대로 쓰고(다른 달에 저장해도 배열이 바뀌지 않음), 주별만 날짜로 거릅니다.
-  const donations = useMemo(() => (isWeek ? source.filter((d) => d.date >= week.start && d.date <= week.end) : source), [isWeek, week, source]);
+  const donations = useMemo(() => (isRange ? source.filter((d) => d.date >= week.start && d.date <= week.end) : source), [isRange, week, source]);
 
   // 이전/다음 주를 빠르게 연타해도 매번 직전 선택에서 이어 가도록 최신 선택 주를 ref에도 즉시 기록합니다.
   const latestWeek = useRef(selWeekBase);
@@ -95,7 +98,7 @@ export function useReportFilters(loadData = true) {
     (t: PeriodType) => {
       setPeriodTypeState(t);
       setPeriodValue(t === 'MONTH' ? new Date().getMonth() + 1 : t === 'QUARTER' ? Math.floor(new Date().getMonth() / 3) + 1 : 1);
-      if (t === 'WEEK') moveWeek(lastSunday()); // 주별을 고를 때마다 가장 최근의 지난 주일을 기본 선택
+      if (t === 'WEEK' || t === 'DAY') moveWeek(lastSunday()); // 주별·일별을 고를 때마다 가장 최근의 지난 주일을 기본 선택
     },
     [moveWeek],
   );
@@ -113,7 +116,7 @@ export function useReportFilters(loadData = true) {
     periodType,
     periodValue,
     // 선택 칸에 보이는 값과 변경 함수(적용은 잠시 뒤). pending이면 아직 이전 선택의 보고서가 보이는 중입니다.
-    sel: { year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, isWeek: selPeriodType === 'WEEK' },
+    sel: { year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, isWeek: selPeriodType === 'WEEK', isDay: selPeriodType === 'DAY', isRange: selPeriodType === 'WEEK' || selPeriodType === 'DAY' },
     pending,
     setYear,
     yearOptions,
@@ -123,21 +126,25 @@ export function useReportFilters(loadData = true) {
     months,
     donations,
     listMonths,
-    listRange: isWeek ? week : null,
+    listRange: isRange ? week : null,
     basis,
     setBasis,
     // 성도명 × 헌금 종류 표로 보여 주는 보고서(주별·월별)의 집계 기간. 연·분기는 null
-    personKind: (isWeek ? 'WEEK' : periodType === 'MONTH' ? 'MONTH' : null) as 'WEEK' | 'MONTH' | null,
-    personRange: isWeek ? week : periodType === 'MONTH' ? monthRange : null,
+    personKind: (isDay ? 'DAY' : isWeek ? 'WEEK' : periodType === 'MONTH' ? 'MONTH' : null) as 'WEEK' | 'MONTH' | 'DAY' | null,
+    personRange: isRange ? week : periodType === 'MONTH' ? monthRange : null,
     // 주별 전용
     isWeek,
+    isDay,
+    isRange,
     week,
     weekDate: weekText,
     setWeekDate,
     prevWeek: () => moveWeek(shiftWeek(latestWeek.current, -1)),
     nextWeek: () => moveWeek(shiftWeek(latestWeek.current, 1)),
+    prevDay: () => moveWeek(shiftDay(latestWeek.current, -1)),
+    nextDay: () => moveWeek(shiftDay(latestWeek.current, 1)),
     goLastSunday: () => moveWeek(lastSunday()),
-    label: isWeek ? `${week.start} ~ ${week.end} 주별` : periodLabel(year, periodType, periodValue),
+    label: isDay ? `${week.start} 일별` : isWeek ? `${week.start} ~ ${week.end} 주별` : periodLabel(year, periodType, periodValue),
   };
 }
 
@@ -209,7 +216,7 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
   return useMemo(() => {
     const matrix = buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), range, orderKey);
     // 주별은 "시작 ~ 종료", 월별은 "YYYY-MM"으로 표시
-    const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : `${range.start} ~ ${range.end}`;
+    const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : f.personKind === 'DAY' ? range.start : `${range.start} ~ ${range.end}`;
     return { matrix, rangeLabel, hasData: matrix.count > 0 };
   }, [f.donations, types, range, orderKey, hidden, f.personKind]);
 }
@@ -373,7 +380,7 @@ export function useAuditLogTab(f: ReportFilters) {
     for (const y of years) void ensureAuditYear(y);
   }, [ensureAuditYear, years]);
 
-  const { isWeek, week, year, months } = f;
+  const { isRange, week, year, months } = f;
   return useMemo(() => {
     const describe = (d: Donation | null): AuditDonationView | null =>
       d
@@ -386,7 +393,7 @@ export function useAuditLogTab(f: ReportFilters) {
             memo: d.memo ?? null,
           }
         : null;
-    return auditLogsForPeriod(Object.values(audits).flat(), { isWeek, week, year, months }).map((l: AuditLog) => ({
+    return auditLogsForPeriod(Object.values(audits).flat(), { isWeek: isRange, week, year, months }).map((l: AuditLog) => ({
       id: l.id,
       time: formatDateTime(l.timestamp),
       actionLabel: l.action === 'UPDATE' ? '수정' : '삭제',
@@ -394,7 +401,7 @@ export function useAuditLogTab(f: ReportFilters) {
       before: describe(l.beforeSnapshot),
       after: describe(l.afterSnapshot),
     }));
-  }, [audits, typeById, tagOf, isWeek, week, year, months]);
+  }, [audits, typeById, tagOf, isRange, week, year, months]);
 }
 
 /** 인쇄·엑셀 저장 */
@@ -436,7 +443,9 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
   }, [saved]);
 
   // 주별은 세대 집계 기준과 무관하므로 파일명에 넣지 않습니다.
-  const fileName = f.isWeek
+  const fileName = f.isDay
+    ? `일별헌금보고서_${f.week.start}.xlsx`
+    : f.isWeek
     ? `주별헌금보고서_${f.week.start}_${f.week.end}.xlsx`
     : f.personKind === 'MONTH'
       ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.xlsx`
@@ -451,7 +460,7 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
             donations,
             offeringTypes: typesWithout(types, hidden) as typeof types,
             // 월별은 개별 내역 시트 없이 성도명 × 헌금 종류 표만 저장합니다.
-            kind: f.personKind === 'MONTH' ? 'MONTH' : 'WEEK',
+            kind: f.personKind === 'MONTH' ? 'MONTH' : f.personKind === 'DAY' ? 'DAY' : 'WEEK',
           })
         : buildReportWorkbook({
             year: f.year,

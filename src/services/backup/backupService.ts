@@ -1,4 +1,5 @@
 import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
+import { assertNoDemo } from '../demo/demoState';
 import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
@@ -196,6 +197,7 @@ export async function backupBeforeDemo(): Promise<{ backupName: string | null; d
 
 /** 직접 하는 백업: 데스크톱 앱은 저장 위치를 고르게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 export async function saveBackupFile(prefix: string, years?: readonly string[]): Promise<string> {
+  await assertNoDemo();
   const api = desktop();
   if (!api) {
     const name = backupFileName(prefix, years);
@@ -243,6 +245,7 @@ const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Rec
  *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다.
  */
 export async function restoreBackup(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> {
+  await assertNoDemo();
   const years = new Set(opts.years);
   const donationsByYear = pickYears(payload.donationsByYear, years);
   const auditLogsByYear = pickYears(payload.auditLogsByYear, years);
