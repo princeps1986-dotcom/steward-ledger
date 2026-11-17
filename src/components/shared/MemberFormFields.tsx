@@ -1,5 +1,5 @@
 import type { MemberFormController } from '../../hooks/useMemberForm';
-import { HeadPicker } from './HeadPicker';
+import { MemberPicker } from './MemberPicker';
 
 /** 성도 등록/수정 입력 필드 (성도 화면·빠른 등록 공용) */
 export function MemberFormFields({ draft, setField, headOptions, positionOptions, error }: MemberFormController) {
@@ -36,7 +36,7 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
       </div>
       <div>
         <span className={`label ${draft.isFamilyHead ? 'text-gray-400' : ''}`}>소속 세대주 연결</span>
-        <HeadPicker
+        <MemberPicker
           options={headOptions}
           value={draft.headMemberId}
           onChange={setField('headMemberId')}

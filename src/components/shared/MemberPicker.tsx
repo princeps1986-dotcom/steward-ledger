@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import type { Member } from '../../contexts/types';
 import { matchMember } from '../../services/domain/search';
 
-export interface HeadOption {
+export interface PickerOption {
   id: string;
   label: string;
   member: Member;
@@ -13,7 +13,7 @@ export interface HeadOption {
 const ROW = 36;
 
 interface Props {
-  options: HeadOption[];
+  options: PickerOption[];
   /** 선택된 세대주 id ('' = 연결 없음) */
   value: string;
   onChange(id: string): void;
@@ -21,13 +21,19 @@ interface Props {
   disabledText?: string;
   disabled?: boolean;
   ariaLabel: string;
+  /** 검색 칸 안내 문구 */
+  placeholder?: string;
+  /** 선택을 푸는 버튼 이름 */
+  clearLabel?: string;
+  /** 선택값이 목록에 없을 때(예: 비활성이 된 성도) 보여 줄 문구 */
+  missingLabel?: string;
 }
 
 /**
  * 이름·연락처 뒷자리로 찾아 고르는 세대주 선택(성도 검색 칸과 같은 방식). 고른 뒤에는 [연결 해제]로 풉니다.
  * 결과가 많아도 보이는 줄만 그리는 가상 스크롤을 씁니다.
  */
-export function HeadPicker({ options, value, onChange, disabledText = '', disabled = false, ariaLabel }: Props) {
+export function MemberPicker({ options, value, onChange, disabledText = '', disabled = false, ariaLabel, placeholder = '이름·연락처 뒷자리로 찾기', clearLabel = '연결 해제', missingLabel = '연결됨(비활성 세대주)' }: Props) {
   const listId = useId();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -35,7 +41,13 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim();
-  const matches = useMemo(() => (q ? options.filter((o) => matchMember(o.member, q)) : options), [options, q]);
+  // 이름이 검색어로 시작하는 항목을 먼저 보여 줍니다(그다음은 원래 순서).
+  const matches = useMemo(() => {
+    if (!q) return options;
+    const key = q.replace(/\s/g, '');
+    const found = options.filter((o) => matchMember(o.member, q));
+    return [...found.filter((o) => o.member.name.startsWith(key)), ...found.filter((o) => !o.member.name.startsWith(key))];
+  }, [options, q]);
 
   const virtualizer = useVirtualizer({
     count: matches.length,
@@ -57,16 +69,16 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
     return (
       <div className="flex items-center gap-2">
         <div className="input flex-1 truncate" aria-label={ariaLabel}>
-          {selected?.label ?? '연결됨(비활성 세대주)'}
+          {selected?.label ?? missingLabel}
         </div>
         <button type="button" className="btn whitespace-nowrap px-2 py-1.5 text-xs" onClick={() => onChange('')}>
-          연결 해제
+          {clearLabel}
         </button>
       </div>
     );
   }
 
-  const choose = (o: HeadOption): void => {
+  const choose = (o: PickerOption): void => {
     onChange(o.id);
     setQuery('');
     setOpen(false);
@@ -90,7 +102,7 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
       <input
         className="input"
         value={query}
-        placeholder="이름·연락처 뒷자리로 찾기"
+        placeholder={placeholder}
         role="combobox"
         aria-label={ariaLabel}
         aria-expanded={open}

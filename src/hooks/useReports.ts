@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAllAudits, useDonationActions, useDonationEpoch, useDonationMonths, useDonationYears, useMonthVersions } from '../contexts/DonationContext';
 import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useMemberOrderKey, useNameTag } from './useNameTag';
 import { useOfferingTypeById, useOfferingTypes } from '../contexts/OfferingTypeContext';
-import type { AuditLog, Donation, Member } from '../contexts/types';
+import type { AuditLog, Donation } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
@@ -12,9 +12,10 @@ import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/doma
 import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
-import { memberLabel, searchMembers } from '../services/domain/search';
+import { memberLabel } from '../services/domain/search';
 import { desktop, type SavedFileInfo } from '../services/desktopBridge';
-import { compareFixed } from '../services/domain/compare';
+import { compareFixed, compareKo } from '../services/domain/compare';
+import type { PickerOption } from '../components/shared/MemberPicker';
 
 export type ReportTab = 'SUMMARY' | 'LIST' | 'PERSONAL' | 'AUDIT';
 
@@ -269,18 +270,12 @@ export function usePersonalReport(f: ReportFilters) {
   const members = useMembers();
   const memberById = useMemberById();
   const typeById = useOfferingTypeById();
-  const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
   const selected = selectedId ? memberById.get(selectedId) ?? null : null;
 
-  // 비활성 성도도 과거 내역 조회를 위해 검색 대상에 포함
-  const results = useMemo(
-    () => (selected ? [] : searchMembers(members, query, 15, true)),
-    [members, query, selected],
-  );
+  // 비활성 성도도 과거 내역 조회를 위해 선택 대상에 포함(검색은 선택 칸이 함)
+  const options = useMemo(() => [...members].sort((a, b) => compareKo(a.name, b.name)).map((m): PickerOption => ({ id: m.id, label: memberLabel(m), member: m })), [members]);
 
   const rows = useMemo(() => {
     if (!selected) return [];
@@ -301,45 +296,10 @@ export function usePersonalReport(f: ReportFilters) {
       .sort((a, b) => a.sort - b.sort);
   }, [rows, typeById]);
 
-  const select = useCallback((m: Member) => {
-    setSelectedId(m.id);
-    setQuery(m.name);
-    setDropdownOpen(false);
-  }, []);
-
-  const isOpen = dropdownOpen && !selected && query.trim() !== '';
-
-  /** ↑↓ 이동 · Enter 선택 · Esc 닫기 (헌금 입력 화면의 성도 검색과 같은 방식) */
-  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-    const count = results.length;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      if (count === 0) return;
-      e.preventDefault();
-      setDropdownOpen(true);
-      setHighlight((h) => (e.key === 'ArrowDown' ? (h + 1) % count : (h - 1 + count) % count));
-    } else if (e.key === 'Escape') {
-      setDropdownOpen(false);
-    } else if (e.key === 'Enter' && isOpen && count > 0) {
-      e.preventDefault();
-      select(results[Math.min(highlight, count - 1)]);
-    }
-  };
-
   return {
-    query,
-    onQueryChange: (v: string) => {
-      setQuery(v);
-      setSelectedId(null);
-      setDropdownOpen(true);
-      setHighlight(0);
-    },
-    onSearchKeyDown,
-    highlight,
-    setHighlight,
-    results: results.map((m) => ({ member: m, label: memberLabel(m) })),
-    dropdownOpen: isOpen,
-    select,
+    options,
+    selectedId,
+    select: (id: string) => setSelectedId(id || null),
     selectedLabel: selected ? memberLabel(selected) : '',
     hasSelection: !!selected,
     mode,

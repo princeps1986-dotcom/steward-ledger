@@ -5,6 +5,7 @@ import { useIsPrinting } from '../../../hooks/useIsPrinting';
 import { useNameTag } from '../../../hooks/useNameTag';
 import { usePersonalReport, type ReportFilters } from '../../../hooks/useReports';
 import { formatWon } from '../../../services/domain/amount';
+import { MemberPicker } from '../../shared/MemberPicker';
 import { DonationEditModal } from './DonationEditModal';
 import { NameWithTag } from './NameWithTag';
 
@@ -27,36 +28,9 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
   return (
     <section className="card space-y-4">
       <div className="no-print flex flex-wrap items-end gap-3">
-        <div className="relative w-80">
+        <div className="w-80">
           <span className="label">성도 검색 (비활성 성도 포함)</span>
-          <input
-            className="input"
-            value={r.query}
-            onChange={(e) => r.onQueryChange(e.target.value)}
-            onKeyDown={r.onSearchKeyDown}
-            placeholder="이름 (↑↓ 이동 · Enter 선택)"
-            role="combobox"
-            aria-expanded={r.dropdownOpen}
-            aria-controls="personal-search-list"
-          />
-          {r.dropdownOpen ? (
-            <ul id="personal-search-list" role="listbox" className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded border bg-white shadow-lg">
-              {r.results.map((it, i) => (
-                <li
-                  key={it.member.id}
-                  role="option"
-                  aria-selected={i === r.highlight}
-                  className={`cursor-pointer px-3 py-2 text-sm ${i === r.highlight ? 'bg-blue-50' : 'hover:bg-blue-50'}`}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => r.setHighlight(i)}
-                  onClick={() => r.select(it.member)}
-                >
-                  {it.label}
-                </li>
-              ))}
-              {r.results.length === 0 ? <li className="px-3 py-2 text-sm text-gray-500">검색 결과가 없습니다.</li> : null}
-            </ul>
-          ) : null}
+          <MemberPicker options={r.options} value={r.selectedId ?? ''} onChange={r.select} ariaLabel="성도 검색" placeholder="이름·연락처 뒷자리 (↑↓ 이동 · Enter 선택)" clearLabel="선택 해제" />
         </div>
         <div className="flex overflow-hidden rounded border border-gray-300">
           <button className={`px-3 py-1.5 text-sm ${r.mode === 'PERSON' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={r.mode === 'PERSON'} onClick={() => r.setMode('PERSON')}>
