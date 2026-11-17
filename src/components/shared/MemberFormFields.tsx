@@ -4,8 +4,10 @@ import type { MemberFormController } from '../../hooks/useMemberForm';
 export function MemberFormFields({ draft, setField, headOptions, positionOptions, error }: MemberFormController) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <label className="col-span-1">
-        <span className="label">이름 *</span>
+      <label className="col-span-2">
+        <span className="label">
+          이름 <span className="font-semibold text-red-600">* 필수</span>
+        </span>
         <input className="input" value={draft.name} onChange={(e) => setField('name')(e.target.value)} autoFocus />
       </label>
       <label>
@@ -23,6 +25,7 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
         <span className="label">연락처 뒷 4자리</span>
         <input className="input" inputMode="numeric" value={draft.phoneLast4} onChange={(e) => setField('phoneLast4')(e.target.value)} />
       </label>
+      <p className="col-span-2 -mt-1 text-xs text-gray-500">직분과 연락처 뒷 4자리는 이름이 같은 성도를 구분하기 위한 용도입니다.</p>
       <label className="col-span-2 flex items-center gap-2 text-sm">
         <input type="checkbox" checked={draft.isFamilyHead} onChange={(e) => setField('isFamilyHead')(e.target.checked)} />
         세대주로 지정
