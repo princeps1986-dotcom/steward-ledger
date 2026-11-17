@@ -77,7 +77,7 @@ export function SettingsPage() {
         <h3 className="flex items-center gap-2 font-semibold">
           백업 · 복원
         </h3>
-        <p className="text-sm text-gray-600">{s.backupHelp}</p>
+        <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{s.backupHelp}</p>
         <div className="flex gap-2">
           <button className="btn-primary" onClick={s.openBackup} disabled={s.busy || s.backupBlocked}>
             백업 파일 저장
