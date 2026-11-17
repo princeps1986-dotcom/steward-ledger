@@ -21,6 +21,8 @@ vi.mock('../services/storage/storageService', async (orig) => {
 const wrapper = ({ children }: { children: ReactNode }) => <DonationProvider>{children}</DonationProvider>;
 const useAll = () => useDonationSelector((s) => s);
 const setup = () => renderHook(() => useAll(), { wrapper });
+// 달마다 1건씩 넣은 시험 데이터에서 '연도 3개'에 해당하는 건수 예산
+const smallBudget = ({ children }: { children: ReactNode }) => <DonationProvider maxLoadedRows={3}>{children}</DonationProvider>;
 
 const don = (id: string, date: string, memberId: string | null = 'm1', typeId = 't1', amount = 1000): Donation => ({
   id,
@@ -129,11 +131,11 @@ describe('DonationContext', () => {
     expect(result.current.history).toHaveLength(0);
   });
 
-  it('연도 5개를 차례로 열어도 메모리에는 최대 3개 연도만 남는다', async () => {
+  it('건수 예산을 넘으면 오래 쓰지 않은 연도부터 내려가 메모리에는 예산 안의 연도만 남는다', async () => {
     const data: Record<string, Donation[]> = {};
     for (const y of ['2021', '2022', '2023', '2024', '2025']) data[`${y}-01`] = [don(`d${y}`, `${y}-01-03`)];
     await seed(data);
-    const { result } = setup();
+    const { result } = renderHook(() => useAll(), { wrapper: smallBudget });
     for (const y of ['2021', '2022', '2023', '2024', '2025']) await act(() => result.current.actions.ensureYear(y));
     expect([...new Set(Object.keys(result.current.months).map((m) => m.slice(0, 4)))]).toEqual(['2023', '2024', '2025']);
   });
@@ -142,7 +144,7 @@ describe('DonationContext', () => {
     const data: Record<string, Donation[]> = {};
     for (const y of ['2021', '2022', '2023', '2024']) data[`${y}-01`] = [don(`d${y}`, `${y}-01-03`)];
     await seed(data);
-    const { result } = setup();
+    const { result } = renderHook(() => useAll(), { wrapper: smallBudget });
     let unpin = () => undefined as void;
     await act(async () => {
       unpin = result.current.actions.pinMonths(['2021-01']);

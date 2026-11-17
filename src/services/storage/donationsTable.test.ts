@@ -113,3 +113,12 @@ describe('applyRowOps (in-memory month list)', () => {
     expect(out.map((x) => [x.id, x.date])).toEqual([['a', '2026-01-01'], ['b', '2026-01-09'], ['n', '2026-01-10']]);
   });
 });
+
+describe('internDonations', () => {
+  it('keeps values and shares equal strings', async () => {
+    const { internDonations } = await import('./storageService');
+    const mk = (id: string) => ({ id, date: ['2026', '01', '04'].join('-'), memberId: ['m', '1'].join(''), donorDisplayName: ['김', '철수'].join(''), offeringTypeId: ['t', '1'].join(''), amount: 1, createdAt: id, updatedAt: id }) as never as import('../../contexts/types').Donation;
+    const rows = internDonations([mk('a'), mk('b')]);
+    expect(rows.map((r) => [r.date, r.memberId, r.donorDisplayName, r.offeringTypeId])).toEqual(Array(2).fill(['2026-01-04', 'm1', '김철수', 't1']));
+  });
+});

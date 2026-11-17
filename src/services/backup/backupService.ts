@@ -3,7 +3,7 @@ import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
-import { desktop } from '../desktopBridge';
+import { desktop, type BackupSessionSpec, type DesktopApi } from '../desktopBridge';
 import { downloadText } from '../excel/downloadBridge';
 import {
   AUDIT_KEY_RE,
@@ -54,45 +54,6 @@ export async function collectPayload(years?: readonly string[]): Promise<BackupP
   });
 }
 
-/**
- * collectPayload와 같은 내용을 만들되, 읽기 트랜잭션 하나로 오래 붙잡지 않고 달마다 짧게 나누어 읽습니다.
- * 한 트랜잭션으로 읽으면 읽는 동안(5년 130만 건에서 약 8초) 저장이 기다려야 해서 입력이 멈추기 때문입니다.
- * 읽는 도중 내역이 달을 넘어 옮겨졌거나 복원이 있었다면(structuralCommitCount가 바뀜) 중복·누락이 생길 수 있으니 다시 읽고,
- * 같은 달 안의 추가·수정·삭제는 어느 시점이든 일관되므로 그냥 둡니다(그 변경은 '변경 표시'로 다음 백업에 담김).
- * 이력(audit)·성도·헌금 종류는 내역과 같은 시점이 아닐 수 있습니다.
- */
-export async function collectPayloadChunked(opts: { onMonthRead?: (ym: string) => Promise<void>; maxAttempts?: number } = {}): Promise<BackupPayload> {
-  const maxAttempts = opts.maxAttempts ?? 3;
-  for (let attempt = 1; ; attempt++) {
-    const seq = structuralCommitCount();
-    const months = await listDonationMonths();
-    const auditKeys = await listAuditKeys();
-    const [auditLists, meta] = await Promise.all([
-      getMany<AuditLog[]>(auditKeys),
-      getMany<Member[] | OfferingType[]>([KEYS.members, KEYS.offeringTypes]),
-    ]);
-    const donationsByYear: Record<string, Donation[]> = {};
-    for (const ym of months) {
-      (donationsByYear[ym.slice(0, 4)] ??= []).push(...(await readMonth(ym)));
-      await opts.onMonthRead?.(ym);
-    }
-    if (structuralCommitCount() !== seq) {
-      if (attempt >= maxAttempts) throw new Error('백업하는 동안 내역이 다른 달로 옮겨지는 변경이 계속되어 백업하지 못했습니다. 잠시 뒤 다시 시도됩니다.');
-      continue;
-    }
-    const auditLogsByYear: Record<string, AuditLog[]> = {};
-    auditKeys.forEach((k, i) => {
-      auditLogsByYear[AUDIT_KEY_RE.exec(k)![1]] = auditLists[i] ?? [];
-    });
-    return {
-      members: (meta[0] as Member[] | null) ?? [],
-      offeringTypes: (meta[1] as OfferingType[] | null) ?? [],
-      donationsByYear,
-      auditLogsByYear,
-    };
-  }
-}
-
 export async function createBackupJson(years?: readonly string[]): Promise<string> {
   // payload는 한 번만 문자열로 만들어 체크섬을 구하고 그대로 봉투에 끼웁니다(큰 데이터에서 메모리·시간 절약).
   // 결과는 JSON.stringify(envelope)와 같은 글자이므로 형식·호환성은 그대로입니다.
@@ -101,50 +62,81 @@ export async function createBackupJson(years?: readonly string[]): Promise<strin
   return `${JSON.stringify(head).slice(0, -1)},"checksum":"${await sha256Hex(payloadJson)}","payload":${payloadJson}}`;
 }
 
-/**
- * 자동 백업(v3, 줄 단위 JSON)의 줄을 하나씩 만듭니다. 한 줄은 한 달치 헌금 등 한 덩어리라 메모리에는 한 번에 한 줄만 올라갑니다.
- * 머리글 → 성도 → 헌금 종류 → 월별 헌금/연도별 이력 순이며, 마지막 SHA-256 줄은 main이 붙입니다.
- */
-/** 줄 단위 백업에서 한 번에 읽는 키 수(메모리에 몇 달치만 올라가게 하면서 읽기 횟수를 줄임) */
+/** 줄 단위 백업에서 한 번에 읽는 키 수(이력 키를 묶어 읽어 읽기 횟수를 줄임) */
 const BACKUP_READ_BATCH = 6;
 
 const ndjsonLine = (o: unknown): string => `${JSON.stringify(o)}\n`;
 
 /**
- * 앱을 쓰는 중에 만드는 주기 백업용 줄: 데이터를 달마다 짧게 나누어 읽고(collectPayloadChunked, 저장을 막지 않음) 줄로 나눕니다.
- * 읽는 도중 내역이 달을 넘어 옮겨지면 다시 읽으므로 중복·누락이 없습니다(대신 전체가 한 번에 메모리에 올라갑니다).
- * 형식은 backupLines와 같습니다.
+ * 백업의 줄을 하나씩 만듭니다(줄 단위 JSON, NDJSON). 머리글 → 성도 → 헌금 종류 → 연도별 이력 → 월별 헌금 순이며, 한 번에 한 달치만
+ * 메모리에 올라갑니다. 마지막 SHA-256 줄은 main이 붙입니다. years를 주면 그 연도의 헌금·이력만 담습니다(성도·헌금 종류는 항상 전부).
  */
-export async function* snapshotBackupLines(): AsyncGenerator<string> {
-  const p = await collectPayloadChunked();
+export async function* backupLines(opts: { years?: readonly string[]; onMonthRead?: (ym: string) => Promise<void> } = {}): AsyncGenerator<string> {
+  const want = opts.years ? new Set(opts.years) : null;
   yield ndjsonLine({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
-  yield ndjsonLine({ t: 'members', data: p.members });
-  yield ndjsonLine({ t: 'offeringTypes', data: p.offeringTypes });
-  for (const year of Object.keys(p.auditLogsByYear).sort()) yield ndjsonLine({ t: 'audit', year, data: p.auditLogsByYear[year] });
-  const byMonth = new Map<string, Donation[]>();
-  for (const list of Object.values(p.donationsByYear)) {
-    for (const d of list) {
-      const ym = monthOfDate(d.date);
-      if (!byMonth.has(ym)) byMonth.set(ym, []);
-      byMonth.get(ym)!.push(d);
-    }
-  }
-  for (const ym of [...byMonth.keys()].sort()) yield ndjsonLine({ t: 'donations', ym, data: byMonth.get(ym)! });
-}
-
-export async function* backupLines(): AsyncGenerator<string> {
-  const line = ndjsonLine;
-  yield line({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
-  yield line({ t: 'members', data: (await getItem<Member[]>(KEYS.members)) ?? [] });
-  yield line({ t: 'offeringTypes', data: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [] });
-  // 이력(연도별) → 헌금(월별) 순으로, 한 줄씩 읽어 메모리에는 한 번에 한 덩어리만 올라갑니다.
-  const auditKeys = await listAuditKeys();
+  yield ndjsonLine({ t: 'members', data: (await getItem<Member[]>(KEYS.members)) ?? [] });
+  yield ndjsonLine({ t: 'offeringTypes', data: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [] });
+  const auditKeys = (await listAuditKeys()).filter((k) => !want || want.has(AUDIT_KEY_RE.exec(k)![1]));
   for (let i = 0; i < auditKeys.length; i += BACKUP_READ_BATCH) {
     const chunk = auditKeys.slice(i, i + BACKUP_READ_BATCH);
     const values = await getMany<AuditLog[]>(chunk);
-    for (const [j, k] of chunk.entries()) yield line({ t: 'audit', year: AUDIT_KEY_RE.exec(k)![1], data: values[j] ?? [] });
+    for (const [j, k] of chunk.entries()) yield ndjsonLine({ t: 'audit', year: AUDIT_KEY_RE.exec(k)![1], data: values[j] ?? [] });
   }
-  for (const ym of await listDonationMonths()) yield line({ t: 'donations', ym, data: await readMonth(ym) });
+  for (const ym of (await listDonationMonths()).filter((m) => !want || want.has(m.slice(0, 4)))) {
+    const data = await readMonth(ym);
+    await opts.onMonthRead?.(ym);
+    yield ndjsonLine({ t: 'donations', ym, data });
+  }
+}
+
+/** 백업을 받아 파일로 쓰는 쪽(데스크톱 앱의 main). 세션 번호로 서로 다른 백업이 섞이지 않게 합니다. */
+export interface BackupSink {
+  /** 시작. 사용자가 저장 위치 선택을 취소하면 null */
+  begin(): Promise<number | null>;
+  write(id: number, line: string): Promise<unknown>;
+  /** 같은 대상으로 처음부터 다시 씁니다 */
+  restart(id: number): Promise<number>;
+  abort(id: number): Promise<unknown>;
+  /** 검증 후 확정하고 저장된 경로를 돌려줍니다 */
+  end(id: number): Promise<string>;
+}
+
+/**
+ * 백업을 달마다 나누어 읽으며 바로 sink로 보냅니다(한 달치만 메모리에 둠). 읽는 도중 저장을 막지 않는 대신,
+ * 내역이 달을 넘어 옮겨졌거나 복원이 있었다면(structuralCommitCount가 바뀜) 한 내역이 두 번 담기거나 빠질 수 있으니 버리고 처음부터 다시 씁니다
+ * (최대 maxAttempts번). 같은 달 안의 추가·수정·삭제는 어느 시점에 읽어도 일관되므로 그대로 둡니다(그 변경은 '변경 표시'로 다음 백업에 담김).
+ * 이력·성도·헌금 종류는 내역과 같은 시점이 아닐 수 있습니다. 반환: 저장된 경로, 사용자가 취소하면 null. 실패하면 세션을 정리하고 오류를 던집니다.
+ */
+export async function streamBackup(
+  sink: BackupSink,
+  opts: { years?: readonly string[]; maxAttempts?: number; onMonthRead?: (ym: string) => Promise<void> } = {},
+): Promise<string | null> {
+  const maxAttempts = opts.maxAttempts ?? 3;
+  let id = await sink.begin();
+  if (id === null) return null;
+  try {
+    for (let attempt = 1; ; attempt++) {
+      const seq = structuralCommitCount();
+      for await (const line of backupLines({ years: opts.years, onMonthRead: opts.onMonthRead })) await sink.write(id, line);
+      if (structuralCommitCount() === seq) return await sink.end(id);
+      if (attempt >= maxAttempts) throw new Error('백업하는 동안 내역이 다른 달로 옮겨지는 변경이 계속되어 백업하지 못했습니다. 잠시 뒤 다시 시도하세요.');
+      id = await sink.restart(id);
+    }
+  } catch (e) {
+    await sink.abort(id).catch(() => undefined);
+    throw e;
+  }
+}
+
+/** 데스크톱 앱의 main에 백업을 쓰는 sink */
+export function desktopSink(api: DesktopApi, spec: BackupSessionSpec): BackupSink {
+  return {
+    begin: () => api.backupBegin(spec),
+    write: (id, line) => api.backupWrite(id, line),
+    restart: (id) => api.backupRestart(id),
+    abort: (id) => api.backupAbort(id),
+    end: (id) => api.backupEnd(id),
+  };
 }
 
 /** 연도를 골라 만든 백업은 파일 이름에 연도를 넣습니다: backup_2025_…, backup_2024-2026_… */
@@ -166,27 +158,30 @@ export async function downloadBackup(prefix = 'backup', years?: readonly string[
 }
 
 /**
- * 초기화·복원 직전 긴급 백업. 데스크톱 앱은 백업 폴더에 대화상자 없이 저장하고 실패하면 오류를 던지므로,
+ * 초기화·복원 직전 긴급 백업. 데스크톱 앱은 백업 폴더에 대화상자 없이 줄 단위로 저장하고(메모리는 한 달치) 실패하면 오류를 던지므로,
  * 이 함수가 끝났다면 백업이 실제로 저장된 것입니다(사용자가 취소할 수 없음). 저장된 위치(또는 파일 이름)를 돌려줍니다.
  */
 export async function saveEmergencyBackup(prefix: string): Promise<string> {
-  const name = backupFileName(prefix);
-  const json = await createBackupJson();
   const api = desktop();
-  if (api) return api.saveEmergencyBackup(name, json);
-  downloadText(json, name);
+  if (api) {
+    const saved = await streamBackup(desktopSink(api, { kind: 'emergency', name: `${backupFileName(prefix)}.gz` }));
+    if (!saved) throw new Error('긴급 백업을 저장하지 못했습니다.');
+    return saved;
+  }
+  const name = backupFileName(prefix);
+  downloadText(await createBackupJson(), name);
   return name;
 }
 
 /** 직접 하는 백업: 데스크톱 앱은 저장 위치를 고르게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 export async function saveBackupFile(prefix: string, years?: readonly string[]): Promise<string> {
-  const name = backupFileName(prefix, years);
   const api = desktop();
   if (!api) {
+    const name = backupFileName(prefix, years);
     downloadText(await createBackupJson(years), name);
     return name;
   }
-  const saved = await api.saveBackupAs(name, await createBackupJson(years));
+  const saved = await streamBackup(desktopSink(api, { kind: 'manual', name: `${backupFileName(prefix, years)}.gz` }), { years });
   if (!saved) throw new Error('저장을 취소했습니다.');
   return saved;
 }

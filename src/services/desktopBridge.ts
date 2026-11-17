@@ -7,9 +7,18 @@ export interface AutoBackupStatus {
   error?: string;
 }
 
-/** 자동 백업이 끝난 뒤 저장된 파일 경로(내용은 autoBackupWrite로 이미 main에 보냄) */
+/** 자동 백업이 끝난 뒤 저장된 파일 경로(내용은 backupWrite로 이미 main에 보냄) */
 export interface AutoBackupPayload {
   file: string;
+}
+
+/** close = 종료 때 · periodic = 앱을 쓰는 동안 · emergency = 복원·초기화 직전(name 필요) · manual = 저장 위치를 고름(name 필요) */
+export interface BackupSessionSpec {
+  kind: 'close' | 'periodic' | 'emergency' | 'manual';
+  /** close·periodic에서 사용자가 고른 폴더(설정값). main이 허용한 폴더가 아니면 무시됩니다. */
+  dir?: string;
+  /** emergency·manual의 파일 이름(영문·숫자·_- 와 .json.gz) */
+  name?: string;
 }
 
 export interface SavedFileInfo {
@@ -30,19 +39,17 @@ export interface DesktopApi {
   getAutoBackupStatus(): Promise<AutoBackupStatus | null>;
   ackAutoBackupStatus(): Promise<void>;
   /**
-   * 자동 백업을 줄 단위로 main에 보내 파일로 씁니다: begin(세션 번호 반환) → write(여러 번) → end(검증 후 저장된 경로 반환).
-   * 다른 백업이 시작되면 이 세션은 취소되어 write·end가 reject됩니다. dir은 main이 허용한 폴더가 아니면 기본 폴더로 바뀝니다.
-   * kind 'periodic'은 앱을 쓰는 동안의 주기 백업(autosave_*, 최근 3개만 보관)입니다.
+   * 백업을 줄 단위로 main에 보내 gzip 파일로 씁니다: begin(세션 번호, manual에서 사용자가 취소하면 null) → write(여러 번)
+   * → end(검증 후 저장된 경로). 내역이 달을 넘어 옮겨져 다시 읽어야 하면 restart, 실패하면 abort. 다른 백업이 시작되면 이전 세션은 취소됩니다.
+   * 폴더는 main이 정합니다: close·periodic은 사용자가 고른 폴더 또는 기본 폴더(그 밖의 dir은 무시), emergency는 기본 폴더, manual은 저장 대화상자.
    */
-  autoBackupBegin(dir: string, kind?: 'periodic'): Promise<number>;
-  autoBackupWrite(id: number, line: string): Promise<boolean>;
-  autoBackupEnd(id: number): Promise<string>;
+  backupBegin(spec: BackupSessionSpec): Promise<number | null>;
+  backupWrite(id: number, line: string): Promise<boolean>;
+  backupRestart(id: number): Promise<number>;
+  backupAbort(id: number): Promise<boolean>;
+  backupEnd(id: number): Promise<string>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
-  /** 긴급 백업을 백업 폴더에 대화상자 없이 저장합니다. 실패하면 reject. 저장된 전체 경로를 돌려줍니다. */
-  saveEmergencyBackup(name: string, json: string): Promise<string>;
-  /** 저장 위치를 고르게 해 백업을 저장합니다. 사용자가 취소하면 null. */
-  saveBackupAs(name: string, json: string): Promise<string | null>;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */
   skipBackup(): void;
   /** 백업 실패 후 사용자가 종료를 취소해 앱을 계속 쓰게 된 경우 main이 알려 줍니다. */

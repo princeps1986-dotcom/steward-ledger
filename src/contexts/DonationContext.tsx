@@ -33,8 +33,10 @@ import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { AuditLog, Donation, DonationDraft, DuplicateResolution, SaveBatch } from './types';
 
 const HISTORY_LIMIT = 10;
-/** 메모리에 남겨 두는 헌금 연도 수(지금 화면이 쓰는 연도는 이 수와 상관없이 유지) */
-const MAX_LOADED_YEARS = 3;
+/** 메모리에 남겨 두는 헌금 건수(약 150MB). 지금 화면이 쓰는 연도는 이 수와 상관없이 유지 */
+const MAX_LOADED_ROWS = 500_000;
+/** 화면이 연도를 놓았을 때(예: 보고서에서 입력 화면으로 이동) 남겨 두는 건수. 큰 연도를 바로 내려 메모리를 돌려줍니다. */
+const IDLE_LOADED_ROWS = 100_000;
 
 interface DonationActions {
   /** 지정한 달('YYYY-MM')의 헌금을 메모리로 불러옵니다(이미 있으면 건너뜀) */
@@ -66,7 +68,7 @@ interface DonationState {
 
 const DonationCtx = createContext<DonationState | null>(null);
 
-export function DonationProvider({ children }: { children: ReactNode }) {
+export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: { children: ReactNode; maxLoadedRows?: number }) {
   const [months, setMonths] = useState<Record<string, Donation[]>>({});
   const [epoch, setEpoch] = useState(0);
   const [audits, setAudits] = useState<Record<string, AuditLog[]>>({});
@@ -76,6 +78,8 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   historyRef.current = history;
   // 메모리에 올라간 달 / 읽는 중인 달 / 읽는 동안 저장이 커밋되어 다시 읽어야 하는 달
   const loadedMonths = useRef(new Set<string>());
+  // 달별로 읽어 둔 건수(내릴 연도를 정하는 용도라 이후의 소수 추가·삭제는 반영하지 않는 근사값)
+  const monthRows = useRef(new Map<string, number>());
   const loadingMonths = useRef(new Set<string>());
   const staleMonths = useRef(new Set<string>());
   const loadedAuditYears = useRef(new Set<string>());
@@ -95,13 +99,17 @@ export function DonationProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, []);
 
-  const evictOldYears = useCallback(() => {
+  const evictOldYears = useCallback((budget = maxLoadedRows) => {
     const loadingYears = new Set([...loadingMonths.current].map((m) => m.slice(0, 4)));
-    const drop = new Set(yearsToEvict(loadedMonths.current, pins.current, lastUsed.current, loadingYears, MAX_LOADED_YEARS));
+    const drop = new Set(yearsToEvict(monthRows.current, pins.current, lastUsed.current, loadingYears, Math.min(budget, maxLoadedRows)));
     if (drop.size === 0) return;
-    for (const ym of [...loadedMonths.current]) if (drop.has(ym.slice(0, 4))) loadedMonths.current.delete(ym);
+    for (const ym of [...loadedMonths.current]) {
+      if (!drop.has(ym.slice(0, 4))) continue;
+      loadedMonths.current.delete(ym);
+      monthRows.current.delete(ym);
+    }
     setMonths((prev) => Object.fromEntries(Object.entries(prev).filter(([ym]) => !drop.has(ym.slice(0, 4)))));
-  }, []);
+  }, [maxLoadedRows]);
 
   const pinMonths = useCallback(
     (yms: readonly string[]) => {
@@ -118,10 +126,10 @@ export function DonationProvider({ children }: { children: ReactNode }) {
           pins.current.set(y, Math.max(0, (pins.current.get(y) ?? 1) - 1));
           lastUsed.current.set(y, Date.now());
         }
-        evictOldYears();
+        evictOldYears(IDLE_LOADED_ROWS);
       };
     },
-    [evictOldYears],
+    [evictOldYears, maxLoadedRows],
   );
 
   /**
@@ -186,8 +194,9 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   }, [refreshYears]);
 
   const ensureMonths = useCallback(async (yms: readonly string[]) => {
-    await Promise.all(
-      yms.map(async (ym) => {
+    // 한 달씩 차례로 읽습니다: 여러 달을 동시에 읽으면 읽은 원본이 한꺼번에 메모리에 올라 일시적으로 최대치가 커집니다.
+    for (const ym of yms) {
+      await (async () => {
         lastUsed.current.set(ym.slice(0, 4), Date.now()); // 방금 요청한 연도는 가장 최근에 쓴 것으로 칩니다.
         if (loadedMonths.current.has(ym) || loadingMonths.current.has(ym)) return;
         const gen = generation.current;
@@ -201,14 +210,15 @@ export function DonationProvider({ children }: { children: ReactNode }) {
           } while (staleMonths.current.has(ym) && gen === generation.current);
           if (gen !== generation.current) return; // 읽는 동안 복원·초기화(reloadAll)가 일어났으면 이 결과는 버립니다.
           loadedMonths.current.add(ym);
+          monthRows.current.set(ym, list.length);
           setMonths((prev) => ({ ...prev, [ym]: list }));
         } catch {
           // 읽기 실패: 다음에 다시 시도할 수 있도록 '읽는 중' 표시만 지웁니다(화면에는 빈 달로 보임).
         } finally {
           if (gen === generation.current) loadingMonths.current.delete(ym);
         }
-      }),
-    );
+      })();
+    }
     evictOldYears();
   }, [evictOldYears]);
 
@@ -224,6 +234,7 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   const reloadAll = useCallback(async () => {
     generation.current++;
     loadedMonths.current.clear();
+    monthRows.current.clear();
     loadingMonths.current.clear();
     staleMonths.current.clear();
     loadedAuditYears.current.clear();

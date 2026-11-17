@@ -2,31 +2,46 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contexts/types';
 import type { Donation } from '../../contexts/types';
+import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
-import { backupLines, snapshotBackupLines } from './backupService';
+import { backupLines, collectPayload, desktopSink, saveBackupFile, saveEmergencyBackup, streamBackup, type BackupSink } from './backupService';
 import { runPeriodicBackup } from './autoBackupService';
 import { parseAndValidateBackup, sha256Hex } from './validation';
 
 const d = (id: string, date: string): Donation =>
   ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: `c${id}`, updatedAt: 'x' }) as Donation;
+const NL = String.fromCharCode(10);
 
-function fakeDesktop(opts: { failAt?: number } = {}) {
-  const sent: string[] = [];
-  const calls: string[] = [];
+/** main 대신 줄을 모으는 가짜 sink. 세션마다 줄이 따로 쌓이고, restart하면 새 세션이 비어서 시작합니다. */
+function fakeSink(opts: { failAtLine?: number; cancel?: boolean } = {}) {
+  const log: string[] = [];
+  let sessions: string[][] = [];
+  const sink: BackupSink = {
+    begin: async () => (opts.cancel ? null : (log.push('begin'), sessions.push([]), sessions.length)),
+    write: async (id, line) => {
+      if (opts.failAtLine !== undefined && sessions[id - 1].length === opts.failAtLine) throw new Error('디스크 쓰기 실패');
+      sessions[id - 1].push(line);
+    },
+    restart: async () => (log.push('restart'), sessions.push([]), sessions.length),
+    abort: async () => void log.push('abort'),
+    end: async (id) => (log.push(`end:${id}`), 'C:/x/backup.json.gz'),
+  };
+  return { sink, log, final: () => sessions[sessions.length - 1], sessions: () => sessions, reset: () => (sessions = []) };
+}
+
+function fakeDesktop(sink: BackupSink) {
+  const specs: unknown[] = [];
   const api = {
     getDefaultBackupDir: async () => 'C:/x',
-    autoBackupBegin: async (_dir: string, kind?: string) => (calls.push(`begin:${kind ?? ''}`), 7),
-    autoBackupWrite: async (id: number, line: string) => {
-      if (id !== 7) throw new Error('다른 세션');
-      if (opts.failAt !== undefined && sent.length === opts.failAt) throw new Error('디스크 쓰기 실패');
-      sent.push(line);
-      return true;
-    },
-    autoBackupEnd: async (id: number) => (calls.push(`end:${id}`), 'C:/x/autosave_20260101_000000.json.gz'),
-  };
+    backupBegin: async (spec: unknown) => (specs.push(spec), sink.begin()),
+    backupWrite: sink.write,
+    backupRestart: sink.restart,
+    backupAbort: sink.abort,
+    backupEnd: sink.end,
+  } as unknown as DesktopApi;
   vi.stubGlobal('window', { desktop: api });
-  return { sent, calls };
+  return specs;
 }
 
 beforeEach(async () => {
@@ -36,127 +51,174 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe('snapshotBackupLines', () => {
-  it('produces the same lines as backupLines (except the timestamp) and a valid file', async () => {
-    const strip = (l: string) => l.replace(/"exportedAt":"[^"]*"/, '');
-    const a: string[] = [];
-    const b: string[] = [];
-    for await (const l of backupLines()) a.push(strip(l));
-    for await (const l of snapshotBackupLines()) b.push(strip(l));
-    expect(b).toEqual(a);
-    const body = [...b].join('');
-    expect(body).toContain('"t":"donations","ym":"2026-02"');
-    const { body: full } = await collectText();
-    const text = full + JSON.stringify({ t: 'end', sha256: await sha256Hex(full) }) + String.fromCharCode(10);
-    expect((await parseAndValidateBackup(text)).ok).toBe(true);
+describe('backupLines', () => {
+  it('produces a valid backup file whose payload equals collectPayload', async () => {
+    let body = '';
+    for await (const l of backupLines()) body += l;
+    const text = body + JSON.stringify({ t: 'end', sha256: await sha256Hex(body) }) + NL;
+    const res = await parseAndValidateBackup(text);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.envelope.payload).toEqual(await collectPayload());
+  });
+
+  it('keeps only the chosen years (members and types always)', async () => {
+    const out: string[] = [];
+    for await (const l of backupLines({ years: ['2026'] })) out.push(l);
+    expect(out.filter((l) => l.includes('"t":"donations"'))).toHaveLength(2);
+    const out2: string[] = [];
+    for await (const l of backupLines({ years: ['1999'] })) out2.push(l);
+    expect(out2.filter((l) => l.includes('"t":"donations"'))).toHaveLength(0);
+    expect(out2.some((l) => l.includes('"t":"members"'))).toBe(true);
   });
 });
 
-async function collectText() {
-  let body = '';
-  for await (const l of snapshotBackupLines()) body += l;
-  return { body };
-}
+describe('streamBackup', () => {
+  const idsOf = (lines: string[]) => lines.filter((l) => l.includes('"t":"donations"')).flatMap((l) => (JSON.parse(l).data as Donation[]).map((x) => x.id)).sort();
 
-describe('runPeriodicBackup', () => {
-  it('does nothing when nothing changed since the last backup', async () => {
-    const { calls } = fakeDesktop();
-    await db.kv.put(false, 'meta_dirty_since_backup');
-    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBeNull();
-    expect(calls).toEqual([]);
+  it('sends one line per month, ends once, and returns the saved path', async () => {
+    const f = fakeSink();
+    expect(await streamBackup(f.sink)).toBe('C:/x/backup.json.gz');
+    expect(f.log).toEqual(['begin', 'end:1']);
+    expect(idsOf(f.final())).toEqual(['a', 'b']);
   });
 
-  it('backs up the changed data, tags the file as periodic, and clears the changed flag', async () => {
-    const { sent, calls } = fakeDesktop();
-    expect(await isDirtySinceBackup()).toBe(true);
-    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toMatch(/autosave_/);
-    expect(calls).toEqual(['begin:periodic', 'end:7']);
-    expect(sent.some((l) => l.includes('"t":"donations"'))).toBe(true);
-    expect(await isDirtySinceBackup()).toBe(false);
+  it('returns null without writing when the user cancels the save dialog', async () => {
+    const f = fakeSink({ cancel: true });
+    expect(await streamBackup(f.sink)).toBeNull();
+    expect(f.log).toEqual([]);
   });
-
-  it('puts the changed flag back when the backup fails, and keeps changes made meanwhile', async () => {
-    fakeDesktop({ failAt: 2 });
-    await expect(runPeriodicBackup(DEFAULT_SETTINGS)).rejects.toThrow('디스크 쓰기 실패');
-    expect(await isDirtySinceBackup()).toBe(true);
-    // 백업이 끝난 뒤 생긴 변경은 다음 백업 대상으로 남습니다.
-    fakeDesktop();
-    await runPeriodicBackup(DEFAULT_SETTINGS);
-    await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('c', '2026-03-01')], deletes: [] })], result: 0 }));
-    expect(await isDirtySinceBackup()).toBe(true);
-  });
-
-  it('skips when automatic backup is turned off', async () => {
-    const { calls } = fakeDesktop();
-    expect(await runPeriodicBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: false })).toBeNull();
-    expect(calls).toEqual([]);
-  });
-});
-
-describe('collectPayloadChunked (주기 백업 읽기)', () => {
-  const ids = (p: { donationsByYear: Record<string, Donation[]> }) => Object.values(p.donationsByYear).flat().map((x) => x.id).sort();
 
   it('does not block saves while it reads (a save finishes between two months)', async () => {
-    const { collectPayloadChunked } = await import('./backupService');
-    let savedWhileReading = false;
-    const p = await collectPayloadChunked({
+    const f = fakeSink();
+    let saved = false;
+    await streamBackup(f.sink, {
       onMonthRead: async (ym) => {
         if (ym !== '2026-01') return;
-        // 단일 읽기 트랜잭션이었다면 이 저장이 백업이 끝날 때까지 기다려 여기서 멈춥니다.
+        // 한 트랜잭션으로 오래 읽었다면 이 저장이 백업이 끝날 때까지 기다려 여기서 멈춥니다.
         await transact(async () => ({ writes: [rowWrite('2026-02', { puts: [d('late', '2026-02-02')], deletes: [] })], result: 0 }));
-        savedWhileReading = true;
+        saved = true;
       },
     });
-    expect(savedWhileReading).toBe(true);
-    expect(ids(p)).toContain('a');
+    expect(saved).toBe(true);
   });
 
-  it('reads again when a donation moved to another month during the read, so it appears exactly once', async () => {
-    const { collectPayloadChunked } = await import('./backupService');
-    let reads = 0;
+  it('restarts from the beginning when a donation moved to another month during the read, so it appears exactly once', async () => {
+    const f = fakeSink();
     let moved = false;
-    const p = await collectPayloadChunked({
+    await streamBackup(f.sink, {
       onMonthRead: async (ym) => {
-        reads++;
         if (ym !== '2026-01' || moved) return;
-        moved = true; // 1월 내역 a를 읽은 직후 2월로 옮깁니다(옮긴 뒤에 읽는 2월에도 a가 있어 그대로면 두 번 담김).
+        moved = true; // 1월 a를 읽은 직후 2월로 옮김(그대로 이어 쓰면 2월에도 a가 있어 두 번 담김)
         await transact(async () => ({
           writes: [rowWrite('2026-01', { puts: [], deletes: [['2026-01-04', 'a']] }), rowWrite('2026-02', { puts: [d('a', '2026-02-09')], deletes: [] })],
           result: 0,
         }));
       },
     });
-    expect(ids(p).filter((x) => x === 'a')).toHaveLength(1);
-    expect(reads).toBeGreaterThan(2); // 다시 읽음
+    expect(f.log).toEqual(['begin', 'restart', 'end:2']);
+    expect(idsOf(f.final()).filter((x) => x === 'a')).toHaveLength(1);
   });
 
-  it('does not count same-month edits as a reason to read again', async () => {
-    const { collectPayloadChunked } = await import('./backupService');
-    let reads = 0;
-    await collectPayloadChunked({
+  it('does not restart for same-month edits', async () => {
+    const f = fakeSink();
+    await streamBackup(f.sink, {
       onMonthRead: async (ym) => {
-        reads++;
         if (ym === '2026-01') await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('n', '2026-01-18')], deletes: [] })], result: 0 }));
       },
     });
-    expect(reads).toBe(2); // 1월, 2월 한 번씩
+    expect(f.log).toEqual(['begin', 'end:1']);
   });
 
-  it('gives up with a clear error when moves keep happening', async () => {
-    const { collectPayloadChunked } = await import('./backupService');
+  it('aborts and throws a clear error when moves keep happening', async () => {
+    const f = fakeSink();
     await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('k', '2026-01-11')], deletes: [] })], result: 0 })); // 1월이 비지 않게
     let flip = false;
     await expect(
-      collectPayloadChunked({
+      streamBackup(f.sink, {
         maxAttempts: 2,
         onMonthRead: async (ym) => {
           if (ym !== '2026-01') return;
           flip = !flip;
-          const [from, to] = flip ? ['2026-01-04', '2026-02-09'] : ['2026-02-09', '2026-01-04'];
-          const [fm, tm] = flip ? ['2026-01', '2026-02'] : ['2026-02', '2026-01'];
+          const [from, to, fm, tm] = flip ? ['2026-01-04', '2026-02-09', '2026-01', '2026-02'] : ['2026-02-09', '2026-01-04', '2026-02', '2026-01'];
           await transact(async () => ({ writes: [rowWrite(fm, { puts: [], deletes: [[from, 'a']] }), rowWrite(tm, { puts: [d('a', to)], deletes: [] })], result: 0 }));
         },
       }),
     ).rejects.toThrow('옮겨지는 변경');
+    expect(f.log.at(-1)).toBe('abort');
+  });
+
+  it('aborts the session when writing fails', async () => {
+    const f = fakeSink({ failAtLine: 2 });
+    await expect(streamBackup(f.sink)).rejects.toThrow('디스크 쓰기 실패');
+    expect(f.log).toEqual(['begin', 'abort']);
+  });
+});
+
+describe('desktop save functions use the streaming sessions', () => {
+  it('emergency backup is a named gz session in the default folder; manual backup carries the years and the user may cancel', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await saveEmergencyBackup('emergency_before_restore')).toBe('C:/x/backup.json.gz');
+    expect(specs[0]).toMatchObject({ kind: 'emergency' });
+    expect((specs[0] as { name: string }).name).toMatch(/^emergency_before_restore_\d{8}_\d{6}\.json\.gz$/);
+
+    expect(await saveBackupFile('backup', ['2026'])).toBe('C:/x/backup.json.gz');
+    expect((specs[1] as { name: string; kind: string }).kind).toBe('manual');
+    expect((specs[1] as { name: string }).name).toMatch(/^backup_2026_\d{8}_\d{6}\.json\.gz$/);
+    expect(f.sessions().at(-1)!.filter((l) => l.includes('"t":"donations"'))).toHaveLength(2);
+
+    const cancelled = fakeSink({ cancel: true });
+    fakeDesktop(cancelled.sink);
+    await expect(saveBackupFile('backup')).rejects.toThrow('저장을 취소');
+  });
+
+  it('desktopSink forwards to the bridge', async () => {
+    const f = fakeSink();
+    fakeDesktop(f.sink);
+    const sink = desktopSink(window.desktop!, { kind: 'periodic', dir: 'C:/x' });
+    const id = await sink.begin();
+    expect(id).toBe(1);
+  });
+});
+
+describe('runPeriodicBackup', () => {
+  it('does nothing when nothing changed since the last backup', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    await db.kv.put(false, 'meta_dirty_since_backup');
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBeNull();
+    expect(specs).toEqual([]);
+  });
+
+  it('backs up the changed data as a periodic session and clears the changed flag', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await isDirtySinceBackup()).toBe(true);
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBe('C:/x/backup.json.gz');
+    expect(specs[0]).toMatchObject({ kind: 'periodic', dir: 'C:/x' });
+    expect(f.final().some((l) => l.includes('"t":"donations"'))).toBe(true);
+    expect(await isDirtySinceBackup()).toBe(false);
+  });
+
+  it('puts the changed flag back when the backup fails', async () => {
+    const f = fakeSink({ failAtLine: 2 });
+    fakeDesktop(f.sink);
+    await expect(runPeriodicBackup(DEFAULT_SETTINGS)).rejects.toThrow('디스크 쓰기 실패');
+    expect(await isDirtySinceBackup()).toBe(true);
+  });
+
+  it('keeps changes made during the backup for the next one', async () => {
+    const f = fakeSink();
+    fakeDesktop(f.sink);
+    await runPeriodicBackup(DEFAULT_SETTINGS, ); // 이 백업 뒤에 생긴 변경
+    await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('c', '2026-03-01')], deletes: [] })], result: 0 }));
+    expect(await isDirtySinceBackup()).toBe(true);
+  });
+
+  it('skips when automatic backup is turned off', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await runPeriodicBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: false })).toBeNull();
+    expect(specs).toEqual([]);
   });
 });

@@ -57,25 +57,28 @@ describe('monthly person report (월별 = 그 달의 모든 주를 개인별로 
   });
 });
 
-describe('yearsToEvict (메모리에 남길 연도 정리)', () => {
-  it('keeps everything when within the limit', async () => {
+describe('yearsToEvict (메모리에 남길 연도 정리: 건수 기준)', () => {
+  const rows = (o: Record<string, number>) => new Map(Object.entries(o));
+  it('keeps everything when within the budget', async () => {
     const { yearsToEvict } = await import('./monthCache');
-    expect(yearsToEvict(['2024-01', '2025-03', '2026-11'], new Map(), new Map(), new Set(), 3)).toEqual([]);
+    expect(yearsToEvict(rows({ '2024-01': 10, '2025-03': 10, '2026-11': 10 }), new Map(), new Map(), new Set(), 100)).toEqual([]);
   });
-  it('drops the least recently used years first and never pinned or loading ones', async () => {
+  it('keeps many small years but drops big ones, least recently used first, never pinned or loading ones', async () => {
     const { yearsToEvict } = await import('./monthCache');
-    const loaded = ['2023-05', '2024-01', '2024-02', '2025-03', '2026-11', '2022-12'];
+    const loaded = rows({ '2023-05': 40, '2024-01': 20, '2024-02': 20, '2025-03': 40, '2026-11': 40, '2022-12': 40 });
     const lastUsed = new Map([['2022', 1], ['2023', 5], ['2024', 3], ['2025', 9], ['2026', 8]]);
-    // 5개 연도 → 3개로: 가장 오래된 2022, 2024를 내린다
-    expect(yearsToEvict(loaded, new Map(), lastUsed, new Set(), 3)).toEqual(['2022', '2024']);
+    // 합계 200건, 예산 100건: 가장 오래된 2022(40), 2024(40), 2023(40)을 내려 80건
+    expect(yearsToEvict(loaded, new Map(), lastUsed, new Set(), 100)).toEqual(['2022', '2024', '2023']);
     // 2022는 화면이 쓰는 중(핀) → 건너뛰고 다음으로 오래된 연도를 내린다
-    expect(yearsToEvict(loaded, new Map([['2022', 1]]), lastUsed, new Set(), 3)).toEqual(['2024', '2023']);
+    expect(yearsToEvict(loaded, new Map([['2022', 1]]), lastUsed, new Set(), 100)).toEqual(['2024', '2023', '2026']);
     // 읽는 중인 연도도 내리지 않는다
-    expect(yearsToEvict(loaded, new Map(), lastUsed, new Set(['2022', '2024']), 3)).toEqual(['2023', '2026']);
+    expect(yearsToEvict(loaded, new Map(), lastUsed, new Set(['2022', '2024']), 100)).toEqual(['2023', '2026', '2025']);
+    // 예산이 넉넉하면 연도 수와 상관없이 모두 남긴다
+    expect(yearsToEvict(loaded, new Map(), lastUsed, new Set(), 500)).toEqual([]);
   });
-  it('may exceed the limit when every extra year is pinned', async () => {
+  it('may exceed the budget when every extra year is pinned', async () => {
     const { yearsToEvict } = await import('./monthCache');
     const pins = new Map([['2023', 1], ['2024', 1], ['2025', 1], ['2026', 2]]);
-    expect(yearsToEvict(['2023-01', '2024-01', '2025-01', '2026-01'], pins, new Map(), new Set(), 3)).toEqual([]);
+    expect(yearsToEvict(rows({ '2023-01': 60, '2024-01': 60, '2025-01': 60, '2026-01': 60 }), pins, new Map(), new Set(), 100)).toEqual([]);
   });
 });

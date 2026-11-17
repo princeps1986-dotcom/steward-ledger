@@ -57,19 +57,19 @@ try {
   check('앱이 app:// 로 뜸', page.url.startsWith('app://local/'), page.url);
   check('화면에 제목이 그려짐', (await ev('document.querySelector("h1")?.textContent')) === '청지기 장부');
   check('보안: 렌더러에서 Node 접근 불가', (await ev('typeof require + "," + typeof process')) === 'undefined,undefined');
-  check('보안: 최소 API만 노출', (await ev('typeof window.desktop?.autoBackupBegin')) === 'function');
+  check('보안: 최소 API만 노출', (await ev('typeof window.desktop?.backupBegin')) === 'function');
   const csp = await ev('fetch(location.href).then(r => r.headers.get("content-security-policy"))');
   check('보안: CSP 헤더가 있음', typeof csp === 'string' && csp.includes("default-src 'self'"));
   const perm = await ev('new Promise((res) => navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code)))');
   check('보안: 위치 권한 요청이 거부됨', perm === '거부', perm);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv와 donations가 만들어짐', JSON.parse(db).s === 'donations,kv', db);
-  const stale = await ev('window.desktop.autoBackupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
+  const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
   if (!exe) {
     // 포장하지 않은 실행에서는 백업 폴더를 임시 폴더로 바꿀 수 있어, 백업 쓰기·검증·이름 바꾸기·보관 정리를 끝까지 시험합니다.
     const NL = String.fromCharCode(10);
-    const written = await ev(`(async () => { const id = await window.desktop.autoBackupBegin('C:/Windows/Temp/evil', 'periodic'); await window.desktop.autoBackupWrite(id, JSON.stringify({ ndjson: 3 }) + String.fromCharCode(10)); await window.desktop.autoBackupWrite(id, JSON.stringify({ t: 'members', data: [] }) + String.fromCharCode(10)); return await window.desktop.autoBackupEnd(id); })()`);
+    const written = await ev(`(async () => { const id = await window.desktop.backupBegin({ kind: 'periodic', dir: 'C:/Windows/Temp/evil' }); await window.desktop.backupWrite(id, JSON.stringify({ ndjson: 3 }) + String.fromCharCode(10)); await window.desktop.backupWrite(id, JSON.stringify({ t: 'members', data: [] }) + String.fromCharCode(10)); return await window.desktop.backupEnd(id); })()`);
     const { readdirSync, existsSync } = await import('node:fs');
     check('백업 IPC: 주기 백업 파일이 검증을 거쳐 저장됨', typeof written === 'string' && /autosave_\d{8}_\d{6}\.json\.gz$/.test(written) && existsSync(written), String(written));
     check('보안: 임의 폴더를 보내도 허용된 폴더에만 씀', String(written).startsWith(backupDir), String(written));

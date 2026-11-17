@@ -104,37 +104,69 @@ if (!app.requestSingleInstanceLock()) {
     s.out.destroy();
     await fs.unlink(s.tmp).catch(() => undefined);
   }
-  // 세션 번호: 앱을 쓰는 동안의 주기 백업과 종료 때 백업이 겹쳐도 서로의 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
+  // 세션 번호: 서로 다른 백업(주기·종료·직접·긴급)이 겹쳐도 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
+  // 백업은 렌더러가 한 달치씩 줄 단위(NDJSON)로 보내고 main이 gzip 파일로 바로 씁니다. 메모리는 한 달치 수준에 머뭅니다.
   let sessionCounter = 0;
-  ipcMain.handle('backup:auto-begin', async (_event, dir, kind) => {
-    await abortAutoSession();
-    const d = allowedBackupDir(dir);
-    await fs.mkdir(d, { recursive: true });
-    const prefix = kind === 'periodic' ? 'autosave' : 'backup';
-    const file = path.join(d, `${prefix}_${stamp()}.json.gz`);
+  const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.json\.gz$/;
+  function startSession(file, kind) {
     const tmp = `${file}.tmp`;
     const out = fsSync.createWriteStream(tmp);
     const gz = zlib.createGzip();
-    const sess = { id: ++sessionCounter, file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
+    const sess = { id: ++sessionCounter, kind, file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
     out.on('error', (e) => (sess.error = e));
     gz.on('error', (e) => (sess.error = e));
     gz.pipe(out);
     autoSession = sess;
     return sess.id;
+  }
+  // 백업 시작. kind: close(종료 때) · periodic(앱을 쓰는 동안) · emergency(복원·초기화 직전, 기본 폴더에 이름 지정) · manual(저장 위치를 고름, 취소하면 null)
+  ipcMain.handle('backup:begin', async (event, spec) => {
+    await abortAutoSession();
+    const kind = spec && spec.kind;
+    if (kind === 'manual' || kind === 'emergency') {
+      if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
+      if (kind === 'emergency') {
+        const dir = defaultBackupDir();
+        await fs.mkdir(dir, { recursive: true });
+        return startSession(path.join(dir, spec.name), kind);
+      }
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const res = await dialog.showSaveDialog(win, {
+        title: '백업 파일 저장',
+        defaultPath: path.join(defaultBackupDir(), spec.name),
+        filters: [{ name: '백업 파일(압축)', extensions: ['gz'] }],
+      });
+      if (res.canceled || !res.filePath) return null;
+      return startSession(res.filePath, kind);
+    }
+    if (kind !== 'close' && kind !== 'periodic') throw new Error('잘못된 백업 종류');
+    const d = allowedBackupDir(spec.dir);
+    await fs.mkdir(d, { recursive: true });
+    return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.json.gz`), kind);
   });
   const sessionOf = (id) => {
     const s = autoSession;
-    if (!s || s.id !== id) throw new Error('자동 백업이 취소되었거나 시작되지 않았습니다.');
+    if (!s || s.id !== id) throw new Error('백업이 취소되었거나 시작되지 않았습니다.');
     return s;
   };
-  ipcMain.handle('backup:auto-write', (_event, id, line) => {
+  ipcMain.handle('backup:write', (_event, id, line) => {
     const s = sessionOf(id);
     if (typeof line !== 'string') throw new Error('잘못된 백업 줄');
     if (s.error) throw s.error;
     s.hash.update(line);
     return new Promise((resolve, reject) => s.gz.write(line, (err) => (err ? reject(err) : resolve(true))));
   });
-  ipcMain.handle('backup:auto-end', async (_event, id) => {
+  // 같은 대상 파일로 처음부터 다시 씁니다(백업하는 도중 내역이 달을 넘어 옮겨져 다시 읽어야 할 때; 저장 대화상자를 다시 열지 않음).
+  ipcMain.handle('backup:restart', async (_event, id) => {
+    const s = sessionOf(id);
+    await abortAutoSession();
+    return startSession(s.file, s.kind);
+  });
+  ipcMain.handle('backup:abort', async (_event, id) => {
+    if (autoSession && autoSession.id === id) await abortAutoSession();
+    return true;
+  });
+  ipcMain.handle('backup:end', async (_event, id) => {
     const s = sessionOf(id);
     if (s.error) throw s.error;
     // 끝 줄: 앞의 모든 줄에 대한 SHA-256. 복원할 때 이 값으로 파일이 온전한지 확인합니다.
@@ -153,7 +185,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     // 임시 파일에 다 쓰고 검증한 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
     await fs.rename(s.tmp, s.file);
-    await pruneBackups(path.dirname(s.file)).catch(() => undefined); // 오래된 파일 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
+    // 오래된 파일 정리는 종료·주기 백업만(직접·긴급 백업 파일은 지우지 않음). 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
+    if (s.kind === 'close' || s.kind === 'periodic') await pruneBackups(path.dirname(s.file)).catch(() => undefined);
     return s.file;
   });
 
@@ -312,37 +345,7 @@ if (!app.requestSingleInstanceLock()) {
     return win;
   }
 
-  // 임시 파일에 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 파일이 남지 않게 합니다.
-  async function writeFileAtomic(file, text) {
-    const tmp = `${file}.tmp`;
-    await fs.writeFile(tmp, text, 'utf8');
-    await fs.rename(tmp, file);
-  }
-  const SAFE_BACKUP_NAME_RE = /^[A-Za-z0-9_-]+\.json$/;
-
   ipcMain.handle('backup:default-dir', () => defaultBackupDir());
-  // 초기화·복원 직전의 긴급 백업: 대화상자 없이 백업 폴더에 저장하고, 실패하면 오류를 던집니다(취소할 수 없음).
-  ipcMain.handle('backup:save-emergency', async (_event, name, json) => {
-    if (typeof name !== 'string' || !SAFE_BACKUP_NAME_RE.test(name) || typeof json !== 'string') throw new Error('잘못된 백업 요청');
-    const dir = defaultBackupDir();
-    await fs.mkdir(dir, { recursive: true });
-    const file = path.join(dir, name);
-    await writeFileAtomic(file, json);
-    return file;
-  });
-  // 직접 하는 백업: 저장 위치를 고르게 하고, 취소하면 null을 돌려줍니다(저장된 것으로 처리하지 않도록).
-  ipcMain.handle('backup:save-as', async (event, name, json) => {
-    if (typeof name !== 'string' || !SAFE_BACKUP_NAME_RE.test(name) || typeof json !== 'string') throw new Error('잘못된 백업 요청');
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const res = await dialog.showSaveDialog(win, {
-      title: '백업 파일 저장',
-      defaultPath: path.join(defaultBackupDir(), name),
-      filters: [{ name: '백업 파일', extensions: ['json'] }],
-    });
-    if (res.canceled || !res.filePath) return null;
-    await writeFileAtomic(res.filePath, json);
-    return res.filePath;
-  });
   ipcMain.handle('backup:select-dir', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const res = await dialog.showOpenDialog(win, { title: '자동 백업 폴더 선택', properties: ['openDirectory', 'createDirectory'] });
