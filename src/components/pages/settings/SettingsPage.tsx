@@ -134,7 +134,6 @@ export function SettingsPage() {
         <h3 id="danger-zone-title" className="flex items-center gap-1.5 font-semibold text-red-700">
           <span aria-hidden="true">⚠</span> 위험 구역
         </h3>
-        <p className="text-sm text-red-700">현재 데이터를 지우거나 통째로 바꿉니다. 실행하기 전에 현재 데이터가 긴급 백업 파일로 백업 폴더에 먼저 저장됩니다.</p>
         <div className="flex flex-wrap gap-2">
           <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy || s.demoActive}>
             시연 데이터 생성
@@ -148,7 +147,7 @@ export function SettingsPage() {
             전체 초기화
           </button>
         </div>
-        {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다. 먼저 [시연 데이터 제거]를 누르세요.</p> : null}
+        {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다.<br/>먼저 [시연 데이터 제거]를 누르세요.</p> : null}
       </section>
 
       <Modal
