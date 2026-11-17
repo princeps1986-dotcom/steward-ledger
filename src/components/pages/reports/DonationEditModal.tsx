@@ -71,7 +71,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 <span className="label">메모</span>
                 <input className="input" value={d.memo} onChange={(ev) => e.setField('memo')(ev.target.value)} />
               </label>
-              <p className="col-span-2 text-xs text-gray-500">날짜를 변경하면 변경한 날짜 기준으로 집계됩니다.<br/>성도·표기명을 잘못 입력했다면 삭제 후 다시 입력하세요.<br/><span className="font-semibold text-red-600">수정내역은 수정·삭제 이력에 남습니다.</span></p>
+              <p className="col-span-2 text-xs text-gray-500">날짜를 변경하면 변경한 날짜 기준으로 집계됩니다.<br/>성도·표기명을 잘못 입력했다면 삭제 후 다시 입력하세요.</p>
             </>
           )}
           <div className="col-span-2 rounded border border-red-300 bg-red-50 p-3">
@@ -117,6 +117,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             <p className="mt-1 text-xs text-gray-600">목록에서 선택하거나 직접 입력하세요.</p>
           </div>
           {e.error ? <p className="col-span-2 text-sm text-red-600">{e.error}</p> : null}
+          <p className="col-span-2 text-xs font-semibold text-red-600">수정내역은 수정·삭제 이력에 남습니다.</p>
         </div>
       ) : null}
     </Modal>
