@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useDonationActions, useDonationYears } from '../contexts/DonationContext';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
-import { useOfferingActions } from '../contexts/OfferingTypeContext';
+import { useOfferingActions, useOfferingTypes } from '../contexts/OfferingTypeContext';
+import { DEFAULT_OFFERING_TYPES } from '../services/domain/offeringDefaults';
 import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
 import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../contexts/types';
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
@@ -47,8 +48,15 @@ export function useSettingsPage() {
   const offeringActions = useOfferingActions();
   const donationActions = useDonationActions();
   const years = useDonationYears();
-  // 성도도 헌금 내역도 없으면 지울 데이터가 없으므로 전체 초기화를 쓸 수 없습니다.
-  const hasData = useMembers().length > 0 || years.length > 0;
+  // 성도·헌금 내역이 없고 헌금 종류도 기본값 그대로면 되돌릴 것이 없으므로 전체 초기화를 쓸 수 없습니다.
+  const offeringTypes = useOfferingTypes();
+  const typesChanged = useMemo(() => {
+    const strip = (t: { name: string; displayArea: string; quickAmounts: number[]; sortOrder: number; isActive: boolean }) =>
+      JSON.stringify([t.name, t.displayArea, t.quickAmounts, t.sortOrder, t.isActive]);
+    const cur = [...offeringTypes].sort((a, b) => a.sortOrder - b.sortOrder).map(strip);
+    return cur.length !== DEFAULT_OFFERING_TYPES.length || cur.some((c, i) => c !== strip(DEFAULT_OFFERING_TYPES[i]));
+  }, [offeringTypes]);
+  const hasData = useMembers().length > 0 || years.length > 0 || typesChanged;
 
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
   const [reminderDays, setReminderDays] = useState(String(settings.backupReminderDays));
