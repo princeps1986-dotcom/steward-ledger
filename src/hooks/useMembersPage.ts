@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import type { Member } from '../contexts/types';
 import { canDeactivate, currentHeadOf, EMPTY_MEMBER_DRAFT, linkedHeadIdOf, type MemberDraft } from '../services/domain/memberRules';
@@ -15,6 +15,7 @@ export function useMembersPage() {
   const members = useMembers();
   const { setActive } = useMemberActions();
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query); // 글자를 칠 때 입력 칸이 먼저 반응하고, 많은 목록은 뒤따라 갱신
   const [showInactive, setShowInactive] = useState(false);
   const [editor, setEditor] = useState<{ key: number; editingId?: string; initial: MemberDraft } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -25,14 +26,14 @@ export function useMembersPage() {
   const rows: MemberRow[] = useMemo(
     () =>
       members
-        .filter((m) => (showInactive || m.isActive) && (query.trim() === '' || matchMember(m, query)))
+        .filter((m) => (showInactive || m.isActive) && (deferredQuery.trim() === '' || matchMember(m, deferredQuery)))
         .map((m) => ({
           member: m,
           familyLabel: m.familyGroupId ? `${currentHeadOf(members, m.familyGroupId)?.name ?? '?'} 세대` : '-',
           stateLabel: m.isActive ? '활성' : '비활성',
         }))
         .sort(memberComparator(sort.key, sort.dir)),
-    [members, query, showInactive, sort],
+    [members, deferredQuery, showInactive, sort],
   );
 
   const openNew = useCallback(() => setEditor({ key: Date.now(), initial: EMPTY_MEMBER_DRAFT }), []);
