@@ -7,14 +7,13 @@ const BTN = 'btn min-w-8 px-2 py-1 text-xs';
 /** 목록 아래의 페이지 이동: « ‹ 1 … 5 6 7 … 2000 › » + "총 N건 중 a–b" */
 export function Pager({ paging: p, unit = '건' }: { paging: Paging; unit?: string }) {
   return (
-    <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="페이지 이동">
-      <span className="text-gray-600">
+    <nav className="flex flex-wrap items-center justify-center gap-2 text-sm" aria-label="페이지 이동">
+      <span className="w-full text-center text-gray-600">
         총 {formatNumber(p.count)}
         {unit} {p.count > 0 ? `중 ${formatNumber(p.from + 1)}–${formatNumber(p.to)}` : ''}
       </span>
       {p.pages > 1 ? (
         <>
-          <div className="flex-1" />
           <button className={BTN} onClick={() => p.setPage(1)} disabled={p.page === 1} aria-label="첫 페이지">
             «
           </button>
