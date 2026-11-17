@@ -1,0 +1,49 @@
+import { useSyncExternalStore } from 'react';
+import type { Member, OfferingType } from '../../contexts/types';
+import { getItem, hasDonationWithPrefix, KEYS } from '../storage/storageService';
+import { DEMO_PREFIX } from './demoData';
+
+/**
+ * 시연 데이터 사용 중인지: 시연 성도·시연 헌금 종류·시연 헌금이 한 건이라도 있으면 시연 중입니다(전체를 훑지 않음).
+ * 시연 데이터는 id가 DEMO_PREFIX로 시작합니다. 성도·종류는 kv 배열(수백 건)에서, 헌금은 색인 범위 조회로 한 건만 찾습니다.
+ */
+export async function hasDemoData(): Promise<boolean> {
+  const members = (await getItem<Member[]>(KEYS.members)) ?? [];
+  if (members.some((m) => m.id.startsWith(DEMO_PREFIX))) return true;
+  const types = (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [];
+  if (types.some((t) => t.id.startsWith(DEMO_PREFIX))) return true;
+  return hasDonationWithPrefix(DEMO_PREFIX);
+}
+
+/** 시연 데이터를 만들기 직전의 원래 데이터를 어디에 백업했는지(제거할 때 이 파일로 복구) */
+export interface DemoRestoreInfo {
+  /** 데스크톱 앱: 백업 폴더(before-demo)에 저장한 파일 이름. 원래 데이터가 없었으면 null */
+  backupName: string | null;
+  /** 브라우저: 내려받은 파일 이름(자동 복구 불가, 수동 복원 안내용) */
+  downloadedName?: string;
+  createdAt: string;
+}
+
+export const readDemoRestore = (): Promise<DemoRestoreInfo | null> => getItem<DemoRestoreInfo>(KEYS.demoRestore);
+
+// 앱 어디서나(최상단 안내 띠, 설정 화면) 같은 값을 보도록 작은 외부 저장소로 공유합니다.
+let active = false;
+const listeners = new Set<() => void>();
+
+export async function refreshDemoState(): Promise<boolean> {
+  const next = await hasDemoData();
+  if (next !== active) {
+    active = next;
+    listeners.forEach((l) => l());
+  }
+  return next;
+}
+
+export const useDemoActive = (): boolean =>
+  useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => active,
+  );

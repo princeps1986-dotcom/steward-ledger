@@ -7,8 +7,9 @@ import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../context
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
-import { buildDemoPayload } from '../services/demo/demoData';
-import { hasAnyData, isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, replaceAllData, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
+import { createDemoData, removeDemoData } from '../services/demo/demoService';
+import { refreshDemoState, useDemoActive } from '../services/demo/demoState';
+import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan } from '../services/backup/streamRestore';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop } from '../services/desktopBridge';
@@ -60,6 +61,12 @@ export function useSettingsPage() {
   const restoreYear = restore?.yearRows.some((r) => r.year === restoreYearPick) ? restoreYearPick : (restore?.yearRows[restore.yearRows.length - 1]?.year ?? '');
   const [busy, setBusy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
+  // 시연 데이터가 한 건이라도 있으면 시연 중(전체 데이터를 훑지 않고 색인으로 판정). 설정 화면에 들어올 때 다시 확인합니다.
+  const demoActive = useDemoActive();
+  useEffect(() => {
+    void refreshDemoState();
+  }, []);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLeft, setResetLeft] = useState(RESET_WAIT_SECONDS);
   const isDesktop = !!desktop();
@@ -173,24 +180,49 @@ export function useSettingsPage() {
   }, [resetOpen]);
 
   const confirmDemo = useCallback(async () => {
+    if (demoActive) return; // 시연 중에는 만들 수 없습니다(원래 데이터 백업이 시연 데이터로 덮이지 않도록).
     setBusy(true);
     try {
-      // 지금 데이터가 있을 때만 긴급 백업을 저장습니다(빈 상태에서는 불필요한 파일을 만들지 않음).
-      const hasData = await hasAnyData();
-      if (hasData) await saveEmergencyBackup('emergency_before_demo');
-      await replaceAllData(buildDemoPayload());
+      const info = await createDemoData();
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      setMessage({ kind: 'info', text: `시연 데이터를 불러왔습니다.${hasData ? ' 이전 데이터는 emergency_before_demo 파일로 저장되었습니다.' : ''}` });
+      const where = info.backupName
+        ? ` 원래 데이터는 백업 폴더의 before-demo 폴더에 ${info.backupName} 파일로 저장되었습니다.`
+        : info.downloadedName
+          ? ` 원래 데이터는 ${info.downloadedName} 파일로 내려받았습니다(브라우저에서는 자동 복구가 안 되니 잘 보관하세요).`
+          : '';
+      setMessage({ kind: 'info', text: `시연 데이터를 생성했습니다(성도 500명 · 헌금 8만 건).${where}` });
       setDemoOpen(false);
     } catch (err) {
-      setMessage({ kind: 'error', text: `시연 데이터 불러오기 실패: ${(err as Error).message}` });
+      setMessage({ kind: 'error', text: `시연 데이터 생성 실패: ${(err as Error).message}` });
     } finally {
       setBusy(false);
     }
-  }, [memberActions, offeringActions, donationActions]);
+  }, [demoActive, memberActions, offeringActions, donationActions]);
+
+  const confirmRemoveDemo = useCallback(async () => {
+    if (!demoActive) return; // 시연 데이터가 없으면 작동하지 않습니다.
+    setBusy(true);
+    try {
+      const r = await removeDemoData();
+      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      setMessage({
+        kind: 'info',
+        text: r.restored
+          ? '시연 데이터를 제거하고 원래 데이터를 복구했습니다.'
+          : r.downloadedName
+            ? `시연 데이터를 제거했습니다. 브라우저에서는 자동 복구가 안 되니, 내려받은 ${r.downloadedName} 파일을 [백업 파일 복원]으로 복원하세요.`
+            : '시연 데이터를 제거했습니다(원래 데이터가 없어 빈 상태입니다).',
+      });
+      setRemoveDemoOpen(false);
+    } catch (err) {
+      setMessage({ kind: 'error', text: `시연 데이터 제거 실패: ${(err as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  }, [demoActive, memberActions, offeringActions, donationActions]);
 
   const confirmReset = useCallback(async () => {
-    if (resetLeft > 0) return;
+    if (resetLeft > 0 || demoActive) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
     setBusy(true);
     try {
       await saveEmergencyBackup('emergency_before_reset');
@@ -203,7 +235,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [resetLeft, memberActions, offeringActions, donationActions]);
+  }, [resetLeft, demoActive, memberActions, offeringActions, donationActions]);
 
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
@@ -277,7 +309,14 @@ export function useSettingsPage() {
     confirmDemo,
     resetOpen,
     resetLeft,
-    openReset: () => setResetOpen(true),
+    demoActive,
+    removeDemoOpen,
+    openRemoveDemo: () => setRemoveDemoOpen(true),
+    cancelRemoveDemo: () => setRemoveDemoOpen(false),
+    confirmRemoveDemo,
+    openReset: () => {
+      if (!demoActive) setResetOpen(true);
+    },
     cancelReset: () => setResetOpen(false),
     confirmReset,
     busy,

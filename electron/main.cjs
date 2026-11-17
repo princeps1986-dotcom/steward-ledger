@@ -108,6 +108,7 @@ if (!app.requestSingleInstanceLock()) {
   // 백업은 렌더러가 한 달치씩 줄 단위(NDJSON)로 보내고 main이 gzip 파일로 바로 씁니다. 메모리는 한 달치 수준에 머뭅니다.
   let sessionCounter = 0;
   const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.json\.gz$/;
+  const DEMO_BACKUP_FOLDER = 'before-demo';
   function startSession(file, kind) {
     const tmp = `${file}.tmp`;
     const out = fsSync.createWriteStream(tmp);
@@ -126,7 +127,9 @@ if (!app.requestSingleInstanceLock()) {
     if (kind === 'manual' || kind === 'emergency') {
       if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
       if (kind === 'emergency') {
-        const dir = defaultBackupDir();
+        // before-demo: 시연 데이터를 만들기 직전의 원래 데이터를 기본 폴더 아래 별도 폴더에 둡니다(다른 폴더 이름은 허용하지 않음).
+        if (spec.folder !== undefined && spec.folder !== DEMO_BACKUP_FOLDER) throw new Error('잘못된 백업 폴더');
+        const dir = spec.folder ? path.join(defaultBackupDir(), spec.folder) : defaultBackupDir();
         await fs.mkdir(dir, { recursive: true });
         return startSession(path.join(dir, spec.name), kind);
       }
@@ -143,6 +146,34 @@ if (!app.requestSingleInstanceLock()) {
     const d = allowedBackupDir(spec.dir);
     await fs.mkdir(d, { recursive: true });
     return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.json.gz`), kind);
+  });
+  // 시연 데이터를 지울 때 원래 데이터를 되살리려고 before-demo 폴더의 백업 파일을 조각(최대 4MB)씩 읽어 줍니다.
+  // 렌더러는 파일 경로를 직접 열 수 없으므로 main이 대신 읽고, 허용하는 것은 그 폴더 안의 안전한 이름뿐입니다.
+  const readSessions = new Map();
+  let readCounter = 0;
+  const READ_CHUNK = 4 * 1024 * 1024;
+  ipcMain.handle('backup:read-open', async (_event, name) => {
+    if (typeof name !== 'string' || !SAFE_STREAM_NAME_RE.test(name)) throw new Error('잘못된 파일 이름');
+    for (const r of readSessions.values()) await r.fh.close().catch(() => undefined);
+    readSessions.clear();
+    const fh = await fs.open(path.join(defaultBackupDir(), DEMO_BACKUP_FOLDER, name), 'r');
+    const { size } = await fh.stat();
+    const id = ++readCounter;
+    readSessions.set(id, { fh });
+    return { id, size };
+  });
+  ipcMain.handle('backup:read-chunk', async (_event, id, offset) => {
+    const r = readSessions.get(id);
+    if (!r || !Number.isSafeInteger(offset) || offset < 0) throw new Error('열려 있지 않은 파일입니다.');
+    const buf = Buffer.alloc(READ_CHUNK);
+    const { bytesRead } = await r.fh.read(buf, 0, READ_CHUNK, offset);
+    return buf.subarray(0, bytesRead);
+  });
+  ipcMain.handle('backup:read-close', async (_event, id) => {
+    const r = readSessions.get(id);
+    if (r) await r.fh.close().catch(() => undefined);
+    readSessions.delete(id);
+    return true;
   });
   const sessionOf = (id) => {
     const s = autoSession;

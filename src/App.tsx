@@ -2,8 +2,10 @@ import { lazy, startTransition, Suspense, useEffect } from 'react';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { BackupReminderBanner } from './components/shared/BackupReminderBanner';
+import { DemoBanner } from './components/shared/DemoBanner';
 import { GlobalErrorBanner } from './components/shared/GlobalErrorBanner';
 import { DonationInputPage } from './components/pages/donation-input/DonationInputPage';
+import { refreshDemoState } from './services/demo/demoState';
 import { PAGES, useAppNav, useAutoBackupBridge, useBackupReminder } from './hooks/useAppShell';
 
 // 첫 화면(헌금 입력) 외의 화면은 따로 불러와 시작이 가벼워집니다. 첫 화면이 뜬 직후 나머지를 미리 불러와 메뉴를 옮길 때 기다리지 않게 합니다.
@@ -23,6 +25,9 @@ export function App() {
   // 메뉴 이동은 transition으로 처리해, 아직 불러오지 못한 화면이 있어도 '불러오는 중' 문구로 바꾸지 않고 이전 화면을 유지하다가 바로 전환합니다.
   const goPage: typeof nav.setPage = (k) => startTransition(() => nav.setPage(k));
   useEffect(() => {
+    void refreshDemoState(); // 시작할 때 시연 중인지 확인해 최상단 안내를 보여 줍니다.
+  }, []);
+  useEffect(() => {
     const id = window.setTimeout(() => [loadReports, loadMembers, loadOfferings, loadSettings, loadHelp].forEach((load) => void load().catch(() => undefined)), 300);
     return () => window.clearTimeout(id);
   }, []);
@@ -31,6 +36,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
+      <DemoBanner />
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">
         <h1 className="py-3 text-base font-bold">청지기 장부</h1>
         <nav className="flex gap-1" aria-label="주 메뉴">

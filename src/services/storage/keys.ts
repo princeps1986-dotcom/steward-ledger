@@ -7,6 +7,8 @@ export const KEYS = {
   dirty: 'meta_dirty_since_backup',
   /** 줄 단위 복원이 진행 중이면 시작 시각 등이 들어 있고, 끝나면 지워집니다(남아 있으면 복원이 중간에 중단된 것). */
   restoreMarker: 'meta_restore_in_progress',
+  /** 시연 데이터를 만들기 직전 원래 데이터를 백업한 파일 정보(제거할 때 복구에 씀). 시연 여부 판정에는 쓰지 않습니다. */
+  demoRestore: 'meta_demo_restore',
 } as const;
 
 /** 헌금 내역 키: ym = 'YYYY-MM' */

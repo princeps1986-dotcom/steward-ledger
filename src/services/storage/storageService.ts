@@ -216,6 +216,17 @@ export async function listDonationMonths(): Promise<string[]> {
   return out;
 }
 
+/**
+ * id가 prefix로 시작하는 성도·헌금 종류로 만든 헌금이 한 건이라도 있는지(색인 범위 조회라 데이터가 많아도 즉시).
+ * 시연 데이터 판정용: 시연 헌금은 시연 종류(offeringTypeId)를 쓰고, 성도 헌금은 시연 성도(memberId)를 씁니다.
+ */
+export async function hasDonationWithPrefix(prefix: string): Promise<boolean> {
+  const end = `${prefix}\uffff`;
+  const byType = await db.donations.where('offeringTypeId').between(prefix, end, true, true).limit(1).count();
+  if (byType > 0) return true;
+  return (await db.donations.where('memberId').between(prefix, end, true, true).limit(1).count()) > 0;
+}
+
 export async function listDonationYears(): Promise<string[]> {
   return [...new Set((await listDonationMonths()).map((m) => m.slice(0, 4)))].sort();
 }

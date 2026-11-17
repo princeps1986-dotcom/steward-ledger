@@ -112,34 +112,62 @@ export function SettingsPage() {
         </h3>
         <p className="text-sm text-red-700">현재 데이터를 지우거나 통째로 바꿉니다. 실행하기 전에 현재 데이터가 긴급 백업 파일로 백업 폴더에 먼저 저장됩니다.</p>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy}>
-            시연 데이터 불러오기
+          <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy || s.demoActive}>
+            시연 데이터 생성
           </button>
-          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy}>
+          {s.demoActive ? (
+            <button className="btn-danger whitespace-nowrap" onClick={s.openRemoveDemo} disabled={s.busy}>
+              시연 데이터 제거
+            </button>
+          ) : null}
+          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy || s.demoActive}>
             전체 초기화
           </button>
         </div>
+        {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다. 먼저 [시연 데이터 제거]를 누르세요.</p> : null}
       </section>
 
       <Modal
         open={s.demoOpen}
         onClose={s.cancelDemo}
-        title="시연 데이터를 불러올까요?"
-        description="현재 앱의 모든 데이터가 가상의 시연 데이터로 바뀝니다."
+        title="시연 데이터를 생성할까요?"
+        description="현재 앱의 모든 데이터가 가상의 시연 데이터로 바뀝니다. 시연이 끝나면 [시연 데이터 제거]로 원래 데이터를 되살릴 수 있습니다."
         footer={
           <>
             <button className="btn" onClick={s.cancelDemo} disabled={s.busy}>
               취소
             </button>
             <button className="btn-danger" onClick={() => void s.confirmDemo()} disabled={s.busy}>
-              시연 데이터 불러오기
+              시연 데이터 생성
             </button>
           </>
         }
       >
         <div className="space-y-2 text-sm">
-          <p>가상의 성도 150명과 헌금 400건(지난 주일 100건, 그 전날 300건), 수정·삭제 이력 6건이 들어갑니다.</p>
-          <p className="text-red-700">실제 교회 데이터가 들어 있는 곳에서는 사용하지 마세요. 지금 데이터가 있으면 먼저 긴급 백업 파일로 백업 폴더에 저장합니다.</p>
+          <p>가상의 성도 500명과 헌금 8만 건(최근 3년을 주 단위로 분배, 매년 12/25·1/1은 평소 한 주의 5배), 수정·삭제 이력 6건이 들어갑니다. 만드는 데 몇 초 걸립니다.</p>
+          <p className="text-red-700">지금 데이터가 있으면 먼저 백업 폴더의 before-demo 폴더에 existing-data-backup_날짜_시간 파일로 저장하고, 시연 데이터를 제거할 때 그 파일로 자동 복구합니다(브라우저에서는 파일을 내려받으며 자동 복구는 되지 않습니다).</p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={s.removeDemoOpen && s.demoActive}
+        onClose={s.cancelRemoveDemo}
+        title="시연 데이터를 제거할까요?"
+        description="시연 중에 수정·삭제·추가한 데이터를 포함해 지금 앱의 모든 데이터가 지워집니다."
+        footer={
+          <>
+            <button className="btn" onClick={s.cancelRemoveDemo} disabled={s.busy}>
+              취소
+            </button>
+            <button className="btn-danger" onClick={() => void s.confirmRemoveDemo()} disabled={s.busy}>
+              {s.busy ? '제거하는 중…' : '시연 데이터 제거'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm">
+          <p className="font-semibold text-red-700">시연 중에 새로 입력한 실제 데이터도 함께 삭제됩니다.</p>
+          <p>시연 데이터를 만들기 전의 데이터는 백업 폴더의 before-demo 폴더에 있는 existing-data-backup 파일에서 자동으로 복구합니다. 백업 파일을 확인하지 못하면 아무것도 지우지 않습니다.</p>
         </div>
       </Modal>
 

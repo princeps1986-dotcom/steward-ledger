@@ -173,6 +173,26 @@ export async function saveEmergencyBackup(prefix: string): Promise<string> {
   return name;
 }
 
+/** 시연 데이터를 만들기 직전 원래 데이터를 보관하는 백업 파일 이름 접두어(영어 + 날짜시간으로 한눈에 알아봄) */
+export const DEMO_BACKUP_PREFIX = 'existing-data-backup';
+
+/**
+ * 시연 데이터 생성 직전의 원래 데이터를 백업합니다. 데이터가 없으면 아무것도 만들지 않습니다(backupName: null).
+ * 데스크톱 앱: 백업 폴더 아래 before-demo 폴더에 저장(대화상자 없음, 실패하면 오류). 브라우저: 파일로 내려받습니다(자동 복구 불가).
+ */
+export async function backupBeforeDemo(): Promise<{ backupName: string | null; downloadedName?: string }> {
+  if (!(await hasAnyData())) return { backupName: null };
+  const api = desktop();
+  const name = backupFileName(DEMO_BACKUP_PREFIX);
+  if (!api) {
+    downloadText(await createBackupJson(), name);
+    return { backupName: null, downloadedName: name };
+  }
+  const saved = await streamBackup(desktopSink(api, { kind: 'emergency', folder: 'before-demo', name: `${name}.gz` }));
+  if (!saved) throw new Error('원래 데이터를 백업하지 못했습니다.');
+  return { backupName: `${name}.gz` };
+}
+
 /** 직접 하는 백업: 데스크톱 앱은 저장 위치를 고르게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 export async function saveBackupFile(prefix: string, years?: readonly string[]): Promise<string> {
   const api = desktop();
@@ -265,7 +285,7 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
  * 기존 연도 샤드 중 백업에 없는 연도는 삭제합니다. 하나의 원자적 트랜잭션으로 수행되어, 데이터가 아무리 커도
  * 도중에 실패하면 아무것도 바뀌지 않습니다(월별 키마다 값이 따로라 한 값의 크기 한도에 걸리지도 않습니다).
  */
-export async function replaceAllData(payload: BackupPayload): Promise<void> {
+export async function replaceAllData(payload: BackupPayload, extraWrites: Write[] = []): Promise<void> {
   await transact(async () => {
     const writes: Write[] = [];
     for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
@@ -284,6 +304,7 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
     }
     for (const [ym, list] of byMonth) writes.push(monthWrite(ym, list));
     for (const [y, list] of Object.entries(payload.auditLogsByYear)) writes.push({ key: auditKey(y), value: list });
+    writes.push(...extraWrites);
     return { writes, result: undefined };
   });
 }
@@ -292,12 +313,12 @@ export async function replaceAllData(payload: BackupPayload): Promise<void> {
  * 전체 데이터 초기화(v2.15): 성도·헌금 내역·수정/삭제 이력을 모두 지우고 헌금 종류는 기본값으로 되돌립니다.
  * 환경 설정(테마·백업 주기 등)은 유지합니다. 호출 전에 긴급 백업을 저장아야 합니다.
  */
-export async function resetAllData(): Promise<void> {
+export async function resetAllData(extraWrites: Write[] = []): Promise<void> {
   await replaceAllData({
     members: [],
     offeringTypes: DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() })),
     donationsByYear: {},
     auditLogsByYear: {},
-  });
+  }, extraWrites);
 }
 

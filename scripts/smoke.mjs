@@ -74,6 +74,15 @@ try {
     check('백업 IPC: 주기 백업 파일이 검증을 거쳐 저장됨', typeof written === 'string' && /autosave_\d{8}_\d{6}\.json\.gz$/.test(written) && existsSync(written), String(written));
     check('보안: 임의 폴더를 보내도 허용된 폴더에만 씀', String(written).startsWith(backupDir), String(written));
     check('백업 IPC: 임시 파일이 남지 않음', readdirSync(backupDir).every((n) => !n.endsWith('.tmp')));
+    // 시연 데이터 생성 직전 백업(before-demo 폴더)과 그 파일을 읽는 IPC: 허용된 폴더·이름만 받아야 합니다.
+    const demoSaved = await ev(`(async () => { const id = await window.desktop.backupBegin({ kind: 'emergency', folder: 'before-demo', name: 'existing-data-backup_20260101_000000.json.gz' }); await window.desktop.backupWrite(id, JSON.stringify({ ndjson: 3 }) + String.fromCharCode(10)); return await window.desktop.backupEnd(id); })()`);
+    check('시연 백업: before-demo 폴더에 영어 이름으로 저장됨', String(demoSaved).includes('before-demo') && String(demoSaved).endsWith('existing-data-backup_20260101_000000.json.gz') && String(demoSaved).startsWith(backupDir), String(demoSaved));
+    const badFolder = await ev(`window.desktop.backupBegin({ kind: 'emergency', folder: 'evil', name: 'x.json.gz' }).then(() => '통과됨', () => '거부')`);
+    check('보안: 허용하지 않은 백업 폴더 이름은 거부', badFolder === '거부', badFolder);
+    const badRead = await ev(`window.desktop.backupReadOpen('../../secret.json.gz').then(() => '통과됨', () => '거부')`);
+    check('보안: 파일 읽기는 안전한 이름만 허용', badRead === '거부', badRead);
+    const goodRead = await ev(`(async () => { const o = await window.desktop.backupReadOpen('existing-data-backup_20260101_000000.json.gz'); const c = await window.desktop.backupReadChunk(o.id, 0); await window.desktop.backupReadClose(o.id); return o.size > 0 && c.length === o.size ? '읽음' : '불일치 ' + o.size + '/' + c.length; })()`);
+    check('시연 백업: 저장한 파일을 조각으로 읽을 수 있음', goodRead === '읽음', goodRead);
     void NL;
   }
   ws.close();
