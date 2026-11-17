@@ -61,6 +61,7 @@ export function useSettingsPage() {
   const restoreYear = restore?.yearRows.some((r) => r.year === restoreYearPick) ? restoreYearPick : (restore?.yearRows[restore.yearRows.length - 1]?.year ?? '');
   const [busy, setBusy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
   const [demoProgress, setDemoProgress] = useState<{ done: number; total: number } | null>(null);
   // 시연 데이터가 한 건이라도 있으면 시연 중(전체 데이터를 훑지 않고 색인으로 판정). 설정 화면에 들어올 때 다시 확인합니다.
@@ -121,6 +122,7 @@ export function useSettingsPage() {
       const name = await saveBackupFile('backup', [backupYear]);
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
+      setBackupOpen(false);
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {
       setMessage({ kind: 'error', text: `백업 실패: ${(err as Error).message}` });
@@ -305,6 +307,9 @@ export function useSettingsPage() {
     resetDir,
     lastBackupLabel: settings.lastBackupAt ? formatDateTime(settings.lastBackupAt) : '없음',
     backupNow,
+    backupOpen,
+    openBackup: () => !backupBlocked && setBackupOpen(true),
+    cancelBackup: () => setBackupOpen(false),
     onRestoreFile,
     restore,
     confirmRestore,

@@ -80,7 +80,7 @@ export function SettingsPage() {
           <InfoTip label="백업·복원 안내" text={s.backupHelp} />
         </h3>
         <div className="flex gap-2">
-          <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear || s.backupBlocked}>
+          <button className="btn-primary" onClick={s.openBackup} disabled={s.busy || s.backupBlocked}>
             백업 파일 저장
           </button>
           <label className={`btn ${s.backupBlocked ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`} aria-disabled={s.backupBlocked}>
@@ -88,11 +88,29 @@ export function SettingsPage() {
             <input type="file" accept=".json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
           </label>
         </div>
+      </section>
+
+      <Modal
+        open={s.backupOpen}
+        onClose={s.cancelBackup}
+        title="백업 파일을 저장할까요?"
+        description="백업할 연도를 선택하고 확인하세요."
+        footer={
+          <>
+            <button className="btn" onClick={s.cancelBackup} disabled={s.busy}>
+              취소
+            </button>
+            <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear}>
+              {s.busy ? '저장하는 중…' : `${s.backupYear}년 백업 파일 저장`}
+            </button>
+          </>
+        }
+      >
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="text-gray-600" htmlFor="backup-year">
             백업할 연도
           </label>
-          <select id="backup-year" className="input w-28" value={s.backupYear} onChange={(e) => s.setBackupYear(e.target.value)} disabled={s.backupYearOptions.length === 0 || s.backupBlocked}>
+          <select id="backup-year" className="input w-28" value={s.backupYear} onChange={(e) => s.setBackupYear(e.target.value)} disabled={s.backupYearOptions.length === 0 || s.busy}>
             {s.backupYearOptions.length === 0 ? <option value="">연도 없음</option> : null}
             {s.backupYearOptions.map((y) => (
               <option key={y} value={y}>
@@ -100,11 +118,17 @@ export function SettingsPage() {
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500">
-            {s.backupYearOptions.length === 0 ? '헌금 내역이 있는 연도만 백업할 수 있습니다.' : '선택한 연도의 헌금과 성도·헌금 종류가 함께 저장됩니다.'}
-          </span>
         </div>
-      </section>
+        <p className="mt-3 text-sm text-gray-600">
+          {s.backupYearOptions.length === 0 ? (
+            '헌금 내역이 있는 연도만 백업할 수 있습니다.'
+          ) : (
+            <>
+              <b className="text-red-700 underline">선택한 연도</b>의 헌금과 성도·헌금 종류가 함께 저장됩니다. 다른 연도의 내역은 이 백업 파일에 들어가지 않습니다.
+            </>
+          )}
+        </p>
+      </Modal>
 
       {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
       <section className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-4" aria-labelledby="danger-zone-title">
