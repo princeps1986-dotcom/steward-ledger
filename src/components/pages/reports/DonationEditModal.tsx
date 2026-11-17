@@ -117,7 +117,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             <p className="mt-1 text-xs text-gray-600">목록에서 선택하거나 직접 입력하세요.</p>
           </div>
           {e.error ? <p className="col-span-2 text-sm text-red-600">{e.error}</p> : null}
-          <p className="col-span-2 text-xs font-semibold text-red-600">수정내역은 수정·삭제 이력에 남습니다.</p>
+          <p className="col-span-2 text-right text-xs font-semibold text-red-600">수정내역은 수정·삭제 이력에 남습니다.</p>
         </div>
       ) : null}
     </Modal>
