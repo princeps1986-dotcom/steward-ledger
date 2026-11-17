@@ -31,14 +31,14 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
         세대주로 지정
       </label>
       <label>
-        <span className="label">소속 세대주 연결</span>
+        <span className={`label ${draft.isFamilyHead ? 'text-gray-400' : ''}`}>소속 세대주 연결</span>
         <select
           className="input"
           value={draft.headMemberId}
           disabled={draft.isFamilyHead}
           onChange={(e) => setField('headMemberId')(e.target.value)}
         >
-          <option value="">연결 안 함</option>
+          <option value="">{draft.isFamilyHead ? '(세대주는 연결하지 않습니다)' : '연결 안 함'}</option>
           {headOptions.map((o) => (
             <option key={o.id} value={o.id}>
               {o.label}
