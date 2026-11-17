@@ -86,7 +86,7 @@ export function ReportsPage() {
           <>
             <div className="w-52">
               <span className="label">{f.sel.isDay ? '일 선택' : '주 선택 (해당 날짜가 속한 주)'}</span>
-              <DatePicker value={f.weekDate} onChange={f.setWeekDate} ariaLabel={f.sel.isDay ? '일별 보고서 날짜' : '주별 보고서 날짜'} pickOnly />
+              <DatePicker value={f.weekDate} onChange={f.setWeekDate} ariaLabel={f.sel.isDay ? '일별 보고서 날짜' : '주별 보고서 날짜'} />
             </div>
             <button className="btn" onClick={f.sel.isDay ? f.prevDay : f.prevWeek}>
               {f.sel.isDay ? '‹ 이전 일' : '‹ 이전 주'}

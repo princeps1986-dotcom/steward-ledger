@@ -474,7 +474,6 @@ export function useDonationMonths(yms: readonly string[]): Donation[] {
   return memo.current!.value;
 }
 export const useAllAudits = (): Record<string, AuditLog[]> => useDonationSelector((s) => s.audits);
-export const useAuditShard =(year: string): AuditLog[] => useDonationSelector((s) => s.audits[year] ?? EMPTY);
 export const useDonationYears = () => useDonationSelector((s) => s.years);
 export const useMonthVersions = () => useDonationSelector((s) => s.monthVersions);
 export const useDonationEpoch = () => useDonationSelector((s) => s.epoch);

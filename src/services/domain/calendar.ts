@@ -36,14 +36,6 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
   return { year: Math.floor(idx / 12), month: (((idx % 12) + 12) % 12) + 1 };
 }
 
-/** 입력 중인 날짜 문자열을 YYYY-MM-DD 형태로 정리합니다. (숫자만 남기고 하이픈 자동 삽입) */
-export function formatDateInput(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
-}
-
 export interface WeekRange {
   /** 해당 주의 일요일 */
   start: string;

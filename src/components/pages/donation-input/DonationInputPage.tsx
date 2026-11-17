@@ -36,7 +36,7 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
           <div className="grid grid-cols-[220px_minmax(0,26rem)] gap-3">
             <div>
               <span className="label">헌금 날짜</span>
-              <DatePicker value={c.date} onChange={c.setDate} ariaLabel="헌금 날짜" pickOnly />
+              <DatePicker value={c.date} onChange={c.setDate} ariaLabel="헌금 날짜" />
               <div className="mt-1 flex flex-wrap gap-1">
                 <button type="button" tabIndex={-1} className="btn whitespace-nowrap px-2 py-0.5 text-xs" onClick={c.prevWeek} aria-label="한 주 전">
                   ‹ 이전 주

@@ -4,38 +4,29 @@ interface Props {
   value: string;
   onChange(v: string): void;
   ariaLabel: string;
-  /** true면 직접 입력을 막고 달력에서만 고를 수 있습니다(입력 칸을 누르면 달력이 열림). */
-  pickOnly?: boolean;
 }
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-/** 일요일이 빨간색으로 표시되는 달력 선택기. 직접 입력(YYYY-MM-DD)도 가능합니다. */
-export function DatePicker({ value, onChange, ariaLabel, pickOnly }: Props) {
+/** 일요일이 빨간색으로 표시되는 달력 선택기. 직접 입력은 할 수 없고 입력 칸을 누르면 달력이 열려 달력에서만 고릅니다. */
+export function DatePicker({ value, onChange, ariaLabel }: Props) {
   const p = useDatePicker({ value, onChange });
   return (
     <div className="relative" ref={p.rootRef} onKeyDown={p.onRootKeyDown}>
       <div className="flex gap-1">
         <input
           ref={p.inputRef}
-          className={pickOnly ? 'input cursor-pointer' : 'input'}
-          inputMode="numeric"
-          maxLength={10}
-          placeholder={pickOnly ? '달력에서 선택' : 'YYYY-MM-DD'}
+          className="input cursor-pointer"
+          placeholder="달력에서 선택"
           value={value}
-          readOnly={pickOnly}
-          onChange={(e) => p.onInputChange(e.target.value)}
-          onClick={pickOnly ? p.openCalendar : undefined}
-          onKeyDown={
-            pickOnly
-              ? (e) => {
-                  if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    p.openCalendar();
-                  }
-                }
-              : undefined
-          }
+          readOnly
+          onClick={p.openCalendar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              p.openCalendar();
+            }
+          }}
           aria-label={ariaLabel}
         />
         <span

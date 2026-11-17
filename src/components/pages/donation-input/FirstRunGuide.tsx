@@ -30,7 +30,7 @@ export function FirstRunGuide({ onNavigate }: { onNavigate(page: PageKey): void 
         ))}
       </ol>
       <p className="text-sm text-gray-600">
-        먼저 체험해 보려면 <button className="font-semibold text-blue-700 underline" onClick={() => onNavigate('settings')}>설정 정보</button>의 [시연 데이터 불러오기]를,
+        먼저 체험해 보려면 <button className="font-semibold text-blue-700 underline" onClick={() => onNavigate('settings')}>설정 정보</button>의 [시연 데이터 생성]를,
         자세한 사용법은 <button className="font-semibold text-blue-700 underline" onClick={() => onNavigate('help')}>사용 설명서</button>를 보세요.
       </p>
     </section>

@@ -121,7 +121,6 @@ tr.row-sep > td { border-bottom: 2px solid var(--color-gray-400); }
   --pt-name-bg: #eef3ec; --pt-total-bg: #d9e2d5; --pt-title: #2f5d52; --pt-rule: #3b7366;
 }
 
-.print-only { display: none; }
 .print-flex { display: none; }
 .print-spacer, .print-foot { display: none; }
 
@@ -132,7 +131,6 @@ tr.row-sep > td { border-bottom: 2px solid var(--color-gray-400); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { background: #fff; }
   .no-print { display: none !important; }
-  .print-only { display: block !important; }
   .print-flex { display: flex !important; }
   .print-spacer { display: table-row !important; }
   .print-foot { display: table-footer-group !important; }

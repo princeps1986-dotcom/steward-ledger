@@ -30,9 +30,6 @@ export function validateDraft(d: MemberDraft): string | null {
   return null;
 }
 
-/** 세대주가 속한 그룹 ID (최초 세대주의 id). 그룹이 없으면 본인 id. */
-export const groupIdOf = (head: Member): string => head.familyGroupId ?? head.id;
-
 /** 그룹의 현재 세대주 (없으면 그룹 ID와 같은 id의 성도) */
 export function currentHeadOf(members: Member[], groupId: string): Member | undefined {
   return (

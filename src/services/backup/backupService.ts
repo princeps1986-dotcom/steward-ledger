@@ -153,12 +153,6 @@ export const backupFileName = (prefix = 'backup', years?: readonly string[]): st
   return `${prefix}${label ? `_${label}` : ''}_${nowStamp()}.json`;
 };
 
-export async function downloadBackup(prefix = 'backup', years?: readonly string[]): Promise<string> {
-  const name = backupFileName(prefix, years);
-  downloadText(await createBackupJson(years), name);
-  return name;
-}
-
 /**
  * 초기화·복원 직전 긴급 백업. 데스크톱 앱은 백업 폴더에 대화상자 없이 줄 단위로 저장하고(메모리는 한 달치) 실패하면 오류를 던지므로,
  * 이 함수가 끝났다면 백업이 실제로 저장된 것입니다(사용자가 취소할 수 없음). 저장된 위치(또는 파일 이름)를 돌려줍니다.

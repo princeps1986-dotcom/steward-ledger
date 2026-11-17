@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, OfferingType } from '../../contexts/types';
 import { nextAnonymousName } from './anonymous';
-import { buildMonthGrid, formatDateInput, shiftMonth, shiftWeek, weekRangeOf } from './calendar';
+import { buildMonthGrid, shiftMonth, shiftWeek, weekRangeOf } from './calendar';
 import { DEFAULT_OFFERING_TYPES } from './offeringDefaults';
 import { positionOptions, POSITIONS } from './positions';
 import { buildWeeklyMatrix } from './weekly';
@@ -45,14 +45,6 @@ describe('calendar', () => {
     expect(shiftMonth(2026, 1, -1)).toEqual({ year: 2025, month: 12 });
     expect(shiftMonth(2026, 12, 1)).toEqual({ year: 2027, month: 1 });
     expect(shiftMonth(2026, 6, 0)).toEqual({ year: 2026, month: 6 });
-  });
-  it('formats typed date input', () => {
-    expect(formatDateInput('20261115')).toBe('2026-11-15');
-    expect(formatDateInput('2026-11-1')).toBe('2026-11-1');
-    expect(formatDateInput('2026')).toBe('2026');
-    expect(formatDateInput('2026-')).toBe('2026');
-    expect(formatDateInput('abc2026111599')).toBe('2026-11-15');
-    expect(formatDateInput('')).toBe('');
   });
   it('week range is Sunday..Saturday and may cross years', () => {
     expect(weekRangeOf('2026-11-15')).toEqual({ start: '2026-11-15', end: '2026-11-21' });

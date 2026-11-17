@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { buildMonthGrid, formatDateInput, shiftMonth, weekdayLabelOf, WEEKDAY_LABELS } from '../services/domain/calendar';
+import { buildMonthGrid, shiftMonth, weekdayLabelOf, WEEKDAY_LABELS } from '../services/domain/calendar';
 import { isValidDateString, todayString } from '../services/domain/dates';
 
 const CELL_BASE = 'h-8 w-full rounded text-sm';
@@ -7,7 +7,7 @@ const POPUP_BASE = 'no-print mt-1 rounded-lg border border-gray-200 bg-white p-2
 /** 달력은 항상 입력 칸 아래에 겹쳐 띄웁니다(창·화면 높이를 늘리지 않고 아래 내용을 덮음). 모달 안에서는 Modal의 overflowVisible과 함께 씁니다. */
 const POPUP = `${POPUP_BASE} absolute left-0 top-full z-[60] w-[17.5rem] shadow-lg`;
 
-/** 달력 선택기 상태·이벤트 (일요일 빨간색 표시 포함). 입력 칸은 YYYY-MM-DD 직접 입력도 지원합니다. */
+/** 달력 선택기 상태·이벤트 (일요일 빨간색 표시 포함). */
 export function useDatePicker({ value, onChange }: { value: string; onChange(v: string): void }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState({ year: 0, month: 1 });
@@ -53,8 +53,6 @@ export function useDatePicker({ value, onChange }: { value: string; onChange(v: 
     [onChange],
   );
 
-  const onInputChange = useCallback((raw: string) => onChange(formatDateInput(raw)), [onChange]);
-
   const prevMonth = useCallback(() => setView((v) => shiftMonth(v.year, v.month, -1)), []);
   const nextMonth = useCallback(() => setView((v) => shiftMonth(v.year, v.month, 1)), []);
   const setYear = useCallback((year: number) => setView((v) => ({ ...v, year })), []);
@@ -94,7 +92,6 @@ export function useDatePicker({ value, onChange }: { value: string; onChange(v: 
     rootRef,
     inputRef,
     onRootKeyDown,
-    onInputChange,
     pick,
     pickToday: () => pick(today),
     view,
@@ -107,5 +104,3 @@ export function useDatePicker({ value, onChange }: { value: string; onChange(v: 
     cells,
   };
 }
-
-export type DatePickerController = ReturnType<typeof useDatePicker>;

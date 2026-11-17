@@ -29,7 +29,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             <>
               <div>
                 <span className="label">날짜</span>
-                <DatePicker value={d.date} onChange={e.setField('date')} ariaLabel="헌금 날짜" pickOnly />
+                <DatePicker value={d.date} onChange={e.setField('date')} ariaLabel="헌금 날짜" />
               </div>
               <label>
                 <span className="label">헌금 종류</span>
