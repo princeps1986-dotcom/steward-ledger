@@ -243,7 +243,6 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 9. PDF 저장
 
 * [PDF 저장]은 데스크톱 앱에서 `report:save-pdf`(main의 `printToPDF`, `@page` 크기 사용)로 저장 창을 거쳐 저장하고, 웹은 `window.print()`로 대신합니다. 인쇄 전용 렌더링(`useIsPrinting`)을 위해 호출 전후에 `beforeprint`/`afterprint`를 직접 보냅니다.
-* [외부 공유]는 `report:share-pdf`가 `printToPDF` 결과를 임시 폴더(`%TEMP%\StewardLedgerShare`, 공유 때마다·앱 시작 때 비움)에 쓰고 PowerShell `Set-Clipboard -LiteralPath`(경로는 환경변수로 전달)로 파일을 클립보드에 올립니다. Windows 전용이며 웹은 인쇄 창 안내로 대신합니다.
 * 데스크톱 앱에서는 저장 완료(`download:done`) 시 `showInFolder`로 저장 폴더를 자동으로 열고 [파일 열기]/[폴더 열기]도 보여 줍니다. `recipientEmail` 설정 필드는 저장 데이터 호환을 위해 남겨 두고 화면에서는 쓰지 않습니다.
 
 ## 10. 백업 · 복원 · 초기화
