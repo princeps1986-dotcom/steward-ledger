@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useDonationActions } from '../contexts/DonationContext';
-import { useMemberById } from '../contexts/MemberContext';
+import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 import { formatAmountInput, formatNumber, formatWon, parseAmount } from '../services/domain/amount';
 import { isValidDateString } from '../services/domain/dates';
+import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
 
 export type EditorMode = 'EDIT' | 'DELETE';
@@ -21,6 +22,7 @@ interface EditDraft {
 export function useDonationEditor() {
   const { updateDonation, deleteDonation } = useDonationActions();
   const memberById = useMemberById();
+  const members = useMembers();
   const types = useOfferingTypes();
   const [target, setTarget] = useState<Donation | null>(null);
   const [mode, setMode] = useState<EditorMode>('EDIT');
@@ -59,6 +61,14 @@ export function useDonationEditor() {
     if (!m) return `${target.donorDisplayName} (무명/방문자)`;
     return target.donorDisplayName === m.name ? memberLabel(m) : `${target.donorDisplayName} — ${memberLabel(m)}`;
   }, [target, memberById]);
+  /** 수정창에서 표기명 옆에 보여 주는 세대 정보(읽기 전용, 현재 세대 기준). 세대 연결이 없거나 무명/방문자면 빈 문자열 */
+  const donorHousehold = useMemo(() => {
+    const m = target?.memberId ? memberById.get(target.memberId) : undefined;
+    if (!m) return '';
+    if (m.isFamilyHead) return '세대주';
+    const head = m.familyGroupId ? currentHeadOf(members, m.familyGroupId) : undefined;
+    return head ? `${head.name} 세대의 세대원` : '';
+  }, [target, memberById, members]);
   // 선택 목록에는 헌금 종류 화면에서 활성인 종류만 보여 줍니다.
   // 이 내역의 현재 종류가 비활성이면 값이 엉뚱하게 보이지 않도록 선택 불가(회색)로만 함께 표시합니다.
   const typeOptions = useMemo(
@@ -112,6 +122,7 @@ export function useDonationEditor() {
     draft,
     setField,
     donorLabel,
+    donorHousehold,
     typeOptions,
     targetSummary: target ? `${target.date} ${target.donorDisplayName} ${formatWon(target.amount)}` : '',
     error,

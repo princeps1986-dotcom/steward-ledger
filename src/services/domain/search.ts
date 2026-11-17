@@ -24,7 +24,8 @@ export function searchMembers(members: Member[], query: string, limit = 20, incl
     .slice(0, limit);
 }
 
-/** 동명이인 식별 표기: 이름 (직분 / 연락처 뒷4자리) */
+/** 동명이인 식별 표기: 이름 (직분 / 연락처 뒷4자리). 없는 항목은 빼고, 둘 다 없으면 이름만 보여 줍니다. */
 export function memberLabel(m: Member): string {
-  return `${m.name} (${normalizePosition(m.position) || '-'} / ${m.phoneLast4 || '-'})`;
+  const parts = [normalizePosition(m.position), m.phoneLast4].filter(Boolean);
+  return parts.length ? `${m.name} (${parts.join(' / ')})` : m.name;
 }

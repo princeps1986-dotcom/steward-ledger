@@ -66,9 +66,11 @@ describe('search', () => {
     expect(matchMember(m, '1234')).toBe(true);
     expect(matchMember(m, 'ㅇㅇ')).toBe(false);
   });
-  it('label uses the phone last 4 digits or a dash', () => {
+  it('label shows only the position and phone that exist, without dashes or empty parentheses', () => {
     expect(memberLabel(member({ phoneLast4: '1234' }))).toBe('김철수 (집사 / 1234)');
-    expect(memberLabel(member({}))).toBe('김철수 (집사 / -)');
+    expect(memberLabel(member({}))).toBe('김철수 (집사)');
+    expect(memberLabel(member({ position: '', phoneLast4: '1234' }))).toBe('김철수 (1234)');
+    expect(memberLabel(member({ position: '' }))).toBe('김철수');
   });
 });
 

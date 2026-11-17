@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DonationEditorController } from '../../../hooks/useDonationEditor';
 import { DatePicker } from '../../shared/DatePicker';
 import { Modal } from '../../shared/Modal';
@@ -13,6 +13,12 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
   const isDelete = e.mode === 'DELETE';
   const reasonRef = useRef<HTMLInputElement>(null);
   const reasonMissing = !!e.error && !!d && !d.reason.trim();
+  // 목록에서 고른 문구. 입력 칸의 글자가 이것과 다르면(직접 쓴 경우) 목록은 "기타"로 바뀌고 잠깁니다.
+  const [picked, setPicked] = useState('');
+  useEffect(() => setPicked(''), [e.isOpen]);
+  const reason = d?.reason ?? '';
+  const manual = reason !== '' && reason !== picked;
+  const reasonSelect = manual ? OTHER : reason === '' && picked !== OTHER ? '' : picked;
   return (
     <Modal
       open={e.isOpen}
@@ -38,8 +44,9 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
               {/* 누구의 헌금인지(성도·표기명)는 바꿀 수 없습니다. 잘못 입력했다면 삭제 후 다시 입력하세요. */}
               <div className="col-span-2">
                 <span className="label">성도 · 표기명 (변경 불가)</span>
-                <div className="input cursor-not-allowed bg-gray-50 text-gray-600" aria-readonly="true">
-                  {e.donorLabel}
+                <div className="input flex cursor-not-allowed items-center justify-between gap-2 bg-gray-50 text-gray-600" aria-readonly="true">
+                  <span className="truncate">{e.donorLabel}</span>
+                  {e.donorHousehold ? <span className="whitespace-nowrap rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-700">{e.donorHousehold}</span> : null}
                 </div>
               </div>
               <div>
@@ -64,7 +71,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 <span className="label">메모</span>
                 <input className="input" value={d.memo} onChange={(ev) => e.setField('memo')(ev.target.value)} />
               </label>
-              <p className="col-span-2 text-xs text-gray-500">날짜는 달력에서만 고를 수 있습니다. 다른 달·연도로 바꾸면 그 달 장부로 옮겨지고 수정·삭제 이력에 기록됩니다. 성도·표기명을 잘못 입력했다면 이 내역을 삭제하고 다시 입력하세요.</p>
+              <p className="col-span-2 text-xs text-gray-500">다른 달·연도로 바꾸면 그 달 장부로 옮겨지고 수정·삭제 이력에 기록됩니다. 성도·표기명을 잘못 입력했다면 이 내역을 삭제하고 다시 입력하세요.</p>
             </>
           )}
           <div className="col-span-2 rounded border border-red-300 bg-red-50 p-3">
@@ -74,12 +81,13 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             <select
               className="input mb-2"
               aria-label="자주 쓰는 사유 선택"
-              value=""
+              value={reasonSelect}
+              disabled={manual}
               onChange={(ev) => {
                 const v = ev.target.value;
-                if (!v) return;
+                setPicked(v);
                 e.setField('reason')(v === OTHER ? '' : v);
-                reasonRef.current?.focus();
+                if (v) reasonRef.current?.focus();
               }}
             >
               <option value="">자주 쓰는 사유에서 고르기</option>
@@ -93,7 +101,10 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
               ref={reasonRef}
               className={`input ${reasonMissing ? 'border-red-500 ring-2 ring-red-200' : ''}`}
               value={d.reason}
-              onChange={(ev) => e.setField('reason')(ev.target.value)}
+              onChange={(ev) => {
+                e.setField('reason')(ev.target.value);
+                if (ev.target.value === '') setPicked(''); // 모두 지우면 목록을 다시 쓸 수 있음
+              }}
               autoFocus
               aria-label={`${isDelete ? '삭제' : '수정'} 사유`}
               aria-invalid={reasonMissing}
