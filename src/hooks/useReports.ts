@@ -13,9 +13,7 @@ import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod,
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
 import { memberLabel, searchMembers } from '../services/domain/search';
-import { buildReportWorkbook, buildWeeklyWorkbook } from '../services/excel/excelService';
 import { desktop, type SavedFileInfo } from '../services/desktopBridge';
-import { downloadBlob } from '../services/excel/downloadBridge';
 import { compareFixed } from '../services/domain/compare';
 
 export type ReportTab = 'SUMMARY' | 'LIST' | 'PERSONAL' | 'AUDIT';
@@ -112,7 +110,7 @@ export function useReportFilters(loadData = true) {
         : [];
 
   return {
-    // 보고서에 실제 적용된 값(계산·인쇄·엑셀 기준)
+    // 보고서에 실제 적용된 값(계산·인쇄·PDF 기준)
     year,
     periodType,
     periodValue,
@@ -153,7 +151,7 @@ export type ReportFilters = ReturnType<typeof useReportFilters>;
 
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
-/** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·엑셀 저장 공통). */
+/** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·PDF 저장 공통). */
 export function withoutTypes<T extends { offeringTypeId: string }>(donations: readonly T[], hidden: ReadonlySet<string>): readonly T[] {
   return hidden.size === 0 ? donations : donations.filter((d) => !hidden.has(d.offeringTypeId));
 }
@@ -405,11 +403,8 @@ export function useAuditLogTab(f: ReportFilters) {
   }, [audits, typeById, tagOf, isRange, week, year, months]);
 }
 
-/** 인쇄·엑셀 저장 */
-export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
-  const members = useMembers();
-  const types = useOfferingTypes();
-  const orderKey = useMemberOrderKey();
+/** 인쇄·PDF 저장 */
+export function useReportExport(f: ReportFilters) {
   const [busy, setBusy] = useState(false);
   const [message, setMessageState] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedFileInfo | null>(null);
@@ -420,7 +415,7 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
     setSaved(null);
   }, []);
 
-  // 데스크톱 앱: 엑셀 저장이 끝나면 저장 위치를 받아 폴더를 열고 [파일 열기] 버튼을 보여 줍니다.
+  // 데스크톱 앱: PDF 저장이 끝나면 저장 위치를 받아 폴더를 열고 [파일 열기] 버튼을 보여 줍니다.
   useEffect(
     () =>
       desktop()?.onDownloadDone((info) => {
@@ -445,47 +440,12 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
 
   // 주별은 세대 집계 기준과 무관하므로 파일명에 넣지 않습니다.
   const fileName = f.isDay
-    ? `일별헌금보고서_${f.week.start}.xlsx`
+    ? `일별헌금보고서_${f.week.start}.pdf`
     : f.isWeek
-    ? `주별헌금보고서_${f.week.start}_${f.week.end}.xlsx`
+    ? `주별헌금보고서_${f.week.start}_${f.week.end}.pdf`
     : f.personKind === 'MONTH'
-      ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.xlsx`
-      : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.xlsx`;
-
-  const build = useCallback(() => {
-    const donations = withoutTypes(f.donations, hidden) as typeof f.donations;
-    return f.personRange
-        ? buildWeeklyWorkbook({
-            range: f.personRange,
-            matrix: buildWeeklyMatrix(donations, typesWithout(types, hidden), f.personRange, orderKey),
-            donations,
-            offeringTypes: typesWithout(types, hidden) as typeof types,
-            // 월별은 개별 내역 시트 없이 성도명 × 헌금 종류 표만 저장합니다.
-            kind: f.personKind === 'MONTH' ? 'MONTH' : f.personKind === 'DAY' ? 'DAY' : 'WEEK',
-          })
-        : buildReportWorkbook({
-            year: f.year,
-            periodType: f.periodType,
-            periodValue: f.periodValue,
-            donations,
-            members,
-            offeringTypes: typesWithout(types, hidden) as typeof types,
-            basis: f.basis,
-          });
-  }, [f.personRange, f.personKind, f.year, f.periodType, f.periodValue, f.donations, f.basis, members, types, orderKey, hidden]);
-
-  const saveExcel = useCallback(async () => {
-    setBusy(true);
-    try {
-      downloadBlob(await build(), fileName);
-      // 데스크톱 앱은 저장 창에서 취소할 수 있으므로, 파일이 실제로 저장된 뒤(onDownloadDone)에 '저장 완료'를 알립니다.
-      say(desktop() ? '저장 창에서 위치를 정하면 파일이 저장됩니다.' : `${fileName} 저장 완료`);
-    } catch (err) {
-      say(`엑셀 생성 실패: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [build, fileName, say]);
+      ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.pdf`
+      : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.pdf`;
 
   // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 고르게 합니다.
   const savePdf = useCallback(async () => {
@@ -499,7 +459,7 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
     // 인쇄 중에만 전체 행을 그리는 화면이 있어, 인쇄와 같은 상태가 되도록 이벤트를 직접 보냅니다.
     window.dispatchEvent(new Event('beforeprint'));
     try {
-      if (await d.savePdf(fileName.replace(/\.xlsx$/, '.pdf'))) say('PDF를 저장하는 중입니다…');
+      if (await d.savePdf(fileName)) say('PDF를 저장하는 중입니다…');
     } catch (err) {
       say(`PDF 저장 실패: ${(err as Error).message}`);
     } finally {
@@ -515,5 +475,5 @@ export function useReportExport(f: ReportFilters, hidden: ReadonlySet<string> = 
       ]
     : undefined;
 
-  return { busy, message, fileActions, saveExcel, savePdf, print: () => window.print() };
+  return { busy, message, fileActions, savePdf, print: () => window.print() };
 }

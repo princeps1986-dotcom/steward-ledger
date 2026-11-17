@@ -16,7 +16,7 @@ const { verifyBackupFile } = require('./backupVerify.cjs');
 const DEV_URL = process.env.ELECTRON_DEV_URL;
 const DIST = path.join(__dirname, '..', 'dist');
 const AUTO_BACKUP_KEEP = 10;
-// 이번 실행 중 앱이 저장한 엑셀 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
+// 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
 const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json(\.gz)?$/;
 // 앱을 쓰는 동안 주기적으로 만드는 백업(autosave_*)은 종료 때 백업(backup_*)과 따로 최근 3개만 보관합니다.
@@ -317,17 +317,6 @@ if (!app.requestSingleInstanceLock()) {
       return { action: 'deny' };
     });
 
-    // 엑셀 저장(다운로드)이 끝나면 저장된 경로를 렌더러에 알려 [파일 열기] 버튼을 띄웁니다.
-    win.webContents.session.on('will-download', (_e, item) => {
-      item.once('done', (_ev, state) => {
-        if (state !== 'completed') return;
-        const file = item.getSavePath();
-        if (!/\.xlsx$/i.test(file)) return;
-        savedFiles.add(file);
-        if (!win.isDestroyed()) win.webContents.send('download:done', { path: file, name: path.basename(file) });
-      });
-    });
-
     // 화면(렌더러)이 죽거나 응답이 없어도 데이터는 IndexedDB에 있으므로, 다시 불러오면 이어서 쓸 수 있습니다.
     let reloads = [];
     win.webContents.on('render-process-gone', (_e, details) => {
@@ -396,7 +385,7 @@ if (!app.requestSingleInstanceLock()) {
     await fs.unlink(statusFile()).catch(() => undefined);
   });
 
-  // 저장한 엑셀 파일을 기본 프로그램으로 열기 / 탐색기에서 위치 보기. 성공 시 빈 문자열, 실패 시 오류 문구를 반환합니다.
+  // 저장한 파일을 기본 프로그램으로 열기 / 탐색기에서 위치 보기. 성공 시 빈 문자열, 실패 시 오류 문구를 반환합니다.
   ipcMain.handle('file:open', async (_event, file) => {
     if (typeof file !== 'string' || !savedFiles.has(file)) return '이 앱에서 저장한 파일만 열 수 있습니다.';
     return shell.openPath(file);

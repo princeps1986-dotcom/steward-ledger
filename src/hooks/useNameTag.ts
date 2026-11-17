@@ -13,7 +13,7 @@ export function useNameTag(): (memberId: string | null | undefined) => string | 
   return useCallback((memberId) => (memberId ? nameDisambiguator(memberById.get(memberId), dup) : null), [memberById, dup]);
 }
 
-/** 동명이인 정렬 보조 키 함수(연락처 뒷4자리 → 직분 → id). 주별 보고서 화면·엑셀이 같은 순서를 쓰게 합니다. */
+/** 동명이인 정렬 보조 키 함수(연락처 뒷4자리 → 직분 → id). 주별 보고서 화면이 같은 순서를 쓰게 합니다. */
 export function useMemberOrderKey(): (memberId: string) => string {
   const memberById = useMemberById();
   return useCallback((memberId) => memberOrderKey(memberById.get(memberId)), [memberById]);

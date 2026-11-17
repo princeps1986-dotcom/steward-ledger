@@ -34,7 +34,7 @@ export interface DesktopApi {
   showInFolder(path: string): Promise<boolean>;
   /** 현재 화면을 PDF로 저장합니다(저장 창에서 취소하면 false). 저장되면 onDownloadDone으로도 알립니다. */
   savePdf(name: string): Promise<boolean>;
-  /** 엑셀(.xlsx) 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
+  /** PDF 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
   onDownloadDone(handler: (info: SavedFileInfo) => void): () => void;
   getDefaultBackupDir(): Promise<string>;
   selectBackupDir(): Promise<string | null>;

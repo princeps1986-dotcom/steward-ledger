@@ -12,7 +12,7 @@
 6. [저장소 설계](#6-저장소-설계)
 7. [화면 데이터 관리 (DonationContext)](#7-화면-데이터-관리-donationcontext)
 8. [보고서](#8-보고서)
-9. [엑셀](#9-엑셀)
+9. [PDF 저장](#9-pdf-저장)
 10. [백업 · 복원 · 초기화](#10-백업--복원--초기화)
 11. [입력 화면 설계](#11-입력-화면-설계)
 12. [인쇄, 테마, 달력](#12-인쇄-테마-달력)
@@ -33,7 +33,7 @@
 │  ┌────────────────── 렌더러 (React 19 + Vite) ──────────────┐  │
 │  │ components (보기만)  ←  hooks (화면 로직)                  │  │
 │  │                         ↓                                  │  │
-│  │ contexts (상태)  →  services (규칙·저장·엑셀·백업)          │  │
+│  │ contexts (상태)  →  services (규칙·저장·백업)          │  │
 │  │                         ↓                                  │  │
 │  │ Dexie → IndexedDB (이 PC 안에만 저장)                       │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -49,7 +49,7 @@
 3. **필요한 곳만 다시 그리기:** `use-context-selector`로 값이 바뀐 조각을 구독하는 컴포넌트만 렌더링합니다.
 4. **전부 아니면 전무:** 여러 키를 바꾸는 작업은 IndexedDB 트랜잭션(Dexie) 하나로 원자적으로 처리합니다.
 5. **회계 정합성:** 모든 수정·삭제는 이력(AuditLog)에 남고, 납부 당시 세대 정보(스냅샷)를 보존합니다.
-6. **보안:** `script-src 'self'` CSP, XSS·엑셀 수식 인젝션 방어. 단 가상 스크롤 좌표·인쇄 레이아웃을 위한 제한적 인라인 스타일(`style={{…}}`)은 허용합니다.
+6. **보안:** `script-src 'self'` CSP, XSS 방어. 단 가상 스크롤 좌표·인쇄 레이아웃을 위한 제한적 인라인 스타일(`style={{…}}`)은 허용합니다.
 7. **라이선스:** 상업적 이용이 자유로운 MIT 계열 패키지만 사용합니다.
 8. **연타·경합에 안전:** 사용자의 반복 입력과 비동기 읽기·쓰기 겹침에도 중복 실행·옛 값 덮어쓰기가 없어야 합니다(7장, 11장).
 
@@ -62,7 +62,6 @@
 | 상태 | use-context-selector | 전역 리렌더링 방지 |
 | 스타일 | Tailwind CSS 4 + Radix UI(Dialog·Switch·Tabs) | 접근성 있는 헤드리스 컴포넌트 |
 | 가상 스크롤 | @tanstack/react-virtual | 수천 행에서도 보이는 행만 그림 |
-| 엑셀 | exceljs | 브라우저에서 `.xlsx` 생성(수식 + 캐시 값) |
 | CSV | papaparse | 명단 가져오기 (CP949는 `TextDecoder('euc-kr')`) |
 | 날짜·유틸 | date-fns, lodash-es | 날짜 계산, 그룹화 |
 | 달력 | 자체 `DatePicker` | 브라우저 기본 달력은 일요일을 빨갛게 칠할 수 없음 |
@@ -86,8 +85,8 @@ src/
 │   ├── domain/         [순수 규칙] 금액·검색·세대·집계·월 캐시 …
 │   ├── storage/        db(Dexie 정의)·storageService(트랜잭션·월 키), tabSyncChannel(창 간 동기화)
 │   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
-│   ├── excel/          excelService, downloadBridge
-│   ├── import/         memberImportService (CSV·xlsx 명단)
+│   ├── excel/          downloadBridge
+│   ├── import/         memberImportService (CSV 명단)
 │   ├── demo/           demoData (시연 데이터)
 │   └── theme.ts, desktopBridge.ts
 └── components/
@@ -210,7 +209,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 8. 보고서
 
 ### 8.1 선택과 계산의 분리 (250ms 지연)
-`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·엑셀 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
+`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·PDF 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
 
 ### 8.2 종류별 표
 | 기간 | 표 | 집계 |
@@ -220,10 +219,10 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 월별 | 성도명 × 종류 | 같은 함수를 `personRange`(그 달 1일~말일)로 재사용 → 주별 합과 일치 |
 | 분기·연도 | 종류 × 월 + 세대별 집계 | `useSummaryReport` |
 
-* `ReportFilters.personKind('WEEK'|'MONTH'|null)`/`personRange`로 화면·엑셀이 같은 코드를 씁니다.
+* `ReportFilters.personKind('WEEK'|'MONTH'|null)`/`personRange`로 화면·PDF가 같은 코드를 씁니다.
 * 열 = 활성 종류 + 기간에 쓰인 비활성 종류(`sortOrder` 순) + 장부에만 있는 종류(`(삭제된 종류)`, 합계 일치 보장). 행 키는 `memberId`(동명이인 분리) 또는 `anon:표기명`(같은 무명 합산).
-* 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 엑셀이 같은 `useMemberOrderKey()`를 씁니다.
-* **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·엑셀이 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
+* 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 PDF가 같은 `useMemberOrderKey()`를 씁니다.
+* **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·PDF가 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
 * **세대 집계 기준**(현재/납부 당시)은 분기·연도 요약과 개인별·세대별 탭에만 쓰이며, 주별·월별 종합 보고서에서는 숨깁니다.
 * 탭은 `reportKey`(주별·일별은 `기간:시작일`, 그 외 `기간:연도:값`)가 바뀌면 [종합 보고서]로 돌아갑니다.
 
@@ -240,18 +239,10 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 `auditLogsForPeriod`가 변경 전·후 날짜 중 하나라도 기간에 속하면 포함합니다(연도를 옮긴 수정은 두 보고서 모두에 나옴). 이력은 새 연도의 장부에 기록되므로 모든 연도의 이력을 불러온 뒤 거릅니다.
 
 ### 8.5 동명이인 표기
-`duplicateNames`(비활성 포함)와 `nameDisambiguator`(연락처 뒷4자리 → 직분)가 구분 값을 만들고 `useNameTag`가 화면에 붙입니다. 엑셀에는 넣지 않습니다(이름 열을 집계 키로 쓰기 때문).
+`duplicateNames`(비활성 포함)와 `nameDisambiguator`(연락처 뒷4자리 → 직분)가 구분 값을 만들고 `useNameTag`가 화면에 붙입니다.
 
-## 9. 엑셀
+## 9. PDF 저장
 
-`services/excel/excelService.ts`
-
-* **파일:** 주별 `buildWeeklyWorkbook`(교차표 + 주간 상세), 일별 `kind:'DAY'`(`일별헌금보고서` + `일간상세내역`), 월별 `buildWeeklyWorkbook({kind:'MONTH'})`(교차표 1개), 분기·연도 `buildReportWorkbook`(`종합결산요약` + `세대별_기부금집계`). 연·분기·월에는 **개별 내역 시트가 없습니다.**
-* **수식 + 캐시 값:** 합계는 `SUM` 수식에 JavaScript로 계산한 `result`를 함께 넣어 한셀·구버전 뷰어에서도 0으로 보이지 않게 합니다. 본문 금액은 값입니다(행 키가 `memberId`라 같은 이름의 동명이인을 이름 기준 `SUMIFS`로 합치면 오집계되기 때문).
-* **한 번만 훑기:** 종류×월·세대×종류 합계를 한 번에 Map으로 모은 뒤 값으로 기록합니다. 셀마다 전체를 훑던 방식은 18만 건에서 65초였고 지금은 0.4초입니다.
-* **수식 인젝션 방어:** 텍스트가 `= + - @ \t \r`로 시작하면 앞에 `'`를 붙입니다(`sanitizeCellText`).
-* **열 너비:** `fitNameColumn`이 이름 데이터만으로 폭을 정합니다(한글 2칸, 여유 6칸, 최소 18·최대 60).
-* **파일명 보호:** OS 금지 문자 `\ / : * ? " < > |`를 `_`로 바꾼 뒤 UTF-8 Blob으로 내려받습니다(`downloadBridge`).
 * [PDF 저장]은 데스크톱 앱에서 `report:save-pdf`(main의 `printToPDF`, `@page` 크기 사용)로 저장 창을 거쳐 저장하고, 웹은 `window.print()`로 대신합니다. 인쇄 전용 렌더링(`useIsPrinting`)을 위해 호출 전후에 `beforeprint`/`afterprint`를 직접 보냅니다.
 * 데스크톱 앱에서는 저장 완료(`download:done`) 시 `showInFolder`로 저장 폴더를 자동으로 열고 [파일 열기]/[폴더 열기]도 보여 줍니다. `recipientEmail` 설정 필드는 저장 데이터 호환을 위해 남겨 두고 화면에서는 쓰지 않습니다.
 
@@ -324,7 +315,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
 * **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(임시 파일에 쓴 뒤 이름을 바꿔 전원이 꺼져도 잘린 백업 파일이 남지 않음)**끝날 때까지 기다린 뒤 종료**합니다(상한 5분). 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄우고, 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다). 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
 * **보안 설정:** 자동 백업 폴더는 화면이 보낸 경로가 아니라 사용자가 [폴더 선택]으로 고른 폴더(main이 `backup-dir.json`에 기억)와 기본 폴더만 씁니다(`pickBackupDir`; 그 밖의 경로는 기본 폴더로 바뀜). 카메라·위치 같은 모든 권한 요청은 거부합니다. 빌드 때 Electron 퓨즈로 `runAsNode`, `NODE_OPTIONS`, `--inspect` 인자를 끄고 asar 무결성 검증과 asar에서만 불러오기를 켭니다(`electronFuses`).
-* **파일 열기:** `will-download`가 완료된 `.xlsx`의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
+* **파일 열기:** 저장 창에서 정한 PDF의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
 
 ## 14. 저장소 버전
 
@@ -354,7 +345,6 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·월 캐시·월별 행렬 = 주별 합 |
 | 저장소 | `storage/monthly.test.ts`, `donationsTable.test.ts`, `storageErrors.test.ts` | 행 단위 쓰기·롤백, 색인 중복 검사, 연도 백업·복원 왕복, 저장소 오류 안내 |
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
-| 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(건수 예산·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
 | 백업 | `backup/autoBackupService.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접·긴급 백업 세션, 백업 파일 검증(변조·잘림), 백업 폴더 허용 |
@@ -362,7 +352,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 **Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다.
 
-**자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, 설치본(NSIS) 설치·제거 흐름. 이 부분은 직접 확인해야 합니다.
+**자동으로 확인하지 못하는 것:** 실제 프린터 출력, 설치본(NSIS) 설치·제거 흐름. 이 부분은 직접 확인해야 합니다.
 
 ## 17. 알려진 한계
 

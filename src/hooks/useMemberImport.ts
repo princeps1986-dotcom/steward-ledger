@@ -1,4 +1,3 @@
-import { FEATURES } from '../config/features';
 import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import { downloadText } from '../services/excel/downloadBridge';
@@ -39,7 +38,6 @@ export function useMemberImport(onDone: () => void) {
       setOverwrite(new Set());
       setFileName(file.name);
       try {
-        if (!FEATURES.excelImport && /\.xlsx$/i.test(file.name)) throw new Error('CSV(.csv) 파일만 가져올 수 있습니다.');
         const raw = await readImportFile(file);
         if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
         setPreview(buildPreview(normalizeRows(raw), members));

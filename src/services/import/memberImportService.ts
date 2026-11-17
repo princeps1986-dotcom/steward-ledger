@@ -56,22 +56,6 @@ export function decodeCsvBytes(bytes: Uint8Array): string {
   }
 }
 
-function cellToString(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  if (v instanceof Date) {
-    // exceljs는 날짜를 UTC 자정 기준 Date로 돌려줍니다.
-    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`;
-  }
-  if (typeof v === 'object') {
-    const o = v as { richText?: { text: string }[]; result?: unknown; text?: string };
-    if (o.richText) return o.richText.map((t) => t.text).join('');
-    if ('result' in o) return cellToString(o.result);
-    if (o.text) return String(o.text);
-    return '';
-  }
-  return String(v);
-}
-
 /** 파일에서 헤더 기준 행 목록을 읽습니다. 값은 모두 문자열이며 수식은 평가하지 않습니다. */
 export async function readImportFile(file: File): Promise<Record<string, string>[]> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -85,25 +69,7 @@ export async function readImportFile(file: File): Promise<Record<string, string>
     });
     return parsed.data;
   }
-  if (lower.endsWith('.xlsx')) {
-    const wb = new (await import('exceljs')).default.Workbook();
-    await wb.xlsx.load(bytes.buffer as ArrayBuffer);
-    const ws = wb.worksheets[0];
-    if (!ws) return [];
-    const headers: string[] = [];
-    ws.getRow(1).eachCell({ includeEmpty: true }, (c, col) => (headers[col] = cellToString(c.value).trim()));
-    const out: Record<string, string>[] = [];
-    ws.eachRow({ includeEmpty: false }, (row, rowNo) => {
-      if (rowNo === 1) return;
-      const rec: Record<string, string> = {};
-      headers.forEach((h, col) => {
-        if (h) rec[h] = cellToString(row.getCell(col).value).trim();
-      });
-      if (Object.values(rec).some((v) => v !== '')) out.push(rec);
-    });
-    return out;
-  }
-  throw new Error('CSV(.csv) 또는 엑셀(.xlsx) 파일만 가져올 수 있습니다.');
+  throw new Error('CSV(.csv) 파일만 가져올 수 있습니다.');
 }
 
 const pick = (rec: Record<string, string>, aliases: string[]): string => {

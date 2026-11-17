@@ -1,4 +1,3 @@
-import { FEATURES } from '../../../config/features';
 import { useMemberImport } from '../../../hooks/useMemberImport';
 import { Modal } from '../../shared/Modal';
 import { normalizePosition } from '../../../services/domain/positions';
@@ -16,8 +15,8 @@ function ImportBody({ onClose }: { onClose(): void }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <label className="btn cursor-pointer">
-          파일 선택 ({FEATURES.excelImport ? '.csv / .xlsx' : '.csv'})
-          <input type="file" accept={FEATURES.excelImport ? '.csv,.xlsx' : '.csv'} className="hidden" onChange={(e) => void im.onFile(e)} />
+          파일 선택 (.csv)
+          <input type="file" accept=".csv" className="hidden" onChange={(e) => void im.onFile(e)} />
         </label>
         <button className="btn" onClick={im.downloadTemplate}>
           양식 다운로드

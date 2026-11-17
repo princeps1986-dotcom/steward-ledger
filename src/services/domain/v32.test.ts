@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { OfferingType } from '../../contexts/types';
-import { fitNameColumn } from '../excel/excelService';
-import ExcelJS from 'exceljs';
 import { DEFAULT_OFFERING_TYPES } from './offeringDefaults';
 
 describe('defaults v2.14', () => {
@@ -10,18 +8,6 @@ describe('defaults v2.14', () => {
     const special = DEFAULT_OFFERING_TYPES.find((d) => d.name === '특별헌금')!;
     expect(relief).toMatchObject({ displayArea: 'PRIMARY', quickAmounts: [1000, 5000, 10000, 30000, 50000, 100000], isActive: true });
     expect(special).toMatchObject({ displayArea: 'DROPDOWN', quickAmounts: [], isActive: true });
-  });
-});
-
-describe('fitNameColumn', () => {
-  it('leaves room for the longest name (Hangul counts as 2) and ignores long titles in the same column', () => {
-    const ws = new ExcelJS.Workbook().addWorksheet('s');
-    fitNameColumn(ws, 1, ['성도명', '남궁민수', 'Sarah Lee']);
-    expect(ws.getColumn(1).width).toBe(18); // 최소 폭
-    fitNameColumn(ws, 1, ['성도명', '아주아주긴이름의성도입니다']); // 13자×2 + 6
-    expect(ws.getColumn(1).width).toBe(32);
-    fitNameColumn(ws, 2, ['가'.repeat(60)]);
-    expect(ws.getColumn(2).width).toBe(60); // 상한
   });
 });
 
