@@ -3,8 +3,10 @@ import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { BackupReminderBanner } from './components/shared/BackupReminderBanner';
 import { DemoBanner } from './components/shared/DemoBanner';
+import { DemoPreparing } from './components/shared/DemoPreparing';
 import { GlobalErrorBanner } from './components/shared/GlobalErrorBanner';
 import { DonationInputPage } from './components/pages/donation-input/DonationInputPage';
+import { useAutoDemo } from './hooks/useAutoDemo';
 import { refreshDemoState } from './services/demo/demoState';
 import { PAGES, useAppNav, useAutoBackupBridge, useBackupReminder } from './hooks/useAppShell';
 
@@ -22,6 +24,7 @@ const SettingsPage = lazy(loadSettings);
 
 export function App() {
   const nav = useAppNav();
+  const preparing = useAutoDemo();
   // 메뉴 이동은 transition으로 처리해, 아직 불러오지 못한 화면이 있어도 '불러오는 중' 문구로 바꾸지 않고 이전 화면을 유지하다가 바로 전환합니다.
   const goPage: typeof nav.setPage = (k) => startTransition(() => nav.setPage(k));
   useEffect(() => {
@@ -37,6 +40,7 @@ export function App() {
     <div className="flex h-full flex-col">
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
       <DemoBanner />
+      {preparing ? <DemoPreparing done={preparing.done} total={preparing.total} /> : null}
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">
         <h1 className="py-3 text-base font-bold">청지기 장부</h1>
         <nav className="flex gap-1" aria-label="주 메뉴">

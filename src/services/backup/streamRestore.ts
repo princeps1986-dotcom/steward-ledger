@@ -151,6 +151,8 @@ export async function scanBackupFile(file: ReadableBackup): Promise<ScanResult> 
 export interface RestoreMarker {
   startedAt: string;
   years: string[];
+  /** 시연 데이터 생성이 끝나지 않았을 때 'demo'(없으면 복원) */
+  kind?: 'demo';
 }
 
 /** 이전 복원이 끝나지 않고 중단됐다면 그 정보, 아니면 null */

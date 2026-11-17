@@ -3,15 +3,28 @@ import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
 import { lastSunday } from '../domain/dates';
 
 /**
- * 시연용 데이터: 성도 500명 · 헌금 8만 건(오늘 이전 3년을 주 단위로 분배) · 수정/삭제 이력 6건.
- * 매년 12/25·1/1 그 날짜 하루에는 평소 한 주 분량의 5배가 몰립니다. 같은 날이면 항상 같은 내용입니다(고정 시드).
- * 시연 성도·헌금 종류·헌금 id는 모두 DEMO_PREFIX로 시작해, 앱이 시연 중인지 한 건만 보고 알 수 있습니다(demoState.ts).
+ * 시연용 데이터. 시연 성도·헌금 종류·헌금 id는 모두 DEMO_PREFIX로 시작해, 앱이 시연 중인지 한 건만 보고 알 수 있습니다(demoState.ts).
+ * 같은 날이면 항상 같은 내용입니다(고정 시드). 헌금은 한 달씩 만들어 넘겨 주므로(demoMonths) 큰 규모에서도 메모리는 한 달치입니다.
+ *
+ * PC: 성도 800명 · 헌금 40만 건(오늘 이전 3년, 156주). 일반 주는 1,500~4,000건 안에서 편차를 두고, 매년 12/25·1/1은 그 하루에 10,000건이 더해집니다.
+ * 모바일: 같은 규칙의 최근 1년(52주). 휴대폰은 저장 공간·메모리·시간이 부족하기 때문입니다.
  */
 export const DEMO_PREFIX = 'demo-';
-export const DEMO_MEMBER_COUNT = 500;
-export const DEMO_DONATION_COUNT = 80_000;
-const WEEKS = 156;
-const SPIKE_UNITS = 5;
+
+export interface DemoSpec {
+  members: number;
+  weeks: number;
+  /** 정해 두면 헌금 총 건수가 정확히 이 값(12/25·1/1 건수를 뺀 나머지를 주에 분배). 없으면 주 평균(weekMean)으로 정함 */
+  total?: number;
+  weekMean: number;
+  weekMin: number;
+  weekMax: number;
+  /** 12/25·1/1 날짜 하루에 더해지는 건수 */
+  spikeCount: number;
+}
+
+export const DEMO_SPEC_PC: DemoSpec = { members: 800, weeks: 156, total: 400_000, weekMean: 2180, weekMin: 1500, weekMax: 4000, spikeCount: 10_000 };
+export const DEMO_SPEC_MOBILE: DemoSpec = { ...DEMO_SPEC_PC, weeks: 52, total: undefined };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 const ymd = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -58,7 +71,31 @@ export function allocate(total: number, weights: readonly number[]): number[] {
   return out;
 }
 
-function buildMembers(rnd: () => number): Member[] {
+/** allocate에 항목별 상한(cap)을 둡니다: 넘는 몫은 상한에 묶고 나머지 항목에 다시 나눕니다. */
+export function allocateCapped(total: number, weights: readonly number[], cap: number): number[] {
+  const out = weights.map(() => 0);
+  let free = weights.map((_, i) => i);
+  let left = total;
+  while (left > 0 && free.length) {
+    const part = allocate(left, free.map((i) => weights[i]));
+    const next: number[] = [];
+    left = 0;
+    free.forEach((i, k) => {
+      const room = cap - out[i];
+      if (part[k] > room) {
+        out[i] = cap;
+        left += part[k] - room;
+      } else {
+        out[i] += part[k];
+        next.push(i);
+      }
+    });
+    free = next;
+  }
+  return out;
+}
+
+function buildMembers(rnd: () => number, count: number): Member[] {
   const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)];
   const members: Member[] = [];
   const stamp = new Date(Date.UTC(2024, 0, 1)).toISOString();
@@ -76,8 +113,8 @@ function buildMembers(rnd: () => number): Member[] {
     return m;
   };
   const phone = (): string => String(Math.floor(rnd() * 10000)).padStart(4, '0');
-  while (members.length < DEMO_MEMBER_COUNT) {
-    const size = Math.min(DEMO_MEMBER_COUNT - members.length, pick([1, 2, 2, 3, 3, 4, 5]));
+  while (members.length < count) {
+    const size = Math.min(count - members.length, pick([1, 2, 2, 3, 3, 4, 5]));
     const surname = pick(SURNAMES);
     const head = add({ name: surname + pick(GIVEN), position: pick(['집사', '집사', '권사', '장로', '']), phoneLast4: phone(), isFamilyHead: true });
     head.familyGroupId = head.id;
@@ -90,68 +127,111 @@ function buildMembers(rnd: () => number): Member[] {
   return members;
 }
 
-export function buildDemoPayload(today: Date = new Date(), seed = 20261116): BackupPayload {
+export interface DemoPlan {
+  members: Member[];
+  offeringTypes: BackupPayload['offeringTypes'];
+  /** 헌금이 있는 달('YYYY-MM', 오래된 순) */
+  months: string[];
+  /** 헌금 총 건수 */
+  total: number;
+  /** 한 달씩 만들어 넘깁니다(오래된 달부터). 메모리는 한 달치 */
+  generate(): Generator<{ ym: string; donations: Donation[] }>;
+}
+
+/** 날짜별 건수를 정하고(가벼움) 달별로 헌금을 만드는 계획을 세웁니다. */
+export function planDemo(spec: DemoSpec = DEMO_SPEC_PC, today: Date = new Date(), seed = 20261116): DemoPlan {
   const rnd = rngOf(seed);
-  const members = buildMembers(rnd);
+  const members = buildMembers(rnd, spec.members);
   const activeMembers = members.filter((m) => m.isActive);
   const offeringTypes = DEFAULT_OFFERING_TYPES.map((t, i) => ({ ...t, id: `${DEMO_PREFIX}t-${i + 1}` }));
   const typeWeights = TYPE_MIX.map((t) => t.weight);
-  const typeTotal = typeWeights.reduce((s, w) => s + w, 0);
 
-  // 구간(버킷): 주마다 1단위(일요일 70%·나머지 요일 30%), 12/25·1/1 날짜는 하루에 5단위
+  // 날짜별 건수: 주마다(일~토) 1,500~4,000건을 일요일 70%·나머지 요일 30%로, 12/25·1/1 날짜는 하루에 spikeCount 추가
   const todayStr = ymd(today);
   const lastSun = parse(lastSunday(today));
-  const firstSun = addDays(lastSun, -7 * (WEEKS - 1));
-  const buckets: { dates: string[]; dayWeights: number[]; weight: number }[] = [];
-  for (let i = 0; i < WEEKS; i++) {
-    const sun = addDays(lastSun, -7 * i);
-    const days = [0, 1, 2, 3, 4, 5, 6].map((k) => ymd(addDays(sun, k))).filter((d) => d <= todayStr);
-    buckets.push({ dates: days, dayWeights: days.map((_, k) => (k === 0 ? 70 : 30 / Math.max(1, days.length - 1))), weight: 1 });
-  }
+  const firstSun = addDays(lastSun, -7 * (spec.weeks - 1));
+  const spikes = new Set<string>();
   for (let y = firstSun.getFullYear(); y <= today.getFullYear(); y++) {
     for (const md of ['01-01', '12-25']) {
       const d = `${y}-${md}`;
-      if (d >= ymd(firstSun) && d <= todayStr) buckets.push({ dates: [d], dayWeights: [1], weight: SPIKE_UNITS });
+      if (d >= ymd(firstSun) && d <= todayStr) spikes.add(d);
     }
   }
-  const perBucket = allocate(DEMO_DONATION_COUNT, buckets.map((b) => b.weight));
+  const total = spec.total ?? Math.round(spec.weeks * spec.weekMean) + spikes.size * spec.spikeCount;
+  const weekSum = total - spikes.size * spec.spikeCount;
+  // 주 편차: 한쪽으로 치우친 난수 비중(많은 주는 드물게), 최소 weekMin 보장 + 나머지를 상한까지만 나눔
+  const extra = allocateCapped(weekSum - spec.weeks * spec.weekMin, Array.from({ length: spec.weeks }, () => 0.05 + rnd() ** 3), spec.weekMax - spec.weekMin);
+  const perDate = new Map<string, number>();
+  for (let i = 0; i < spec.weeks; i++) {
+    const sun = addDays(lastSun, -7 * i);
+    const days = [0, 1, 2, 3, 4, 5, 6].map((k) => ymd(addDays(sun, k))).filter((d) => d <= todayStr);
+    const counts = allocate(spec.weekMin + extra[i], days.map((_, k) => (k === 0 ? 70 : 30 / Math.max(1, days.length - 1))));
+    days.forEach((d, k) => perDate.set(d, (perDate.get(d) ?? 0) + counts[k]));
+  }
+  for (const d of spikes) perDate.set(d, (perDate.get(d) ?? 0) + spec.spikeCount);
 
-  const donations: Donation[] = [];
-  const anonSeq = new Map<string, number>();
-  let seq = 0;
-  buckets.forEach((b, bi) => {
-    const perDay = allocate(perBucket[bi], b.dayWeights);
-    b.dates.forEach((date, di) => {
-      for (let n = 0; n < perDay[di]; n++) {
-        let r = rnd() * typeTotal;
-        let ti = 0;
-        while (ti < typeWeights.length - 1 && (r -= typeWeights[ti]) > 0) ti++;
-        const amount = TYPE_MIX[ti].amounts[Math.floor(rnd() * TYPE_MIX[ti].amounts.length)];
-        const anon = rnd() < 0.15;
-        const m = anon ? null : activeMembers[Math.floor(rnd() * activeMembers.length)];
-        const a = (anonSeq.get(date) ?? 0) + (anon ? 1 : 0);
-        if (anon) anonSeq.set(date, a);
-        const sec = n * 7;
-        donations.push({
-          id: `${DEMO_PREFIX}d-${(++seq).toString(36).padStart(6, '0')}`,
-          date,
-          memberId: m ? m.id : null,
-          donorDisplayName: m ? m.name : `무명${a}`,
-          familyGroupIdSnapshot: m ? m.familyGroupId ?? null : null,
-          offeringTypeId: offeringTypes[ti].id,
-          amount,
-          createdAt: `${date}T${pad2(9 + Math.floor(sec / 3600) % 12)}:${pad2(Math.floor(sec / 60) % 60)}:${pad2(sec % 60)}.${String(n % 1000).padStart(3, '0')}Z`,
+  const byMonth = new Map<string, string[]>();
+  for (const d of [...perDate.keys()].sort()) (byMonth.get(d.slice(0, 7)) ?? byMonth.set(d.slice(0, 7), []).get(d.slice(0, 7))!).push(d);
+  const months = [...byMonth.keys()];
+
+  function* generate(): Generator<{ ym: string; donations: Donation[] }> {
+    const gen = rngOf(seed + 1);
+    const order = activeMembers.map((_, i) => i);
+    let seq = 0;
+    for (const ym of months) {
+      const donations: Donation[] = [];
+      for (const date of byMonth.get(ym)!) {
+        const n = perDate.get(date)!;
+        // 같은 날·같은 성도·같은 종류는 한 건이라는 앱 규칙에 맞게, 성도 헌금은 종류마다 서로 다른 성도에서 뽑고 나머지는 무명/방문자로 채웁니다.
+        const memberRows = Math.min(Math.round(n * 0.85), Math.floor(activeMembers.length * typeWeights.length * 0.5));
+        const perType = allocate(memberRows, typeWeights).map((c) => Math.min(c, activeMembers.length));
+        let i = 0;
+        const stamp = (k: number): string => `${date}T${pad2(9 + Math.floor(k / 3600) % 12)}:${pad2(Math.floor(k / 60) % 60)}:${pad2(k % 60)}.${String((k * 7) % 1000).padStart(3, '0')}Z`;
+        perType.forEach((c, ti) => {
+          for (let k = 0; k < c; k++) {
+            const j = k + Math.floor(gen() * (order.length - k)); // 부분 섞기로 서로 다른 성도 c명
+            [order[k], order[j]] = [order[j], order[k]];
+            const m = activeMembers[order[k]];
+            donations.push({
+              id: `${DEMO_PREFIX}d-${(++seq).toString(36).padStart(6, '0')}`,
+              date,
+              memberId: m.id,
+              donorDisplayName: m.name,
+              familyGroupIdSnapshot: m.familyGroupId ?? null,
+              offeringTypeId: offeringTypes[ti].id,
+              amount: TYPE_MIX[ti].amounts[Math.floor(gen() * TYPE_MIX[ti].amounts.length)],
+              createdAt: stamp(i++),
+            });
+          }
         });
+        for (let a = 1; i < n; a++) {
+          let r = gen() * typeWeights.reduce((s, w) => s + w, 0);
+          let ti = 0;
+          while (ti < typeWeights.length - 1 && (r -= typeWeights[ti]) > 0) ti++;
+          donations.push({
+            id: `${DEMO_PREFIX}d-${(++seq).toString(36).padStart(6, '0')}`,
+            date,
+            memberId: null,
+            donorDisplayName: `무명${a}`,
+            familyGroupIdSnapshot: null,
+            offeringTypeId: offeringTypes[ti].id,
+            amount: TYPE_MIX[ti].amounts[Math.floor(gen() * TYPE_MIX[ti].amounts.length)],
+            createdAt: stamp(i++),
+          });
+        }
       }
-    });
-  });
+      yield { ym, donations };
+    }
+  }
 
-  const donationsByYear: Record<string, Donation[]> = {};
-  for (const d of donations) (donationsByYear[d.date.slice(0, 4)] ??= []).push(d);
+  return { members, offeringTypes, months, total, generate };
+}
 
-  // 수정/삭제 이력 6건(가장 최근 연도의 내역에서 고름)
-  const recent = donationsByYear[todayStr.slice(0, 4)] ?? donations;
-  const auditLogsByYear: Record<string, AuditLog[]> = {};
+/** 수정/삭제 이력 6건(주어진 최근 내역에서 고름) */
+export function buildDemoAudits(recent: readonly Donation[], seed = 20261116): Record<string, AuditLog[]> {
+  const rnd = rngOf(seed + 2);
+  const out: Record<string, AuditLog[]> = {};
+  if (recent.length === 0) return out;
   for (let i = 0; i < 6; i++) {
     const d = recent[Math.floor(rnd() * recent.length)];
     const update = i % 2 === 0;
@@ -164,7 +244,19 @@ export function buildDemoPayload(today: Date = new Date(), seed = 20261116): Bac
       reason: update ? '금액 정정' : '중복 입력 삭제',
       timestamp: `${d.date}T18:00:0${i}.000Z`,
     };
-    (auditLogsByYear[d.date.slice(0, 4)] ??= []).push(log);
+    (out[d.date.slice(0, 4)] ??= []).push(log);
   }
-  return { members, offeringTypes, donationsByYear, auditLogsByYear };
+  return out;
+}
+
+/** 전체를 한 번에 만든 백업 형태(작은 규모의 시험용). 큰 규모는 planDemo로 한 달씩 처리하세요. */
+export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_PC, today: Date = new Date()): BackupPayload {
+  const plan = planDemo(spec, today);
+  const donationsByYear: Record<string, Donation[]> = {};
+  let last: Donation[] = [];
+  for (const { donations } of plan.generate()) {
+    for (const d of donations) (donationsByYear[d.date.slice(0, 4)] ??= []).push(d);
+    last = donations;
+  }
+  return { members: plan.members, offeringTypes: plan.offeringTypes, donationsByYear, auditLogsByYear: buildDemoAudits(last) };
 }

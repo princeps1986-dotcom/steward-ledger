@@ -138,13 +138,17 @@ export function SettingsPage() {
               취소
             </button>
             <button className="btn-danger" onClick={() => void s.confirmDemo()} disabled={s.busy}>
-              시연 데이터 생성
+              {s.demoProgress ? `만드는 중… ${s.demoProgress.done}/${s.demoProgress.total}` : '시연 데이터 생성'}
             </button>
           </>
         }
       >
         <div className="space-y-2 text-sm">
-          <p>가상의 성도 500명과 헌금 8만 건(최근 3년을 주 단위로 분배, 매년 12/25·1/1은 평소 한 주의 5배), 수정·삭제 이력 6건이 들어갑니다. 만드는 데 몇 초 걸립니다.</p>
+          {s.demoMobile ? (
+            <p>가상의 성도 800명과 헌금 약 13만 건(최근 1년, 주 1,500~4,000건, 12/25·1/1은 하루 1만 건), 수정·삭제 이력 6건이 들어갑니다. 휴대폰에서는 1분 안팎 걸릴 수 있습니다.</p>
+          ) : (
+            <p>가상의 성도 800명과 헌금 40만 건(최근 3년, 주 1,500~4,000건, 매년 12/25·1/1은 하루 1만 건), 수정·삭제 이력 6건이 들어갑니다. 만드는 데 수십 초 걸립니다.</p>
+          )}
           <p className="text-red-700">지금 데이터가 있으면 먼저 백업 폴더의 before-demo 폴더에 existing-data-backup_날짜_시간 파일로 저장하고, 시연 데이터를 제거할 때 그 파일로 자동 복구합니다(브라우저에서는 파일을 내려받으며 자동 복구는 되지 않습니다).</p>
         </div>
       </Modal>

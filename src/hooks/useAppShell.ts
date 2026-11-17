@@ -91,7 +91,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   useEffect(() => {
     if (!loaded) return;
     void interruptedRestore()
-      .then((m) => m && setFailure(`지난 복원(${m.years.join(', ')}년)이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 데이터가 일부만 복원되었을 수 있습니다. 설정에서 같은 백업으로 다시 복원하거나, 백업 폴더의 emergency_before_restore 파일로 되돌리세요.`))
+      .then((m) => m && setFailure(m.kind === 'demo' ? `시연 데이터 생성이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 설정에서 [시연 데이터 제거]를 누르면 원래 데이터를 되살릴 수 있습니다.` : `지난 복원(${m.years.join(', ')}년)이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 데이터가 일부만 복원되었을 수 있습니다. 설정에서 같은 백업으로 다시 복원하거나, 백업 폴더의 emergency_before_restore 파일로 되돌리세요.`))
       .catch(() => undefined);
   }, [loaded]);
 
