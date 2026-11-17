@@ -138,8 +138,8 @@ export function SettingsPage() {
           <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy || s.demoActive}>
             시연 데이터 생성
           </button>
-          {s.demoActive ? (
-            <button className="btn-danger whitespace-nowrap" onClick={s.openRemoveDemo} disabled={s.busy}>
+          {s.demoActive || s.demoCreating ? (
+            <button className="btn-danger whitespace-nowrap" onClick={s.openRemoveDemo} disabled={s.busy || s.demoCreating}>
               시연 데이터 제거
             </button>
           ) : null}
@@ -147,6 +147,7 @@ export function SettingsPage() {
             전체 초기화
           </button>
         </div>
+        {s.demoCreating ? <p className="text-sm font-semibold text-red-700">시연 데이터를 만드는 중에는 제거할 수 없습니다. 끝나면 사용할 수 있습니다.</p> : null}
         {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다.<br/>먼저 [시연 데이터 제거]를 누르세요.</p> : null}
       </section>
 

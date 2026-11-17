@@ -217,7 +217,7 @@ export function useSettingsPage() {
   }, [demoActive, memberActions, offeringActions, donationActions]);
 
   const confirmRemoveDemo = useCallback(async () => {
-    if (!demoActive) return; // 시연 데이터가 없으면 작동하지 않습니다.
+    if (!demoActive || demoCreating) return; // 시연 데이터가 없거나 만드는 중이면 작동하지 않습니다.
     setBusy(true);
     try {
       const r = await removeDemoData();
@@ -236,7 +236,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [demoActive, memberActions, offeringActions, donationActions]);
+  }, [demoActive, demoCreating, memberActions, offeringActions, donationActions]);
 
   const confirmReset = useCallback(async () => {
     if (resetLeft > 0 || demoActive) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
@@ -332,7 +332,8 @@ export function useSettingsPage() {
     demoProgress,
     demoBrowser: !desktop(),
     removeDemoOpen,
-    openRemoveDemo: () => setRemoveDemoOpen(true),
+    demoCreating,
+    openRemoveDemo: () => !demoCreating && setRemoveDemoOpen(true),
     cancelRemoveDemo: () => setRemoveDemoOpen(false),
     confirmRemoveDemo,
     openReset: () => {

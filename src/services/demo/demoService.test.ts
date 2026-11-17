@@ -196,14 +196,19 @@ describe('newest-first creation', () => {
     expect(await getItem(KEYS.restoreMarker)).toBeNull();
   }, 60000);
 
-  it('removing while the older months are still being made stops the creation and leaves nothing', async () => {
+  it('refuses to remove while the demo data is still being made, and works after it finished', async () => {
     fakeDesktop();
-    let removal: Promise<unknown> | null = null;
-    const created = createDemoData({ spec: SMALL, today: NOW, onReady: () => { removal = removeDemoData(); } });
+    let refused = '';
+    const created = createDemoData({ spec: SMALL, today: NOW, onReady: () => void removeDemoData().catch((e: Error) => (refused = e.message)) });
     await created;
-    await removal;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(refused).toContain('만드는 중에는 제거할 수 없습니다');
+    expect(await hasDemoData()).toBe(true);
+    let n = 0;
+    for (const ym of await listDonationMonths()) n += (await readMonth(ym)).length;
+    expect(n).toBe(SMALL.total);
+    await removeDemoData();
     expect(await hasDemoData()).toBe(false);
-    expect(await listDonationMonths()).toEqual([]);
   }, 60000);
 });
 

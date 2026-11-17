@@ -11,8 +11,8 @@ export const demoSpecForDevice = (): DemoSpec => (desktop() ? DEMO_SPEC_APP : DE
 
 /** 최근 이 달 수만큼 저장하면 바로 쓸 수 있다고 알립니다(나머지 과거 달은 이어서 만듭니다). */
 const READY_MONTHS = 3;
-/** 만드는 중인 작업(제거가 먼저 중단시키고 끝나기를 기다립니다) */
-let running: { abort: AbortController; done: Promise<unknown> } | null = null;
+/** 시연 데이터를 만드는 중인지(만드는 동안에는 제거할 수 없습니다) */
+let running = false;
 
 /**
  * 시연 데이터 생성: 원래 데이터를 먼저 백업하고(실패하면 중단), 모든 데이터를 시연 데이터로 바꿉니다.
@@ -20,23 +20,21 @@ let running: { abort: AbortController; done: Promise<unknown> } | null = null;
  * 끝나면 지우므로, 중간에 꺼지면 다음 실행 때 알려 주며 [시연 데이터 제거]로 원래 데이터를 복구할 수 있습니다.
  * onProgress(끝낸 달 수, 전체 달 수)로 진행률을 알립니다.
  * 달은 최근 것부터 만들며, 처음 READY_MONTHS개를 저장하면 onReady를 불러 화면을 쓸 수 있게 하고 나머지 과거 달은 이어서 만듭니다.
- * [시연 데이터 제거]는 만드는 작업을 중단시킨 뒤 지웁니다.
+ * 만드는 동안에는 [시연 데이터 제거]를 쓸 수 없습니다(removeDemoData가 오류).
  */
 export async function createDemoData(opts: { spec?: DemoSpec; today?: Date; onProgress?: (done: number, total: number) => void; onReady?: () => void } = {}): Promise<DemoRestoreInfo> {
   if (running) throw new Error('시연 데이터를 만드는 중입니다.');
-  const abort = new AbortController();
+  running = true;
   setDemoCreating({ done: 0, total: 0 }); // 누르는 즉시 최상단 안내가 뜨도록(원래 데이터 백업 단계 포함)
-  const job = createDemoDataNow(opts, abort.signal);
-  running = { abort, done: job.catch(() => undefined) };
   try {
-    return await job;
+    return await createDemoDataNow(opts);
   } finally {
-    running = null;
+    running = false;
     setDemoCreating(null);
   }
 }
 
-async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgress?: (done: number, total: number) => void; onReady?: () => void }, signal: AbortSignal): Promise<DemoRestoreInfo> {
+async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgress?: (done: number, total: number) => void; onReady?: () => void }): Promise<DemoRestoreInfo> {
   if (await hasDemoData()) throw new Error('이미 시연 데이터가 있습니다. 먼저 시연 데이터를 제거하세요.');
   const info: DemoRestoreInfo = { ...(await backupBeforeDemo()), createdAt: new Date().toISOString() };
   const plan = planDemo(opts.spec ?? demoSpecForDevice(), opts.today);
@@ -57,7 +55,6 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
   setDemoCreating({ done: 0, total });
   opts.onProgress?.(0, total);
   for (const { ym, donations } of plan.generate()) {
-    if (signal.aborted) return info; // 제거가 이어받아 지웁니다(진행 표시는 남겨 둠).
     await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }));
     done++;
     opts.onProgress?.(done, total);
@@ -69,7 +66,6 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
     setDemoCreating({ done, total });
     await new Promise((r) => setTimeout(r)); // 화면이 끊기지 않게 달 사이에 양보
   }
-  if (signal.aborted) return info;
   await transact(async () => ({ writes: [{ key: KEYS.restoreMarker, value: null }], result: undefined }));
   await refreshDemoState();
   return info;
@@ -88,10 +84,7 @@ export interface RemoveDemoResult {
  * 원래 데이터가 없었다면 빈 상태(기본 헌금 종류)로 되돌립니다. 브라우저는 자동 복구가 안 되므로 시연만 지우고 안내합니다.
  */
 export async function removeDemoData(): Promise<RemoveDemoResult> {
-  if (running) {
-    running.abort.abort();
-    await running.done;
-  }
+  if (running) throw new Error('시연 데이터를 만드는 중에는 제거할 수 없습니다. 만들기가 끝난 뒤 다시 시도하세요.');
   if (!(await hasDemoData())) throw new Error('제거할 시연 데이터가 없습니다.');
   const info = await readDemoRestore();
   const clear = [{ key: KEYS.demoRestore, value: null }];
