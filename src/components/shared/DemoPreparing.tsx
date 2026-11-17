@@ -1,4 +1,4 @@
-/** 모바일에서 처음 열 때 시연 데이터를 준비하는 동안 화면을 덮는 안내(진행률 표시) */
+/** 브라우저로 처음 열 때 시연 데이터를 준비하는 동안 화면을 덮는 안내(진행률 표시) */
 export function DemoPreparing({ done, total }: { done: number; total: number }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (

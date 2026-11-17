@@ -294,7 +294,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **금액:** `parseAmount`(쉼표 제거 후 안전 정수·양수), `addQuickAmount`(15자리 초과 시 무시), `amountToKorean`(표시 전용).
 * **단축키:** 전역 keydown에서 처리하되 열린 대화상자(`[role=dialog][data-state=open]`)가 있으면 무시합니다. 한글 조합 중 Enter(`isComposing`)는 무시하고, 금액 단추는 `tabIndex={-1}` + `onMouseDown preventDefault`로 포커스를 유지합니다. 진입 시에는 어느 칸에도 포커스를 두지 않습니다.
 * **처음 사용 안내:** `isFirstRun = members.length === 0`이면 `FirstRunGuide`가 맨 위에 렌더되며, `App`이 넘기는 `onNavigate`(`useAppNav.setPage`)로 해당 메뉴로 이동합니다.
-* **모바일 안내:** `useIsMobileDevice`(사용자 에이전트 또는 좁은 터치 화면)가 true면 입력 카드 위에 빨간 안내를 그립니다.
+* **브라우저 안내:** `desktop()`이 없으면(데스크톱 앱이 아닌 브라우저·모바일) 입력 카드 위에 빨간 시연용 안내를 그립니다.
 * **현금 계수:** 선택일 합계는 파생 값(`dailyTotals`)을 구독하는 별도 컴포넌트가 계산해 입력 칸 변경에는 다시 그리지 않습니다. 계수 금액은 컴포넌트 로컬 상태입니다.
 
 ## 12. 인쇄, 테마, 달력
@@ -382,4 +382,5 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | `npm run dist` | Windows 설치 파일(`release/`, NSIS, 설치 경로 변경 가능, 삭제해도 데이터 보존) |
 
 * **시연 페이지:** `main`에 올리면 `.github/workflows/pages.yml`이 빌드해 GitHub Pages에 배포합니다(저장소 Settings → Pages의 Source가 “GitHub Actions”여야 함).
+* **새 버전 알림(웹만):** 빌드마다 `dist/version.json`(`{id}`)을 만들고 같은 값을 번들에 `__BUILD_ID__`로 넣습니다. 열려 있는 화면은 10분마다·탭으로 돌아올 때 `version.json`을 확인하고, 다르거나 나중에 불러오는 파일(엑셀 등)이 없어져 `vite:preloadError`가 나면 `NewVersionBanner`로 [새로고침]을 안내합니다(자동 새로고침은 입력 중 내용 유실 때문에 하지 않음). 이미 열려 있던 옛 화면은 새로고침해야 새 버전이 됩니다.
 * **버전:** `package.json`의 `version`과 `contexts/types.ts`의 `APP_VERSION`을 함께 바꾸고, 백업 파일 형식을 바꿀 때만 `SCHEMA_VERSION`을 올립니다.

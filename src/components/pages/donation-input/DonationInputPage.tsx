@@ -1,7 +1,7 @@
 import type { PageKey } from '../../../hooks/useAppShell';
 import { useDonationEditor } from '../../../hooks/useDonationEditor';
 import { useDonationInput } from '../../../hooks/useDonationInput';
-import { useIsMobileDevice } from '../../../hooks/useIsMobileDevice';
+import { desktop } from '../../../services/desktopBridge';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
 import { DonationEditModal } from '../reports/DonationEditModal';
@@ -17,7 +17,7 @@ import { QuickRegisterModal } from './QuickRegisterModal';
 export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): void }) {
   const c = useDonationInput();
   const editor = useDonationEditor();
-  const isMobile = useIsMobileDevice();
+  const isBrowser = !desktop(); // 데스크톱 앱이 아니면(모바일 포함) 시연용 안내
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
@@ -27,9 +27,9 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
         <div className="min-h-[2.75rem]" aria-live="polite">
           <Notice key={c.message?.undoable ? `saved-${c.savedSeq}` : 'msg'} success={c.message?.undoable} message={c.message} action={c.message?.undoable && c.canUndo ? { label: '되돌리기', onClick: () => void c.undo() } : undefined} />
         </div>
-        {isMobile ? (
+        {isBrowser ? (
           <p role="note" className="no-print rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold leading-relaxed text-red-600">
-            안내: PC 전용입니다. 모바일에서는 화면 구성과 기능을 보는 시연용으로 봐주세요. 모바일에서는 화면이 잘려보이거나 깨져 보일 수 있습니다.
+            안내: PC 전용(데스크톱 앱)입니다. 모바일이나 브라우저로 열 때는 화면 구성과 기능을 보는 시연용으로 봐주세요. 모바일에서는 화면이 잘려 보이거나 깨져 보일 수 있습니다.
           </p>
         ) : null}
         <section className="card space-y-4">
