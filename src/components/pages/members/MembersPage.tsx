@@ -1,13 +1,17 @@
 import { useRef } from 'react';
 import { useMembersPage } from '../../../hooks/useMembersPage';
-import { useVirtualRows } from '../../../hooks/useVirtualRows';
+import { usePaging } from '../../../hooks/usePaging';
 import type { MemberSortKey } from '../../../services/domain/memberSort';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
+import { Pager } from '../../shared/Pager';
 import { REPORT_SCROLL, useFitHeight } from '../reports/reportScroll';
 import { MemberEditModal } from './MemberEditModal';
 import { MemberImportModal } from './MemberImportModal';
 import { normalizePosition } from '../../../services/domain/positions';
+
+const PAGE_SIZE = 100;
+const PAGER_HEIGHT = 48; // 표 아래 페이저가 화면 안에 들어오도록 남겨 둘 높이
 
 const COLUMNS: { key: MemberSortKey; label: string }[] = [
   { key: 'name', label: '이름' },
@@ -28,8 +32,8 @@ function SortMark({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 export function MembersPage() {
   const p = useMembersPage();
   const scrollRef = useRef<HTMLElement>(null);
-  const fit = useFitHeight(scrollRef); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
-  const v = useVirtualRows(p.rows.length, scrollRef); // 보이는 줄만 그립니다.
+  const fit = useFitHeight(scrollRef, PAGER_HEIGHT); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
+  const paging = usePaging(p.rows.length, PAGE_SIZE, `${p.query}|${p.showInactive}|${p.sort.key}|${p.sort.dir}`);
   return (
     <div className="space-y-4">
       <section className="card flex flex-wrap items-end gap-3">
@@ -75,16 +79,9 @@ export function MembersPage() {
             </tr>
           </thead>
           <tbody>
-            {v.padTop > 0 ? (
-              <tr aria-hidden="true">
-                <td colSpan={8} style={{ padding: 0, border: 0, height: v.padTop }} />
-              </tr>
-            ) : null}
-            {v.indexes.map((i) => {
-              const { member: m, familyLabel, stateLabel } = p.rows[i];
-              return (
-              <tr key={m.id} data-index={i} ref={v.measure} className={m.isActive ? '' : 'text-gray-400'}>
-                <td className="td text-center text-xs text-gray-500">{i + 1}</td>
+            {p.rows.slice(paging.from, paging.to).map(({ member: m, familyLabel, stateLabel }, k) => (
+              <tr key={m.id} className={m.isActive ? '' : 'text-gray-400'}>
+                <td className="td text-center text-xs text-gray-500">{paging.from + k + 1}</td>
                 <td className="td font-medium">{m.name}</td>
                 <td className="td">{normalizePosition(m.position) || '-'}</td>
                 <td className="td">{m.phoneLast4 ?? '-'}</td>
@@ -102,13 +99,7 @@ export function MembersPage() {
                   </div>
                 </td>
               </tr>
-              );
-            })}
-            {v.padBottom > 0 ? (
-              <tr aria-hidden="true">
-                <td colSpan={8} style={{ padding: 0, border: 0, height: v.padBottom }} />
-              </tr>
-            ) : null}
+            ))}
             {p.rows.length === 0 ? (
               <tr>
                 <td className="td text-center text-gray-500" colSpan={8}>
@@ -119,6 +110,7 @@ export function MembersPage() {
           </tbody>
         </table>
       </section>
+      <Pager paging={paging} unit="명" />
       {p.editor ? <MemberEditModal key={p.editor.key} editor={p.editor} onClose={p.closeEditor} onSaved={p.onSaved} /> : null}
       <MemberImportModal open={p.importOpen} onClose={p.closeImport} />
       <Modal

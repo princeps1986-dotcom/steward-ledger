@@ -19,7 +19,7 @@ describe('ListPager', () => {
     const read = vi.fn(async (ym: string) => data[ym]);
     const p = new ListPager(read);
     await p.refresh(months, ver(), { query: '', range: null }, never);
-    expect([p.count, p.total, p.complete]).toEqual([4, 2800, true]);
+    expect([p.count, p.total]).toEqual([4, 2800]);
     expect(all(p, 4)).toEqual(['e', 'c', 'b', 'a']);
     expect(p.rowAt(months, 4)).toBeNull();
   });
@@ -46,7 +46,6 @@ describe('ListPager', () => {
     const p = new ListPager(async (ym) => data[ym], 2, onChange);
     await p.refresh(months, ver(), { query: '', range: null }, never);
     expect(p.count).toBe(4); // 건수는 전부
-    expect(p.complete).toBe(false); // 예산(2건)을 넘은 달은 행을 들고 있지 않음
     expect(p.rowAt(months, 0)?.id).toBe('e'); // 2월은 예산 안
     onChange.mockClear();
     expect(p.rowAt(months, 2)).toBeNull(); // 1월 행은 아직 없음 → 읽기 시작

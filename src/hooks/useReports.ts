@@ -262,7 +262,7 @@ export function useDonationListReport(f: ReportFilters) {
       tag: d ? tagOf(d.memberId) : null,
     };
   };
-  return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done, complete: pager.complete };
+  return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done };
 }
 
 /** 개인별·세대별 조회 */

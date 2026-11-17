@@ -1,4 +1,6 @@
+import { usePaging } from '../../../hooks/usePaging';
 import { useAuditLogTab, type AuditDonationView, type ReportFilters } from '../../../hooks/useReports';
+import { Pager } from '../../shared/Pager';
 import { NameWithTag } from './NameWithTag';
 
 function DonationLine({ v }: { v: AuditDonationView | null }) {
@@ -12,8 +14,11 @@ function DonationLine({ v }: { v: AuditDonationView | null }) {
 }
 
 /** 지금 보고 있는 보고서(기간)에 해당하는 내역의 수정·삭제 이력만 표시합니다. */
+const PAGE_SIZE = 50;
+
 export function AuditTab({ f }: { f: ReportFilters }) {
   const logs = useAuditLogTab(f);
+  const paging = usePaging(logs.length, PAGE_SIZE, f.label);
   return (
     <section className="card space-y-3 p-0">
       <p className="px-4 pt-3 text-sm text-gray-600">
@@ -31,7 +36,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
             </tr>
           </thead>
           <tbody>
-            {logs.map((l) => (
+            {logs.slice(paging.from, paging.to).map((l) => (
               <tr key={l.id}>
                 <td className="td whitespace-nowrap">{l.time}</td>
                 <td className={`td font-semibold ${l.actionLabel === '삭제' ? 'text-red-600' : 'text-blue-700'}`}>{l.actionLabel}</td>
@@ -53,6 +58,9 @@ export function AuditTab({ f }: { f: ReportFilters }) {
             ) : null}
           </tbody>
         </table>
+      </div>
+      <div className="px-4 pb-3">
+        <Pager paging={paging} />
       </div>
     </section>
   );

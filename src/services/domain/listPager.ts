@@ -77,12 +77,6 @@ export class ListPager {
     return n;
   }
 
-  /** 모든 달의 행을 들고 있는지(인쇄할 때 목록이 잘리지 않는지) */
-  get complete(): boolean {
-    for (const s of this.slices.values()) if (s.count > 0 && !s.rows) return false;
-    return true;
-  }
-
   /** i번째(최신순) 내역. 그 달의 행을 아직 읽는 중이면 null을 돌려주고, 다 읽으면 onChange를 부릅니다. */
   rowAt(months: readonly string[], i: number): Donation | null {
     for (const ym of months) {

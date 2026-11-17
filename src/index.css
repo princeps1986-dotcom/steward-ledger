@@ -161,9 +161,4 @@ tr.row-sep > td { border-bottom: 2px solid var(--color-gray-400); }
   .rpt-table tr.row-sep > td { border-bottom: 2px solid var(--pt-line); }
   .rpt-table .rpt-num { text-align: center; font-size: 8.5pt; color: #444; background: var(--pt-name-bg); }
   .rpt-num { color: #444 !important; }
-
-  /* 개인별 탭: 머리글 행·요약 칩도 같은 색 규칙을 따릅니다. */
-  .rpt-grid-head { background: var(--pt-th-bg) !important; color: var(--pt-th-fg) !important; font-weight: 800; font-size: 10pt; border-bottom: 2px solid var(--pt-line) !important; }
-  .rpt-chip { background: transparent !important; color: #000 !important; border: 1px solid var(--pt-line); font-weight: 700; }
-  .rpt-chip-total { background: var(--pt-total-bg) !important; color: var(--pt-th-fg) !important; border: 2px solid var(--pt-line); font-weight: 800; }
 }
