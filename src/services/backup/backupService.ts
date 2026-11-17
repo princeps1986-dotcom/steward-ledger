@@ -239,7 +239,7 @@ const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Rec
   Object.fromEntries(Object.entries(by).filter(([y]) => years.has(y)));
 
 /**
- * 백업에서 선택한 연도만 복원합니다. 호출 전에 반드시 긴급 백업을 저장아야 합니다.
+ * 백업에서 선택한 연도만 복원합니다(복원 전 자동 백업은 하지 않음).
  * - FULL: 현재 모든 데이터를 지우고 백업의 성도·헌금 종류와 선택한 연도 내역으로 교체합니다.
  * - YEARS: 선택한 연도의 헌금 내역·이력만 백업 내용으로 교체하고, 다른 연도는 그대로 둡니다.
  *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다.

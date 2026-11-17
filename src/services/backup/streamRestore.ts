@@ -12,7 +12,7 @@ import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_P
  * 1단계(scanBackupFile): 파일 전체를 한 번 읽으며 SHA-256과 각 줄의 형식을 검증하고 연도별 건수를 셉니다. 아무것도 쓰지 않습니다.
  * 2단계(restoreFromFile): 검증된 파일을 다시 읽으며 달마다 따로 저장합니다(한 달치만 메모리에 둠).
  * 달마다 따로 저장하므로 전체가 하나의 트랜잭션은 아니며, 시작할 때 '복원 중' 표시를 남기고 끝나면 지웁니다. 중간에 꺼지면 표시가 남아
- * 다음 실행 때 알려 줍니다(복원 직전의 긴급 백업으로 되돌릴 수 있음).
+ * 다음 실행 때 알려 줍니다(같은 백업으로 다시 복원하면 됨).
  */
 
 /** 줄 단위로 읽을 수 있는 백업 파일(브라우저 File·Blob, 또는 데스크톱 main이 조각으로 읽어 주는 파일) */
@@ -168,7 +168,7 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
 
 /**
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
- * 호출 전에 긴급 백업을 저장해야 합니다. 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
+ * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
 export async function restoreFromFile(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> {
   await assertNoDemo();

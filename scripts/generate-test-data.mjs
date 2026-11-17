@@ -4,7 +4,7 @@
 //          node scripts/generate-test-data.mjs --out 경로.json --date 2026-11-16 --seed 1
 //
 // 앱에서 [설정 정보] > [백업 파일 복원…]으로 불러오면 됩니다.
-// ※ 복원은 현재 데이터를 모두 이 파일의 내용으로 바꿉니다(복원 직전 긴급 백업 파일이 자동으로 내려받아집니다).
+// ※ 복원은 현재 데이터를 모두 이 파일의 내용으로 바꿉니다(복원 전에 자동 백업하지 않으니 필요하면 먼저 백업하세요).
 //   실제 헌금 데이터가 들어 있는 환경에서는 사용하지 마세요.
 import { createHash } from 'node:crypto';
 import { buildTestPayload, addDays, parseYmd, ymd } from './testdata-core.mjs';

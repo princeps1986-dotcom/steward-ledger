@@ -258,14 +258,12 @@ export function useSettingsPage() {
     const picked = [restoreYear];
     setBusy(true);
     try {
-      // 복원 직전 현재 데이터를 긴급 백업으로 내려받습니다.
-      await saveEmergencyBackup('emergency_before_restore');
       if (restore.stream) await restoreFromFile(restore.stream.file, restore.stream.scan, picked);
       else await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS' });
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       setMessage({
         kind: 'info',
-        text: `복원 완료 (${restoreYear}년, 다른 연도는 유지)${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}. 복원 전 데이터는 emergency_before_restore 파일로 저장되었습니다.`,
+        text: `복원 완료 (${restoreYear}년, 다른 연도는 유지)${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}.`,
       });
       setRestore(null);
     } catch (err) {
@@ -300,7 +298,7 @@ export function useSettingsPage() {
       { value: 'XLARGE' as const, label: '매우 크게' },
     ],
     backupHelp:
-      '백업 파일(.json, 자동 백업은 압축된 .json.gz)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원 직전에는 현재 데이터를 긴급 백업 파일로 백업 폴더에 먼저 저장해 데이터 유실을 막습니다.',
+      '백업 파일(.json, 자동 백업은 압축된 .json.gz)에는 버전 정보와 SHA-256 무결성 체크섬이 포함됩니다. 백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀌므로, 복원 전에 필요하면 [백업 파일 저장]으로 현재 데이터를 먼저 백업해 두세요.',
     backupDir: settings.autoBackupDir || defaultDir || '(데스크톱 앱에서만 사용 가능)',
     isCustomDir: !!settings.autoBackupDir,
     selectDir,

@@ -210,14 +210,14 @@ export function SettingsPage() {
               취소
             </button>
             <button className="btn-danger" onClick={() => void s.confirmRestore()} disabled={s.busy || !s.restoreYear}>
-              긴급 백업 후 복원
+              복원
             </button>
           </>
         }
       >
         <div className="space-y-2 text-sm">
-          <p className="rounded border border-amber-400 bg-amber-50 p-2 font-semibold text-amber-900" role="note">
-            ⚠ 복원 전에 현재 데이터가 <u>긴급 백업 파일</u>로 백업 폴더에 먼저 저장됩니다.
+          <p className="rounded border-2 border-red-500 bg-red-50 p-3 text-base font-bold text-red-800" role="alert">
+            ⚠ 선택한 연도의 <u>헌금과 수정·삭제 이력</u>이 모두 백업 파일의 내용으로 바뀝니다. 현재 그 연도의 데이터는 사라지며, 복원 전에 자동으로 백업하지 않습니다.
           </p>
           <p>
             파일: <b>{s.restore?.fileName}</b>
@@ -240,7 +240,7 @@ export function SettingsPage() {
           <p className="text-gray-600">
             {s.restoreYearOptions.length === 0
               ? '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
-              : '선택한 연도의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다. 다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.'}
+              : '다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.'}
           </p>
           {s.restore?.migratedFrom ? <p className="text-amber-700">구버전(v{s.restore.migratedFrom}) 백업입니다. v2 형식으로 자동 변환됩니다.</p> : null}
           <p className="text-gray-600">무결성 검증을 통과했습니다.</p>
