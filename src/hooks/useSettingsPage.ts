@@ -182,6 +182,7 @@ export function useSettingsPage() {
 
   const confirmDemo = useCallback(async () => {
     if (demoActive) return; // 시연 중에는 만들 수 없습니다(원래 데이터 백업이 시연 데이터로 덮이지 않도록).
+    setDemoOpen(false); // 누르는 즉시 레이어를 닫고, 진행은 최상단 안내 띠에 보입니다.
     setBusy(true);
     try {
       const reloadAll = () => Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
@@ -189,7 +190,6 @@ export function useSettingsPage() {
       const info = await createDemoData({
         onProgress: (done, total) => setDemoProgress({ done, total }),
         onReady: () => {
-          setDemoOpen(false);
           setBusy(false);
           void reloadAll();
         },
@@ -201,7 +201,6 @@ export function useSettingsPage() {
           ? ` 원래 데이터는 ${info.downloadedName} 파일로 내려받았습니다(브라우저에서는 자동 복구가 안 되니 잘 보관하세요).`
           : '';
       setMessage({ kind: 'info', text: `시연 데이터를 생성했습니다.${where}` });
-      setDemoOpen(false);
     } catch (err) {
       setMessage({ kind: 'error', text: `시연 데이터 생성 실패: ${(err as Error).message}` });
     } finally {

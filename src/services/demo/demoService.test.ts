@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Donation, Member } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
-import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
+import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact, wipeDonationsWrites } from '../storage/storageService';
 import { sha256Hex } from '../backup/validation';
 import { createDemoData, removeDemoData } from './demoService';
 import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, type DemoSpec } from './demoData';
@@ -14,9 +14,9 @@ const NOW = new Date(2026, 10, 17); // 2026-11-17(화)
 const SMALL: DemoSpec = { members: 30, weeks: 6, total: 600, weekMean: 100, weekMin: 50, weekMax: 200, spikeCount: 40 };
 
 describe.each([
-  ['app (half)', DEMO_SPEC_APP, 200_000, 750, 2000, 5000],
-  ['browser (one third)', DEMO_SPEC_BROWSER, 133_333, 500, 1333, 3333],
-] as const)('demo data for %s: 800 members, 3 years', (_name, spec, total, weekMin, weekMax, spike) => {
+  ['app (3 years)', DEMO_SPEC_APP, 200_000, 750, 2000, 5000, 156, 6],
+  ['browser (18 months)', DEMO_SPEC_BROWSER, 63_000, 500, 1333, 3333, 78, 2],
+] as const)('demo data for %s: 800 members', (_name, spec, total, weekMin, weekMax, spike, weeks, spikeDays) => {
   const p = buildDemoPayload(spec, NOW);
   const all = Object.values(p.donationsByYear).flat();
   const byDate = new Map<string, number>();
@@ -35,7 +35,7 @@ describe.each([
   });
 
   it('keeps every normal week within its range and adds the spike count on 12/25 and 1/1', () => {
-    expect(spikeDates).toHaveLength(6);
+    expect(spikeDates).toHaveLength(spikeDays);
     for (const k of spikeDates) expect(byDate.get(k)!).toBeGreaterThanOrEqual(spike);
     const weekSums = new Map<string, number>();
     for (const [k, n] of byDate) {
@@ -43,7 +43,7 @@ describe.each([
       const sun = new Date(d.getTime() - d.getUTCDay() * 864e5).toISOString().slice(0, 10);
       weekSums.set(sun, (weekSums.get(sun) ?? 0) + n - (spikeDates.includes(k) ? spike : 0));
     }
-    expect(weekSums.size).toBe(156);
+    expect(weekSums.size).toBe(weeks);
     const sums = [...weekSums.values()];
     expect(Math.min(...sums)).toBeGreaterThanOrEqual(weekMin);
     expect(Math.max(...sums)).toBeLessThanOrEqual(weekMax);
@@ -172,6 +172,13 @@ describe('create and remove demo data', () => {
 });
 
 describe('newest-first creation', () => {
+  it('wipes every month in one go, and a write after the wipe in the same transaction survives', async () => {
+    await transact(async () => ({ writes: [monthWrite('2025-01', [don('a', '2025-01-05')]), monthWrite('2026-01', [don('b', '2026-01-04')])], result: 0 }));
+    await transact(async () => ({ writes: [...(await wipeDonationsWrites()), monthWrite('2026-01', [don('c', '2026-01-11')])], result: 0 }));
+    expect(await listDonationMonths()).toEqual(['2026-01']);
+    expect((await readMonth('2026-01')).map((x) => x.id)).toEqual(['c']);
+  });
+
   it('is usable after the newest months (onReady), then finishes the older months with exact totals', async () => {
     fakeDesktop();
     let readyMonths: string[] = [];

@@ -13,6 +13,7 @@ import {
   getMany,
   listAuditKeys,
   listDonationMonths,
+  wipeDonationsWrites,
   listDonationYears,
   monthOfDate,
   monthWrite,
@@ -288,7 +289,7 @@ export async function restoreBackup(payload: BackupPayload, opts: { years: reado
 export async function replaceAllData(payload: BackupPayload, extraWrites: Write[] = []): Promise<void> {
   await transact(async () => {
     const writes: Write[] = [];
-    for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
+    writes.push(...(await wipeDonationsWrites()));
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.restoreMarker, value: null }); // 전체 교체가 끝났으므로 중단된 복원 표시도 지웁니다.
     writes.push({ key: KEYS.members, value: payload.members });

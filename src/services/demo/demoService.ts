@@ -2,7 +2,7 @@ import type { Donation } from '../../contexts/types';
 import { backupBeforeDemo, resetAllData } from '../backup/backupService';
 import { desktopBackupFile, restoreAllFromFile, scanBackupFile, type RestoreMarker } from '../backup/streamRestore';
 import { desktop } from '../desktopBridge';
-import { auditKey, KEYS, listAuditKeys, listDonationMonths, monthWrite, transact, type Write } from '../storage/storageService';
+import { auditKey, KEYS, listAuditKeys, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
 import { buildDemoAudits, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, planDemo, type DemoSpec } from './demoData';
 import { hasDemoData, readDemoRestore, refreshDemoState, setDemoCreating, type DemoRestoreInfo } from './demoState';
 
@@ -25,6 +25,7 @@ let running: { abort: AbortController; done: Promise<unknown> } | null = null;
 export async function createDemoData(opts: { spec?: DemoSpec; today?: Date; onProgress?: (done: number, total: number) => void; onReady?: () => void } = {}): Promise<DemoRestoreInfo> {
   if (running) throw new Error('시연 데이터를 만드는 중입니다.');
   const abort = new AbortController();
+  setDemoCreating({ done: 0, total: 0 }); // 누르는 즉시 최상단 안내가 뜨도록(원래 데이터 백업 단계 포함)
   const job = createDemoDataNow(opts, abort.signal);
   running = { abort, done: job.catch(() => undefined) };
   try {
@@ -42,7 +43,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
   // 시작: 표시를 남기고, 기존 데이터를 모두 지우며, 성도·헌금 종류와 복구 정보를 씁니다(한 트랜잭션).
   await transact(async () => {
     const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: info.createdAt, years: [], kind: 'demo' } satisfies RestoreMarker }];
-    for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
+    writes.push(...(await wipeDonationsWrites()));
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.members, value: plan.members }, { key: KEYS.offeringTypes, value: plan.offeringTypes }, { key: KEYS.demoRestore, value: info });
     return { writes, result: undefined };
@@ -53,6 +54,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
     const logs = buildDemoAudits(recent);
     await transact(async () => ({ writes: Object.entries(logs).map(([y, list]) => ({ key: auditKey(y), value: list })), result: undefined }));
   };
+  setDemoCreating({ done: 0, total });
   opts.onProgress?.(0, total);
   for (const { ym, donations } of plan.generate()) {
     if (signal.aborted) return info; // 제거가 이어받아 지웁니다(진행 표시는 남겨 둠).
@@ -64,7 +66,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
       await refreshDemoState();
       opts.onReady?.();
     }
-    if (done >= READY_MONTHS) setDemoCreating({ done, total });
+    setDemoCreating({ done, total });
     await new Promise((r) => setTimeout(r)); // 화면이 끊기지 않게 달 사이에 양보
   }
   if (signal.aborted) return info;

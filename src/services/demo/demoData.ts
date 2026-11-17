@@ -25,8 +25,8 @@ export interface DemoSpec {
 
 /** 데스크톱 앱: 성도 800명 · 헌금 20만 건(3년, 주 750~2,000건, 12/25·1/1은 하루 5,000건 추가) */
 export const DEMO_SPEC_APP: DemoSpec = { members: 800, weeks: 156, total: 200_000, weekMean: 1090, weekMin: 750, weekMax: 2000, spikeCount: 5000 };
-/** 브라우저(휴대폰 포함): 앱의 2/3 규모 — 성도 800명 · 헌금 약 13만 건(3년, 주 500~1,333건, 12/25·1/1은 하루 3,333건 추가). 브라우저는 저장·메모리 여유가 적고 시연용이라 더 작게 만듭니다. */
-export const DEMO_SPEC_BROWSER: DemoSpec = { members: 800, weeks: 156, total: 133_333, weekMean: 727, weekMin: 500, weekMax: 1333, spikeCount: 3333 };
+/** 브라우저(휴대폰 포함): 성도 800명 · 헌금 약 6.3만 건(최근 18개월, 주 500~1,333건, 12/25·1/1은 하루 3,333건 추가). 브라우저는 저장·메모리 여유가 적고 시연용이라 더 작게 만듭니다. */
+export const DEMO_SPEC_BROWSER: DemoSpec = { members: 800, weeks: 78, total: 63_000, weekMean: 727, weekMin: 500, weekMax: 1333, spikeCount: 3333 };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 const ymd = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;

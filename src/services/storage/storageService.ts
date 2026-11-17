@@ -33,6 +33,16 @@ export interface Write {
 /** 그 달 전체를 이 목록으로 교체합니다(비면 그 달의 내역을 모두 지움). 복원처럼 달 전체를 바꿀 때만 쓰세요. */
 export const monthWrite = (ym: string, list: Donation[]): Write => ({ key: donationKey(ym), value: list.length ? list : null });
 
+const CLEAR_DONATIONS_KEY = '__clear_donations__';
+
+/**
+ * 모든 헌금 내역을 지우는 쓰기 목록(트랜잭션 안에서 부릅니다): 저장소를 통째로 비우고(clear), 다른 창 알림·변경 표시를 위한
+ * 달별 빈 쓰기를 덧붙입니다. 이어지는 달 쓰기는 이미 빈 달의 범위 삭제를 건너뜁니다.
+ */
+export async function wipeDonationsWrites(): Promise<Write[]> {
+  return [{ key: CLEAR_DONATIONS_KEY, value: null }, ...(await listDonationMonths()).map((ym) => monthWrite(ym, []))];
+}
+
 /** 그 달의 행만 바꿉니다(저장·수정·삭제). */
 export const rowWrite = (ym: string, ops: RowOps): Write => ({ key: donationKey(ym), value: null, rowOps: ops });
 
@@ -56,13 +66,16 @@ const isDataKey = (k: string): boolean =>
 
 const monthRange = (ym: string) => db.donations.where('[date+id]').between([`${ym}-`, Dexie.minKey], [`${ym}-\uffff`, Dexie.maxKey], true, true);
 
-async function applyDonationWrite(w: Write): Promise<void> {
+async function applyDonationWrite(w: Write, written: Set<string> | null): Promise<void> {
   if (w.rowOps) {
     if (w.rowOps.deletes.length) await db.donations.bulkDelete(w.rowOps.deletes);
     if (w.rowOps.puts.length) await db.donations.bulkPut(w.rowOps.puts);
     return;
   }
-  await monthRange(DONATION_KEY_RE.exec(w.key)![1]).delete();
+  const ym = DONATION_KEY_RE.exec(w.key)![1];
+  // 방금 저장소를 비웠고 이 달을 아직 쓰지 않았다면 지울 것이 없습니다.
+  if (!written || written.has(ym)) await monthRange(ym).delete();
+  written?.add(ym);
   const list = w.value as Donation[] | null;
   if (list?.length) await db.donations.bulkPut(list);
 }
@@ -73,8 +86,12 @@ async function applyDonationWrite(w: Write): Promise<void> {
  */
 async function applyWrites(writes: Write[]): Promise<void> {
   const last = new Map<string, Write>();
+  let written: Set<string> | null = null; // 비운 뒤 이 묶음에서 이미 쓴 달
   for (const w of writes) {
-    if (DONATION_KEY_RE.test(w.key)) await applyDonationWrite(w);
+    if (w.key === CLEAR_DONATIONS_KEY) {
+      await db.donations.clear();
+      written = new Set();
+    } else if (DONATION_KEY_RE.test(w.key)) await applyDonationWrite(w, written);
     else last.set(w.key, w);
   }
   const puts: Write[] = [];
@@ -137,7 +154,7 @@ export function transact<R>(
           all.push({ key: KEYS.dirty, value: true });
         }
         if (all.length > 0) await applyWrites(all);
-        return { writes, result, keys: all.map((w) => w.key), moved: movesAcrossMonths(writes) };
+        return { writes, result, keys: all.map((w) => w.key).filter((k) => k !== CLEAR_DONATIONS_KEY), moved: movesAcrossMonths(writes) };
       });
       if (out.moved) structuralCommits++;
       if (out.keys.length > 0) broadcastChanged(out.keys);

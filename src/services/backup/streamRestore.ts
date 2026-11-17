@@ -1,7 +1,7 @@
 import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
-import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, type Write } from '../storage/storageService';
+import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { Sha256 } from './sha256';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
@@ -207,7 +207,7 @@ export async function restoreFromFile(file: ReadableBackup, scan: BackupScan, ye
 export async function restoreAllFromFile(file: ReadableBackup, scan: BackupScan, extraStartWrites: Write[] = []): Promise<void> {
   await transact(async () => {
     const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: new Date().toISOString(), years: Object.keys(scan.yearCounts) } satisfies RestoreMarker }];
-    for (const ym of await listDonationMonths()) writes.push(monthWrite(ym, []));
+    writes.push(...(await wipeDonationsWrites()));
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.members, value: scan.members }, { key: KEYS.offeringTypes, value: scan.offeringTypes }, ...extraStartWrites);
     return { writes, result: undefined };
