@@ -9,23 +9,25 @@ const opt = (i: number, name: string, phoneLast4: string): HeadOption => ({
   label: `${name} (-/ ${phoneLast4})`,
   member: { id: `h${i}`, name, position: '', isFamilyHead: true, isActive: true, createdAt: '', updatedAt: '', phoneLast4 } as Member,
 });
-const many = Array.from({ length: 30 }, (_, i) => opt(i, `김${String.fromCharCode(0xac00 + i)}`, String(1000 + i)));
+const many = Array.from({ length: 300 }, (_, i) => opt(i, `김${String.fromCharCode(0xac00 + i)}`, String(1000 + i)));
 
 afterEach(cleanup);
 
 describe('HeadPicker', () => {
-  it('loads 20 at a time as the list is scrolled, narrows by name or phone, and selects with the keyboard', () => {
+  // 줄 그리기(가상 스크롤)는 화면 크기가 필요해 jsdom에서는 확인할 수 없으므로(실제 브라우저에서 확인), 전체 길이와 키보드 선택을 검사합니다.
+  it('sizes the list for all matches, moves past the visible rows with the keyboard, and narrows by phone', () => {
     const onChange = vi.fn();
     render(<HeadPicker options={many} value="" onChange={onChange} ariaLabel="세대주" />);
     const input = screen.getByRole('combobox');
     fireEvent.focus(input);
-    expect(screen.getAllByRole('option')).toHaveLength(20);
-    fireEvent.scroll(screen.getByRole('listbox')); // 끝까지 스크롤 → 다음 20명
-    expect(screen.getAllByRole('option')).toHaveLength(30);
-    fireEvent.change(input, { target: { value: '1005' } }); // 연락처 뒷자리로 찾기
-    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('listbox').style.height).toBe('10800px'); // 300명 x 36px
+    for (let i = 0; i < 50; i++) fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onChange).toHaveBeenCalledWith('h5');
+    expect(onChange).toHaveBeenCalledWith('h50');
+    fireEvent.change(input, { target: { value: '1005' } }); // 연락처 뒷자리로 찾기
+    expect(screen.getByRole('listbox').style.height).toBe('36px');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith('h5');
   });
 
   it('shows the selected head with [연결 해제], and a disabled note for a family head', () => {

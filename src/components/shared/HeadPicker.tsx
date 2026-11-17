@@ -1,3 +1,4 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { Member } from '../../contexts/types';
 import { matchMember } from '../../services/domain/search';
@@ -8,8 +9,8 @@ export interface HeadOption {
   member: Member;
 }
 
-/** 한 번에 그리는 개수. 목록 끝까지 스크롤하면 이만큼씩 더 그립니다(성도가 많아도 화면에는 보이는 만큼만). */
-const PAGE = 20;
+/** 항목 한 줄 높이(px). 가상 스크롤이 이 높이로 위치를 계산합니다. */
+const ROW = 36;
 
 interface Props {
   options: HeadOption[];
@@ -22,24 +23,32 @@ interface Props {
   ariaLabel: string;
 }
 
-/** 이름·연락처 뒷자리로 찾아 고르는 세대주 선택(성도 검색 칸과 같은 방식). 고른 뒤에는 [연결 해제]로 풉니다. */
+/**
+ * 이름·연락처 뒷자리로 찾아 고르는 세대주 선택(성도 검색 칸과 같은 방식). 고른 뒤에는 [연결 해제]로 풉니다.
+ * 결과가 많아도 보이는 줄만 그리는 가상 스크롤을 씁니다.
+ */
 export function HeadPicker({ options, value, onChange, disabledText = '', disabled = false, ariaLabel }: Props) {
   const listId = useId();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const [shown, setShown] = useState(PAGE);
-  const listRef = useRef<HTMLUListElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim();
   const matches = useMemo(() => (q ? options.filter((o) => matchMember(o.member, q)) : options), [options, q]);
-  const results = matches.slice(0, shown);
-  const hasMore = matches.length > shown;
 
-  // 키보드로 움직인 항목이 목록 밖으로 나가지 않게 따라갑니다.
+  const virtualizer = useVirtualizer({
+    count: matches.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW,
+    overscan: 6,
+    initialRect: { width: 0, height: 240 }, // 목록이 열리는 첫 그리기에도 줄이 나오도록(곧 실제 크기로 갱신됨)
+  });
+
+  // 키보드로 움직인 항목이 보이는 범위 안에 오도록 따라갑니다.
   useEffect(() => {
-    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
-  }, [highlight, open]);
+    if (open && matches.length) virtualizer.scrollToIndex(Math.min(highlight, matches.length - 1), { align: 'auto' });
+  }, [highlight, open, matches.length, virtualizer]);
 
   if (disabled) return <input className="input" disabled value={disabledText} readOnly aria-label={ariaLabel} />;
 
@@ -66,12 +75,10 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!open) return setOpen(true);
-      if (!results.length) return;
-      if (e.key === 'ArrowDown' && highlight === results.length - 1 && hasMore) setShown((n) => n + PAGE); // 끝에서 더 내리면 다음 묶음을 불러옴
-      setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length);
-    } else if (e.key === 'Enter' && open && results[highlight]) {
+      if (matches.length) setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+    } else if (e.key === 'Enter' && open && matches[highlight]) {
       e.preventDefault(); // 저장(폼 제출)이 아니라 선택으로 처리
-      choose(results[highlight]);
+      choose(matches[highlight]);
     } else if (e.key === 'Escape' && open) {
       e.stopPropagation(); // 창이 닫히지 않고 목록만 닫힘
       setOpen(false);
@@ -91,7 +98,6 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
         onChange={(e) => {
           setQuery(e.target.value);
           setHighlight(0);
-          setShown(PAGE);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -99,32 +105,33 @@ export function HeadPicker({ options, value, onChange, disabledText = '', disabl
         onKeyDown={onKeyDown}
       />
       {open ? (
-        <ul
-          ref={listRef}
-          id={listId}
-          role="listbox"
-          className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            if (hasMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setShown((n) => n + PAGE);
-          }}
-        >
-          {results.map((o, i) => (
-            <li
-              key={o.id}
-              role="option"
-              aria-selected={i === highlight}
-              className={`cursor-pointer px-3 py-2 text-sm ${i === highlight ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setHighlight(i)}
-              onClick={() => choose(o)}
-            >
-              {o.label}
-            </li>
-          ))}
-          {results.length === 0 ? <li className="px-3 py-2 text-sm text-gray-500">검색 결과가 없습니다.</li> : null}
-          {hasMore ? <li className="px-3 py-1.5 text-center text-xs text-gray-500">{matches.length}명 중 {results.length}명 표시 · 아래로 스크롤하면 더 보입니다</li> : null}
-        </ul>
+        <div className="absolute z-20 mt-1 w-full rounded border border-gray-200 bg-white shadow-lg">
+          <div ref={scrollRef} className="max-h-60 overflow-y-auto">
+            <ul id={listId} role="listbox" className="relative" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map((vi) => {
+                const o = matches[vi.index];
+                return (
+                  <li
+                    key={o.id}
+                    role="option"
+                    aria-selected={vi.index === highlight}
+                    aria-setsize={matches.length}
+                    aria-posinset={vi.index + 1}
+                    className={`absolute left-0 top-0 w-full cursor-pointer truncate px-3 py-2 text-sm ${vi.index === highlight ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                    style={{ height: ROW, transform: `translateY(${vi.start}px)` }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setHighlight(vi.index)}
+                    onClick={() => choose(o)}
+                  >
+                    {o.label}
+                  </li>
+                );
+              })}
+            </ul>
+            {matches.length === 0 ? <p className="px-3 py-2 text-sm text-gray-500">검색 결과가 없습니다.</p> : null}
+          </div>
+          {matches.length > 0 ? <p className="border-t px-3 py-1 text-right text-xs text-gray-500">{matches.length}명</p> : null}
+        </div>
       ) : null}
     </div>
   );
