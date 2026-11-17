@@ -71,7 +71,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 <span className="label">메모</span>
                 <input className="input" value={d.memo} onChange={(ev) => e.setField('memo')(ev.target.value)} />
               </label>
-              <p className="col-span-2 text-xs text-gray-500">다른 달·연도로 바꾸면 그 달 장부로 옮겨지고 수정·삭제 이력에 기록됩니다. 성도·표기명을 잘못 입력했다면 이 내역을 삭제하고 다시 입력하세요.</p>
+              <p className="col-span-2 text-xs text-gray-500">날짜를 바꾸면 바꾼 날짜 기준으로 집계됩니다. 성도·표기명을 잘못 입력했다면 삭제 후 다시 입력하세요.</p>
             </>
           )}
           <div className="col-span-2 rounded border border-red-300 bg-red-50 p-3">
@@ -112,9 +112,9 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 const t = ev.target.value.trim(); // 양 옆 공백 제거
                 if (t !== ev.target.value) e.setField('reason')(t);
               }}
-              placeholder="직접 입력할 수도 있습니다 (한글 4글자 이상)"
+              placeholder="직접 입력할 수도 있습니다. (한글 4글자 이상)"
             />
-            <p className="mt-1 text-xs text-gray-600">목록에서 고르거나 직접 입력하세요. (한글 4글자 이상) 입력한 사유는 수정·삭제 이력에 남습니다.</p>
+            <p className="mt-1 text-xs text-gray-600">목록에서 선택하거나 직접 입력하세요. 입력한 사유는 수정·삭제 이력에 남습니다.</p>
           </div>
           {e.error ? <p className="col-span-2 text-sm text-red-600">{e.error}</p> : null}
         </div>
