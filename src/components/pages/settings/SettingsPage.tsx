@@ -143,7 +143,7 @@ export function SettingsPage() {
               시연 데이터 제거
             </button>
           ) : null}
-          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy || s.demoActive}>
+          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy || s.demoActive || !s.hasData}>
             전체 초기화
           </button>
         </div>

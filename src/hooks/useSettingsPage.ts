@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { useDonationActions, useDonationYears } from '../contexts/DonationContext';
-import { useMemberActions } from '../contexts/MemberContext';
+import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import { useOfferingActions } from '../contexts/OfferingTypeContext';
 import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
 import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../contexts/types';
@@ -47,6 +47,8 @@ export function useSettingsPage() {
   const offeringActions = useOfferingActions();
   const donationActions = useDonationActions();
   const years = useDonationYears();
+  // 성도도 헌금 내역도 없으면 지울 데이터가 없으므로 전체 초기화를 쓸 수 없습니다.
+  const hasData = useMembers().length > 0 || years.length > 0;
 
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
   const [reminderDays, setReminderDays] = useState(String(settings.backupReminderDays));
@@ -239,7 +241,7 @@ export function useSettingsPage() {
   }, [demoActive, demoCreating, memberActions, offeringActions, donationActions]);
 
   const confirmReset = useCallback(async () => {
-    if (resetLeft > 0 || demoActive) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
+    if (resetLeft > 0 || demoActive || !hasData) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
     setBusy(true);
     try {
       await saveEmergencyBackup('emergency_before_reset');
@@ -252,7 +254,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [resetLeft, demoActive, memberActions, offeringActions, donationActions]);
+  }, [resetLeft, demoActive, hasData, memberActions, offeringActions, donationActions]);
 
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
@@ -332,12 +334,13 @@ export function useSettingsPage() {
     demoProgress,
     demoBrowser: !desktop(),
     removeDemoOpen,
+    hasData,
     demoCreating,
     openRemoveDemo: () => !demoCreating && setRemoveDemoOpen(true),
     cancelRemoveDemo: () => setRemoveDemoOpen(false),
     confirmRemoveDemo,
     openReset: () => {
-      if (!demoActive) setResetOpen(true);
+      if (!demoActive && hasData) setResetOpen(true);
     },
     cancelReset: () => setResetOpen(false),
     confirmReset,
