@@ -4,6 +4,7 @@ import type { WeekRange } from '../domain/calendar';
 import { monthsOfPeriod, periodLabel, yearMonthOf, type PeriodType } from '../domain/dates';
 import { buildFamilyLabels, familyKeyOf, familyMemberNames, type FamilyBasis } from '../domain/family';
 import type { WeeklyMatrix } from '../domain/weekly';
+import { compareFixed, compareKo } from '../domain/compare';
 
 export interface ExcelReportInput {
   year: string;
@@ -134,7 +135,7 @@ export async function buildWeeklyWorkbook(input: ExcelWeeklyInput): Promise<Blob
   if (ws2) {
     ws2.addRow(['날짜', '표기명', '헌금종류', '금액', '메모']);
     styleHeader(ws2.getRow(1));
-    const sorted = [...donations].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+    const sorted = [...donations].sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt));
     for (const d of sorted) {
       ws2.addRow([d.date, sanitizeCellText(d.donorDisplayName), sanitizeCellText(typeName(d.offeringTypeId)), d.amount, sanitizeCellText(d.memo ?? '')]);
     }
@@ -234,7 +235,7 @@ export async function buildReportWorkbook(input: ExcelReportInput): Promise<Blob
   };
   ws2.addRow([]);
   styleHeader(ws2.addRow(['세대', '구성원(현재 명단)', ...types.map((t) => t.name), '합계']));
-  const sortedFamilies = [...familyKeys].sort((a, b) => familyLabels.get(a)!.localeCompare(familyLabels.get(b)!, 'ko'));
+  const sortedFamilies = [...familyKeys].sort((a, b) => compareKo(familyLabels.get(a)!, familyLabels.get(b)!));
   for (const k of sortedFamilies) {
     const label = familyLabels.get(k)!;
     const r = ws2.addRow([sanitizeCellText(label), sanitizeCellText(familyMemberNames(k, members))]);

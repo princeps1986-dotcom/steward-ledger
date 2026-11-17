@@ -4,6 +4,7 @@ import type { Member } from '../contexts/types';
 import type { MemberDraft } from '../services/domain/memberRules';
 import { DEFAULT_POSITION, normalizePosition, positionOptions } from '../services/domain/positions';
 import { memberLabel } from '../services/domain/search';
+import { compareKo } from '../services/domain/compare';
 
 /** 성도 등록/수정 폼 (성도 화면과 빠른 등록 모달 공용) */
 export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; onSaved(m: Member): void }) {
@@ -21,7 +22,7 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
     () =>
       members
         .filter((m) => m.isActive && m.isFamilyHead && m.id !== opts.editingId)
-        .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+        .sort((a, b) => compareKo(a.name, b.name))
         .map((m) => ({ id: m.id, label: memberLabel(m) })),
     [members, opts.editingId],
   );

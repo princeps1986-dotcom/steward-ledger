@@ -1,6 +1,7 @@
 import type { AuditLog } from '../../contexts/types';
 import type { WeekRange } from './calendar';
 import { monthOf, yearOf } from './dates';
+import { compareFixed } from './compare';
 
 /** 보고서 기간: 주별이면 주 범위(양끝 포함), 그 외에는 연도 + 포함 월 목록 */
 export interface ReportPeriod {
@@ -22,5 +23,5 @@ export function isInReportPeriod(date: string | undefined, p: ReportPeriod): boo
 export function auditLogsForPeriod(logs: readonly AuditLog[], p: ReportPeriod): AuditLog[] {
   return logs
     .filter((l) => isInReportPeriod(l.beforeSnapshot?.date, p) || isInReportPeriod(l.afterSnapshot?.date, p))
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    .sort((a, b) => compareFixed(b.timestamp, a.timestamp));
 }

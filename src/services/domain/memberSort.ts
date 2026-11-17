@@ -1,5 +1,6 @@
 import type { Member } from '../../contexts/types';
 import { POSITIONS } from './positions';
+import { compareKo } from './compare';
 
 export type MemberSortKey = 'name' | 'position' | 'birthDate' | 'phoneLast4' | 'family' | 'state';
 export type SortDir = 'asc' | 'desc';
@@ -9,7 +10,7 @@ interface SortableRow {
   familyLabel: string;
 }
 
-const byKo = (a: string, b: string): number => a.localeCompare(b, 'ko');
+const byKo = compareKo;
 
 /** 직분은 목사 → 전도사 → 집사 → 권사 → 성도 순, 목록에 없는 값은 뒤로 */
 const positionRank = (p: string): number => {
@@ -37,7 +38,7 @@ export function memberComparator(key: MemberSortKey, dir: SortDir): (a: Sortable
         const av = a.member[key] ?? '';
         const bv = b.member[key] ?? '';
         if (av === '' || bv === '') return av === bv ? byKo(a.member.name, b.member.name) : av === '' ? 1 : -1;
-        r = av.localeCompare(bv);
+        r = compareKo(av, bv);
         break;
       }
       case 'family': {

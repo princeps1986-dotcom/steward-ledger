@@ -16,6 +16,7 @@ import { memberLabel, searchMembers } from '../services/domain/search';
 import { buildReportWorkbook, buildWeeklyWorkbook } from '../services/excel/excelService';
 import { desktop, type SavedFileInfo } from '../services/desktopBridge';
 import { downloadBlob } from '../services/excel/downloadBridge';
+import { compareFixed } from '../services/domain/compare';
 
 export type ReportTab = 'SUMMARY' | 'LIST' | 'PERSONAL' | 'AUDIT';
 
@@ -291,7 +292,7 @@ export function usePersonalReport(f: ReportFilters) {
       const key = familyKeyOfMember(selected);
       list = f.donations.filter((d) => familyKeyOf(d, f.basis, memberById) === key);
     }
-    return [...list].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+    return [...list].sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt));
   }, [selected, mode, f.donations, f.basis, memberById]);
 
   const byType = useMemo(() => {

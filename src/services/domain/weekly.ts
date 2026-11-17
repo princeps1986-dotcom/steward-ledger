@@ -1,5 +1,6 @@
 import type { Donation, OfferingType } from '../../contexts/types';
 import type { WeekRange } from './calendar';
+import { compareKo, compareKoNumeric } from './compare';
 
 export interface WeeklyColumn {
   id: string;
@@ -24,7 +25,7 @@ export interface WeeklyMatrix {
   count: number;
 }
 
-const byName = (a: string, b: string): number => a.localeCompare(b, 'ko', { numeric: true });
+const byName = compareKoNumeric;
 
 /**
  * 주별 보고서: 가로 = 헌금 종류, 세로 = 성도명.
@@ -66,7 +67,7 @@ export function buildWeeklyMatrix(
 
   const rows = [...rowMap.values()].sort((a, b) => {
     if (a.isAnonymous !== b.isAnonymous) return a.isAnonymous ? 1 : -1;
-    return byName(a.name, b.name) || (!a.isAnonymous && tieBreak ? tieBreak(a.key).localeCompare(tieBreak(b.key), 'ko') : 0);
+    return byName(a.name, b.name) || (!a.isAnonymous && tieBreak ? compareKo(tieBreak(a.key), tieBreak(b.key)) : 0);
   });
   const columnTotals = columns.map((_, i) => rows.reduce((s, r) => s + r.cells[i], 0));
   return {

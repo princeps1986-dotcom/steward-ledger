@@ -1,5 +1,6 @@
 import type { Member } from '../../contexts/types';
 import { normalizePosition } from './positions';
+import { compareKo } from './compare';
 
 /** 자동 완성. 연락처 뒷4자리로도 찾을 수 있습니다. */
 export function matchMember(m: Member, query: string): boolean {
@@ -18,7 +19,7 @@ export function searchMembers(members: Member[], query: string, limit = 20, incl
       // 이름이 쿼리로 시작하는 항목 우선
       const as = a.name.startsWith(q) ? 0 : 1;
       const bs = b.name.startsWith(q) ? 0 : 1;
-      return as - bs || a.name.localeCompare(b.name, 'ko');
+      return as - bs || compareKo(a.name, b.name);
     })
     .slice(0, limit);
 }
