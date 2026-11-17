@@ -6,22 +6,26 @@ import { db } from '../storage/db';
 import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
 import { sha256Hex } from '../backup/validation';
 import { createDemoData, removeDemoData } from './demoService';
-import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_MOBILE, DEMO_SPEC_PC, type DemoSpec } from './demoData';
+import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, type DemoSpec } from './demoData';
 import { hasDemoData, readDemoRestore } from './demoState';
 
 const NOW = new Date(2026, 10, 17); // 2026-11-17(화)
 /** 서비스 시험용 작은 규격(주 6개, 성도 30명) */
 const SMALL: DemoSpec = { members: 30, weeks: 6, total: 600, weekMean: 100, weekMin: 50, weekMax: 200, spikeCount: 40 };
 
-describe('demo data (PC spec: 800 members, 400,000 donations, 3 years)', () => {
-  const p = buildDemoPayload(DEMO_SPEC_PC, NOW);
+describe.each([
+  ['app (half)', DEMO_SPEC_APP, 200_000, 750, 2000, 5000],
+  ['browser (one third)', DEMO_SPEC_BROWSER, 133_333, 500, 1333, 3333],
+] as const)('demo data for %s: 800 members, 3 years', (_name, spec, total, weekMin, weekMax, spike) => {
+  const p = buildDemoPayload(spec, NOW);
   const all = Object.values(p.donationsByYear).flat();
   const byDate = new Map<string, number>();
   for (const x of all) byDate.set(x.date, (byDate.get(x.date) ?? 0) + 1);
+  const spikeDates = [...byDate.keys()].filter((k) => k.endsWith('-12-25') || k.endsWith('-01-01'));
 
-  it('has 800 members and exactly 400,000 donations, all with the demo prefix, no future dates', () => {
+  it('has 800 members and exactly the planned donations, all with the demo prefix, no future dates', () => {
     expect(p.members).toHaveLength(800);
-    expect(all).toHaveLength(400_000);
+    expect(all).toHaveLength(total);
     expect(p.members.every((m) => m.id.startsWith(DEMO_PREFIX))).toBe(true);
     expect(p.offeringTypes.every((t) => t.id.startsWith(DEMO_PREFIX))).toBe(true);
     expect(all.every((x) => x.id.startsWith(DEMO_PREFIX) && x.date <= '2026-11-17')).toBe(true);
@@ -30,21 +34,20 @@ describe('demo data (PC spec: 800 members, 400,000 donations, 3 years)', () => {
     expect(all.every((x) => typeIds.has(x.offeringTypeId))).toBe(true);
   });
 
-  it('puts 1,500 to 4,000 donations in every normal week and 10,000 more on 12/25 and 1/1', () => {
-    const spikeDates = [...byDate.keys()].filter((k) => k.endsWith('-12-25') || k.endsWith('-01-01'));
+  it('keeps every normal week within its range and adds the spike count on 12/25 and 1/1', () => {
     expect(spikeDates).toHaveLength(6);
-    for (const k of spikeDates) expect(byDate.get(k)!).toBeGreaterThanOrEqual(10_000);
+    for (const k of spikeDates) expect(byDate.get(k)!).toBeGreaterThanOrEqual(spike);
     const weekSums = new Map<string, number>();
     for (const [k, n] of byDate) {
       const d = new Date(k + 'T00:00:00Z');
       const sun = new Date(d.getTime() - d.getUTCDay() * 864e5).toISOString().slice(0, 10);
-      weekSums.set(sun, (weekSums.get(sun) ?? 0) + n - (spikeDates.includes(k) ? 10_000 : 0));
+      weekSums.set(sun, (weekSums.get(sun) ?? 0) + n - (spikeDates.includes(k) ? spike : 0));
     }
     expect(weekSums.size).toBe(156);
     const sums = [...weekSums.values()];
-    expect(Math.min(...sums)).toBeGreaterThanOrEqual(1500);
-    expect(Math.max(...sums)).toBeLessThanOrEqual(4000);
-    expect(Math.max(...sums)).toBeGreaterThan(Math.min(...sums) + 500); // 편차가 있음
+    expect(Math.min(...sums)).toBeGreaterThanOrEqual(weekMin);
+    expect(Math.max(...sums)).toBeLessThanOrEqual(weekMax);
+    expect(Math.max(...sums)).toBeGreaterThan(Math.min(...sums) + (weekMax - weekMin) / 5); // 편차가 있음
   });
 
   it('never repeats the same member and offering type on one date (the app merges those)', () => {
@@ -58,21 +61,10 @@ describe('demo data (PC spec: 800 members, 400,000 donations, 3 years)', () => {
   });
 
   it('is the same for the same day and has six audit logs', () => {
-    expect(buildDemoPayload(DEMO_SPEC_PC, NOW).donationsByYear['2026'][0]).toEqual(p.donationsByYear['2026'][0]);
+    expect(buildDemoPayload(spec, NOW).donationsByYear['2026'][0]).toEqual(p.donationsByYear['2026'][0]);
     expect(Object.values(p.auditLogsByYear).flat()).toHaveLength(6);
   });
 }, 120000);
-
-describe('demo data (mobile spec: one year)', () => {
-  it('covers 52 weeks with the same rules', () => {
-    const p = buildDemoPayload(DEMO_SPEC_MOBILE, NOW);
-    const all = Object.values(p.donationsByYear).flat();
-    const spikes = new Set(all.map((x) => x.date).filter((k) => k.endsWith('-12-25') || k.endsWith('-01-01'))).size;
-    expect(p.members).toHaveLength(800);
-    expect(all.length).toBe(Math.round(52 * 2180) + spikes * 10_000);
-    expect(all.map((x) => x.date).sort()[0] >= '2025-11-09').toBe(true);
-  }, 60000);
-});
 
 describe('allocate', () => {
   it('sums exactly, and the capped version never exceeds the cap', () => {

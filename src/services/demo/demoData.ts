@@ -6,8 +6,8 @@ import { lastSunday } from '../domain/dates';
  * 시연용 데이터. 시연 성도·헌금 종류·헌금 id는 모두 DEMO_PREFIX로 시작해, 앱이 시연 중인지 한 건만 보고 알 수 있습니다(demoState.ts).
  * 같은 날이면 항상 같은 내용입니다(고정 시드). 헌금은 한 달씩 만들어 넘겨 주므로(demoMonths) 큰 규모에서도 메모리는 한 달치입니다.
  *
- * PC: 성도 800명 · 헌금 40만 건(오늘 이전 3년, 156주). 일반 주는 1,500~4,000건 안에서 편차를 두고, 매년 12/25·1/1은 그 하루에 10,000건이 더해집니다.
- * 모바일: 같은 규칙의 최근 1년(52주). 휴대폰은 저장 공간·메모리·시간이 부족하기 때문입니다.
+ * 규모는 접속 방식에 따라 다릅니다(DEMO_SPEC_APP: 데스크톱 앱, DEMO_SPEC_BROWSER: 브라우저). 오늘 이전 3년을 주 단위로 나누어 주마다 편차를 두고,
+ * 매년 12/25·1/1은 그 하루에 건수가 더해집니다.
  */
 export const DEMO_PREFIX = 'demo-';
 
@@ -23,8 +23,10 @@ export interface DemoSpec {
   spikeCount: number;
 }
 
-export const DEMO_SPEC_PC: DemoSpec = { members: 800, weeks: 156, total: 400_000, weekMean: 2180, weekMin: 1500, weekMax: 4000, spikeCount: 10_000 };
-export const DEMO_SPEC_MOBILE: DemoSpec = { ...DEMO_SPEC_PC, weeks: 52, total: undefined };
+/** 데스크톱 앱: 성도 800명 · 헌금 20만 건(3년, 주 750~2,000건, 12/25·1/1은 하루 5,000건 추가) */
+export const DEMO_SPEC_APP: DemoSpec = { members: 800, weeks: 156, total: 200_000, weekMean: 1090, weekMin: 750, weekMax: 2000, spikeCount: 5000 };
+/** 브라우저(휴대폰 포함): 앱의 2/3 규모 — 성도 800명 · 헌금 약 13만 건(3년, 주 500~1,333건, 12/25·1/1은 하루 3,333건 추가). 브라우저는 저장·메모리 여유가 적고 시연용이라 더 작게 만듭니다. */
+export const DEMO_SPEC_BROWSER: DemoSpec = { members: 800, weeks: 156, total: 133_333, weekMean: 727, weekMin: 500, weekMax: 1333, spikeCount: 3333 };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 const ymd = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -139,7 +141,7 @@ export interface DemoPlan {
 }
 
 /** 날짜별 건수를 정하고(가벼움) 달별로 헌금을 만드는 계획을 세웁니다. */
-export function planDemo(spec: DemoSpec = DEMO_SPEC_PC, today: Date = new Date(), seed = 20261116): DemoPlan {
+export function planDemo(spec: DemoSpec = DEMO_SPEC_APP, today: Date = new Date(), seed = 20261116): DemoPlan {
   const rnd = rngOf(seed);
   const members = buildMembers(rnd, spec.members);
   const activeMembers = members.filter((m) => m.isActive);
@@ -250,7 +252,7 @@ export function buildDemoAudits(recent: readonly Donation[], seed = 20261116): R
 }
 
 /** 전체를 한 번에 만든 백업 형태(작은 규모의 시험용). 큰 규모는 planDemo로 한 달씩 처리하세요. */
-export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_PC, today: Date = new Date()): BackupPayload {
+export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_APP, today: Date = new Date()): BackupPayload {
   const plan = planDemo(spec, today);
   const donationsByYear: Record<string, Donation[]> = {};
   let last: Donation[] = [];

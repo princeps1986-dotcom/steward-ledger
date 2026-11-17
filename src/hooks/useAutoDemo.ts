@@ -4,12 +4,12 @@ import { useMemberActions } from '../contexts/MemberContext';
 import { useOfferingActions } from '../contexts/OfferingTypeContext';
 import { hasAnyData } from '../services/backup/backupService';
 import { interruptedRestore } from '../services/backup/streamRestore';
-import { DEMO_SPEC_MOBILE } from '../services/demo/demoData';
+import { DEMO_SPEC_BROWSER } from '../services/demo/demoData';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { hasDemoData } from '../services/demo/demoState';
-import { isMobileDevice } from './useIsMobileDevice';
+import { desktop } from '../services/desktopBridge';
 
-/** 이 브라우저에서 모바일 자동 시연 데이터를 이미 한 번 만들었는지(사용자가 지운 뒤 다시 만들지 않기 위한 표시) */
+/** 이 브라우저에서 자동 시연 데이터를 이미 한 번 만들었는지(사용자가 지운 뒤 다시 만들지 않기 위한 표시) */
 const DONE_KEY = 'steward-auto-demo-done';
 
 const flagged = (): boolean => {
@@ -21,8 +21,8 @@ const flagged = (): boolean => {
 };
 
 /**
- * 휴대폰·태블릿으로 처음 열면 빈 화면 대신 시연 데이터(가벼운 1년치)로 바로 시작합니다. 모바일 브라우저의 저장소는 이 브라우저 안에만 있고
- * 실제 교회 데이터는 PC 앱에 있으므로 잃을 것이 없습니다. 조건: 모바일 + 아직 만든 적 없음 + 데이터 없음. 준비하는 동안 진행률을 돌려줍니다.
+ * 브라우저(데스크톱 앱이 아닌 접속, 휴대폰 포함)로 처음 열면 빈 화면 대신 시연 데이터(작은 규격)로 바로 시작합니다. 브라우저의 저장소는 이 브라우저 안에만 있고
+ * 실제 교회 데이터는 데스크톱 앱에 있으므로 잃을 것이 없습니다. 조건: 브라우저 + 아직 만든 적 없음 + 데이터 없음. 준비하는 동안 진행률을 돌려줍니다.
  */
 export function useAutoDemo(): { done: number; total: number } | null {
   const memberActions = useMemberActions();
@@ -31,7 +31,7 @@ export function useAutoDemo(): { done: number; total: number } | null {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
-    if (!isMobileDevice() || flagged()) return;
+    if (desktop() || flagged()) return; // 데스크톱 앱이 아니라 브라우저로 열었을 때만
     let cancelled = false;
     void (async () => {
       try {
@@ -42,7 +42,7 @@ export function useAutoDemo(): { done: number; total: number } | null {
           return;
         }
         setProgress({ done: 0, total: 0 });
-        await createDemoData({ spec: DEMO_SPEC_MOBILE, onProgress: (done, total) => !cancelled && setProgress({ done, total }) });
+        await createDemoData({ spec: DEMO_SPEC_BROWSER, onProgress: (done, total) => !cancelled && setProgress({ done, total }) });
         localStorage.setItem(DONE_KEY, '1');
         await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
       } catch {

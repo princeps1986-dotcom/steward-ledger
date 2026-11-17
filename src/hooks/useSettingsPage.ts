@@ -9,7 +9,6 @@ import { formatAmountInput, formatNumber, parseAmount } from '../services/domain
 import { formatDateTime } from '../services/domain/dates';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { refreshDemoState, useDemoActive } from '../services/demo/demoState';
-import { isMobileDevice } from './useIsMobileDevice';
 import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan } from '../services/backup/streamRestore';
 import { parseAndValidateBackup } from '../services/backup/validation';
@@ -314,7 +313,7 @@ export function useSettingsPage() {
     resetLeft,
     demoActive,
     demoProgress,
-    demoMobile: isMobileDevice(),
+    demoBrowser: !desktop(),
     removeDemoOpen,
     openRemoveDemo: () => setRemoveDemoOpen(true),
     cancelRemoveDemo: () => setRemoveDemoOpen(false),

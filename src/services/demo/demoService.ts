@@ -2,13 +2,12 @@ import type { Donation } from '../../contexts/types';
 import { backupBeforeDemo, resetAllData } from '../backup/backupService';
 import { desktopBackupFile, restoreAllFromFile, scanBackupFile, type RestoreMarker } from '../backup/streamRestore';
 import { desktop } from '../desktopBridge';
-import { isMobileDevice } from '../../hooks/useIsMobileDevice';
 import { auditKey, KEYS, listAuditKeys, listDonationMonths, monthWrite, transact, type Write } from '../storage/storageService';
-import { buildDemoAudits, DEMO_SPEC_MOBILE, DEMO_SPEC_PC, planDemo, type DemoSpec } from './demoData';
+import { buildDemoAudits, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, planDemo, type DemoSpec } from './demoData';
 import { hasDemoData, readDemoRestore, refreshDemoState, type DemoRestoreInfo } from './demoState';
 
-/** 휴대폰·태블릿이면 가벼운 규격(1년치)을, 아니면 전체 규격(3년치)을 씁니다. */
-export const demoSpecForDevice = (): DemoSpec => (isMobileDevice() ? DEMO_SPEC_MOBILE : DEMO_SPEC_PC);
+/** 데스크톱 앱이면 앱 규격(20만 건), 브라우저면 더 작은 규격(약 13만 건)을 씁니다. */
+export const demoSpecForDevice = (): DemoSpec => (desktop() ? DEMO_SPEC_APP : DEMO_SPEC_BROWSER);
 
 /**
  * 시연 데이터 생성: 원래 데이터를 먼저 백업하고(실패하면 중단), 모든 데이터를 시연 데이터로 바꿉니다.
