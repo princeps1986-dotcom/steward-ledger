@@ -30,6 +30,17 @@ export const readDemoRestore = (): Promise<DemoRestoreInfo | null> => getItem<De
 let active = false;
 const listeners = new Set<() => void>();
 
+/** 시연 데이터를 뒤에서 이어 만드는 중이면 진행(끝낸 달/전체 달), 아니면 null */
+export interface DemoCreating {
+  done: number;
+  total: number;
+}
+let creating: DemoCreating | null = null;
+export function setDemoCreating(next: DemoCreating | null): void {
+  creating = next;
+  listeners.forEach((l) => l());
+}
+
 export async function refreshDemoState(): Promise<boolean> {
   const next = await hasDemoData();
   if (next !== active) {
@@ -39,11 +50,9 @@ export async function refreshDemoState(): Promise<boolean> {
   return next;
 }
 
-export const useDemoActive = (): boolean =>
-  useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-    () => active,
-  );
+const subscribe = (cb: () => void) => {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+};
+export const useDemoActive = (): boolean => useSyncExternalStore(subscribe, () => active);
+export const useDemoCreating = (): DemoCreating | null => useSyncExternalStore(subscribe, () => creating);

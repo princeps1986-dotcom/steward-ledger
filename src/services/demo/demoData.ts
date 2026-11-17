@@ -136,7 +136,7 @@ export interface DemoPlan {
   months: string[];
   /** 헌금 총 건수 */
   total: number;
-  /** 한 달씩 만들어 넘깁니다(오래된 달부터). 메모리는 한 달치 */
+  /** 한 달씩 만들어 넘깁니다(최근 달부터 — 먼저 쓸 수 있게). 메모리는 한 달치 */
   generate(): Generator<{ ym: string; donations: Donation[] }>;
 }
 
@@ -180,7 +180,7 @@ export function planDemo(spec: DemoSpec = DEMO_SPEC_APP, today: Date = new Date(
     const gen = rngOf(seed + 1);
     const order = activeMembers.map((_, i) => i);
     let seq = 0;
-    for (const ym of months) {
+    for (const ym of [...months].reverse()) {
       const donations: Donation[] = [];
       for (const date of byMonth.get(ym)!) {
         const n = perDate.get(date)!;
@@ -257,8 +257,8 @@ export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_APP, today: Date = n
   const donationsByYear: Record<string, Donation[]> = {};
   let last: Donation[] = [];
   for (const { donations } of plan.generate()) {
+    if (last.length === 0) last = donations; // 첫 달 = 가장 최근 달
     for (const d of donations) (donationsByYear[d.date.slice(0, 4)] ??= []).push(d);
-    last = donations;
   }
   return { members: plan.members, offeringTypes: plan.offeringTypes, donationsByYear, auditLogsByYear: buildDemoAudits(last) };
 }

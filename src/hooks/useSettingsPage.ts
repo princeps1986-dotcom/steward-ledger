@@ -184,8 +184,17 @@ export function useSettingsPage() {
     if (demoActive) return; // 시연 중에는 만들 수 없습니다(원래 데이터 백업이 시연 데이터로 덮이지 않도록).
     setBusy(true);
     try {
-      const info = await createDemoData({ onProgress: (done, total) => setDemoProgress({ done, total }) });
-      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      const reloadAll = () => Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      // 최근 몇 달이 저장되면 바로 쓸 수 있게 화면을 열고, 나머지 과거 달은 뒤에서 이어서 만듭니다(진행은 최상단 띠에 표시).
+      const info = await createDemoData({
+        onProgress: (done, total) => setDemoProgress({ done, total }),
+        onReady: () => {
+          setDemoOpen(false);
+          setBusy(false);
+          void reloadAll();
+        },
+      });
+      await reloadAll();
       const where = info.backupName
         ? ` 원래 데이터는 백업 폴더의 before-demo 폴더에 ${info.backupName} 파일로 저장되었습니다.`
         : info.downloadedName

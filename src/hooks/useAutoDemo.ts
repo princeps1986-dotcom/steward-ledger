@@ -42,9 +42,19 @@ export function useAutoDemo(): { done: number; total: number } | null {
           return;
         }
         setProgress({ done: 0, total: 0 });
-        await createDemoData({ spec: DEMO_SPEC_BROWSER, onProgress: (done, total) => !cancelled && setProgress({ done, total }) });
+        let ready = false;
+        const reloadAll = () => Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+        await createDemoData({
+          spec: DEMO_SPEC_BROWSER,
+          onProgress: (done, total) => !cancelled && !ready && setProgress({ done, total }),
+          onReady: () => {
+            ready = true;
+            if (!cancelled) setProgress(null); // 최근 몇 달이 준비되면 바로 시작합니다(나머지는 뒤에서 이어 만듦).
+            void reloadAll();
+          },
+        });
         localStorage.setItem(DONE_KEY, '1');
-        await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+        await reloadAll();
       } catch {
         // 실패하면 빈 화면으로 둡니다(다음에 열 때 다시 시도). 설정에서 직접 만들 수도 있습니다.
       } finally {

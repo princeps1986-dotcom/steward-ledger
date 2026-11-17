@@ -170,3 +170,29 @@ describe('create and remove demo data', () => {
     expect(await listDonationMonths()).toEqual([]);
   }, 60000);
 });
+
+describe('newest-first creation', () => {
+  it('is usable after the newest months (onReady), then finishes the older months with exact totals', async () => {
+    fakeDesktop();
+    let readyMonths: string[] = [];
+    const info = await createDemoData({ spec: SMALL, today: NOW, onReady: () => void listDonationMonths().then((m) => (readyMonths = m)) });
+    expect(info.backupName).toBeNull();
+    expect(readyMonths.length).toBeLessThanOrEqual(3);
+    const months = await listDonationMonths();
+    expect(months.length).toBeGreaterThanOrEqual(readyMonths.length);
+    let n = 0;
+    for (const ym of months) n += (await readMonth(ym)).length;
+    expect(n).toBe(SMALL.total);
+    expect(await getItem(KEYS.restoreMarker)).toBeNull();
+  }, 60000);
+
+  it('removing while the older months are still being made stops the creation and leaves nothing', async () => {
+    fakeDesktop();
+    let removal: Promise<unknown> | null = null;
+    const created = createDemoData({ spec: SMALL, today: NOW, onReady: () => { removal = removeDemoData(); } });
+    await created;
+    await removal;
+    expect(await hasDemoData()).toBe(false);
+    expect(await listDonationMonths()).toEqual([]);
+  }, 60000);
+});
