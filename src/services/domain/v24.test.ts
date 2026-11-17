@@ -32,9 +32,9 @@ describe('memberComparator', () => {
     expect(names([...rows].sort(memberComparator('position', 'asc')))).toEqual(['가', '마', '나', '다', '라']);
   });
   it('keeps empty values last regardless of direction', () => {
-    const rows = [m('가', '성도'), m('나', '성도', { birthDate: '1990-01-01' }), m('다', '성도', { birthDate: '1980-05-05' })];
-    expect(names([...rows].sort(memberComparator('birthDate', 'asc')))).toEqual(['다', '나', '가']);
-    expect(names([...rows].sort(memberComparator('birthDate', 'desc')))).toEqual(['나', '다', '가']);
+    const rows = [m('가', '성도'), m('나', '성도', { phoneLast4: '2222' }), m('다', '성도', { phoneLast4: '1111' })];
+    expect(names([...rows].sort(memberComparator('phoneLast4', 'asc')))).toEqual(['다', '나', '가']);
+    expect(names([...rows].sort(memberComparator('phoneLast4', 'desc')))).toEqual(['나', '다', '가']);
   });
   it('puts active members first when sorting by state ascending', () => {
     const rows = [m('가', '성도', { isActive: false }), m('나', '성도')];

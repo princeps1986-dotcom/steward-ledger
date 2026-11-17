@@ -1,5 +1,6 @@
 import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
+import { stripBirthDate } from '../domain/memberRules';
 
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -178,6 +179,8 @@ export async function parseAndValidateBackup(text: string): Promise<BackupParseR
       auditLogsByYear: Object.fromEntries(Object.entries(p.auditLogsByYear).map(([y, l]) => [y, fillReason(l)])),
     };
   }
+
+  payload = { ...payload, members: stripBirthDate(payload.members).members }; // 옛 백업의 생년월일은 가져오지 않습니다.
 
   return {
     ok: true,

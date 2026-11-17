@@ -1,5 +1,4 @@
 import type { Member } from '../../contexts/types';
-import { isValidDateString } from '../domain/dates';
 import { nowIso } from '../domain/ids';
 import { applyMemberSave, EMPTY_MEMBER_DRAFT } from '../domain/memberRules';
 import { normalizePosition } from '../domain/positions';
@@ -8,7 +7,6 @@ export interface ImportRow {
   rowNo: number;
   name: string;
   position: string;
-  birthDate: string;
   phoneLast4: string;
   isHead: boolean;
   headName: string;
@@ -34,16 +32,15 @@ export interface ImportStats {
 const HEADER_ALIASES: Record<keyof Omit<ImportRow, 'rowNo'>, string[]> = {
   name: ['이름', '성명'],
   position: ['직분'],
-  birthDate: ['생년월일', '생일'],
   phoneLast4: ['연락처뒷4자리', '연락처 뒷4자리', '연락처뒷자리', '전화뒷자리'],
   isHead: ['세대주여부', '세대주 여부'],
   headName: ['세대주이름', '세대주 이름', '세대주'],
 };
 
-export const TEMPLATE_HEADERS = ['이름', '직분', '생년월일', '연락처뒷4자리', '세대주여부', '세대주이름'];
+export const TEMPLATE_HEADERS = ['이름', '직분', '연락처뒷4자리', '세대주여부', '세대주이름'];
 
 export function templateCsv(): string {
-  const rows = [TEMPLATE_HEADERS, ['김철수', '집사', '1975-03-02', '1234', 'Y', ''], ['이영희', '권사', '1977-08-15', '5678', 'N', '김철수']];
+  const rows = [TEMPLATE_HEADERS, ['김철수', '집사', '1234', 'Y', ''], ['이영희', '권사', '5678', 'N', '김철수']];
   return '﻿' + rows.map((r) => r.join(',')).join('\r\n');
 }
 
@@ -77,27 +74,19 @@ const pick = (rec: Record<string, string>, aliases: string[]): string => {
   return '';
 };
 
-export function normalizeDate(s: string): string {
-  const m = /^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})\.?$/.exec(s.trim());
-  if (!m) return s.trim();
-  return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-}
-
 export function normalizeRows(raw: Record<string, string>[]): ImportRow[] {
   return raw.map((rec, i) => ({
     rowNo: i + 2, // 1행은 헤더
     name: pick(rec, HEADER_ALIASES.name),
     position: pick(rec, HEADER_ALIASES.position),
-    birthDate: normalizeDate(pick(rec, HEADER_ALIASES.birthDate)),
     phoneLast4: pick(rec, HEADER_ALIASES.phoneLast4).replace(/[^0-9]/g, ''),
     isHead: /^(y|yes|예|o|1|true|세대주)$/i.test(pick(rec, HEADER_ALIASES.isHead)),
     headName: pick(rec, HEADER_ALIASES.headName),
   }));
 }
 
-function isSamePerson(m: { name: string; birthDate?: string; phoneLast4?: string }, r: ImportRow): boolean {
+function isSamePerson(m: { name: string; phoneLast4?: string }, r: ImportRow): boolean {
   if (m.name !== r.name) return false;
-  if (r.birthDate && m.birthDate) return m.birthDate === r.birthDate;
   if (r.phoneLast4 && m.phoneLast4) return m.phoneLast4 === r.phoneLast4;
   return true; // 비교할 식별 정보가 없으면 이름 일치만으로 중복 처리(안전 측)
 }
@@ -116,7 +105,6 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     };
     const row: PreviewRow = { ...r, status, messages };
     if (!r.name) fail('이름이 없습니다.');
-    if (r.birthDate && !isValidDateString(r.birthDate)) fail(`생년월일 형식 오류: ${r.birthDate}`);
     if (r.phoneLast4) {
       if (r.phoneLast4.length > 4) fail('연락처 뒷자리는 4자리입니다.');
       else if (r.phoneLast4.length < 4) {
@@ -186,7 +174,6 @@ export function applyImport(
       ...EMPTY_MEMBER_DRAFT,
       name: row.name,
       position: normalizePosition(row.position),
-      birthDate: row.birthDate,
       phoneLast4: row.phoneLast4,
       isFamilyHead: row.isHead,
       headMemberId,
@@ -213,9 +200,8 @@ export function applyImport(
       }
       const m = members.find((x) => x.id === row.duplicateOfId);
       if (m) {
-        // 덮어쓰기는 직분·생년월일·연락처만 갱신합니다(세대 연결은 유지).
+        // 덮어쓰기는 직분·연락처만 갱신합니다(세대 연결은 유지).
         if (normalizePosition(row.position)) m.position = normalizePosition(row.position);
-        if (row.birthDate) m.birthDate = row.birthDate;
         if (row.phoneLast4) m.phoneLast4 = row.phoneLast4;
         m.updatedAt = now;
         stats.overwritten++;

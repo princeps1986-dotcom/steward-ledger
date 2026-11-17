@@ -24,8 +24,7 @@ export function searchMembers(members: Member[], query: string, limit = 20, incl
     .slice(0, limit);
 }
 
-/** 동명이인 식별 표기: 이름 (직분 / 연락처 뒷4자리 또는 생년) */
+/** 동명이인 식별 표기: 이름 (직분 / 연락처 뒷4자리) */
 export function memberLabel(m: Member): string {
-  const ident = m.phoneLast4 || (m.birthDate ? `${m.birthDate.slice(0, 4)}년생` : '-');
-  return `${m.name} (${normalizePosition(m.position) || '-'} / ${ident})`;
+  return `${m.name} (${normalizePosition(m.position) || '-'} / ${m.phoneLast4 || '-'})`;
 }

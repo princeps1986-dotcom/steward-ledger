@@ -50,7 +50,7 @@ describe('test data generator (scripts/generate-test-data.mjs)', () => {
     expect([...nameCount.values()].filter((c) => c > 1).length).toBeGreaterThanOrEqual(5); // 동명이인
     expect(members.filter((m) => !m.isActive)).toHaveLength(12);
     expect(members.some((m) => m.position === '장로')).toBe(true); // 목록에 없는 직분 값
-    expect(members.some((m) => !m.phoneLast4) && members.some((m) => !m.birthDate)).toBe(true);
+    expect(members.some((m) => !m.phoneLast4) && members.every((m) => !('birthDate' in m))).toBe(true); // 생년월일은 만들지 않음
     expect(members.some((m) => m.isFamilyHead && m.familyGroupId && m.familyGroupId !== m.id)).toBe(true); // 세대주 변경
     expect(donations.some((d) => d.memberId === null && /^무명\d+$/.test(d.donorDisplayName))).toBe(true);
     expect(donations.some((d) => d.amount > 10_000_000)).toBe(true); // 큰 금액 확인창 대상

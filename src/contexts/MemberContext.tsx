@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
 import { nowIso } from '../services/domain/ids';
-import { applyMemberSave, canDeactivate, type MemberDraft, type MemberSaveResult } from '../services/domain/memberRules';
+import { applyMemberSave, canDeactivate, stripBirthDate, type MemberDraft, type MemberSaveResult } from '../services/domain/memberRules';
 import { getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { Member } from './types';
@@ -29,7 +29,21 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(async () => {
-    setMembers((await getItem<Member[]>(KEYS.members)) ?? []);
+    let list = (await getItem<Member[]>(KEYS.members)) ?? [];
+    const cleaned = stripBirthDate(list);
+    if (cleaned.changed) {
+      // 생년월일은 더 이상 보관하지 않으므로 이전에 저장된 값도 한 번 지웁니다.
+      list = cleaned.members;
+      try {
+        await transact(async (read) => {
+          const latest = stripBirthDate((await read<Member[]>(KEYS.members)) ?? []);
+          return { writes: latest.changed ? [{ key: KEYS.members, value: latest.members }] : [], result: undefined };
+        });
+      } catch {
+        // 저장에 실패해도 화면에는 지운 값을 쓰고 다음 실행 때 다시 시도합니다.
+      }
+    }
+    setMembers(list);
     setLoaded(true);
   }, []);
 

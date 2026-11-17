@@ -45,7 +45,6 @@ export function useMembersPage() {
         initial: {
           name: m.name,
           position: m.position,
-          birthDate: m.birthDate ?? '',
           phoneLast4: m.phoneLast4 ?? '',
           isFamilyHead: m.isFamilyHead,
           headMemberId: linkedHeadIdOf(members, m),

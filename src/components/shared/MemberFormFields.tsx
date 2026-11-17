@@ -1,5 +1,4 @@
 import type { MemberFormController } from '../../hooks/useMemberForm';
-import { DatePicker } from './DatePicker';
 
 /** 성도 등록/수정 입력 필드 (성도 화면·빠른 등록 공용) */
 export function MemberFormFields({ draft, setField, headOptions, positionOptions, error }: MemberFormController) {
@@ -20,10 +19,6 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
           ))}
         </select>
       </label>
-      <div>
-        <span className="label">생년월일</span>
-        <DatePicker value={draft.birthDate} onChange={setField('birthDate')} ariaLabel="생년월일" />
-      </div>
       <label>
         <span className="label">연락처 뒷 4자리</span>
         <input className="input" inputMode="numeric" value={draft.phoneLast4} onChange={(e) => setField('phoneLast4')(e.target.value)} />

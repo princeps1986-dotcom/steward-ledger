@@ -5,7 +5,6 @@ import { normalizePosition } from './positions';
 export interface MemberDraft {
   name: string;
   position: string;
-  birthDate: string;
   phoneLast4: string;
   isFamilyHead: boolean;
   /** 세대원일 때 연결할 세대주의 Member.id ('' = 연결 없음) */
@@ -15,7 +14,6 @@ export interface MemberDraft {
 export const EMPTY_MEMBER_DRAFT: MemberDraft = {
   name: '',
   position: '',
-  birthDate: '',
   phoneLast4: '',
   isFamilyHead: false,
   headMemberId: '',
@@ -25,9 +23,20 @@ export type MemberSaveResult = { ok: true; members: Member[]; saved: Member } | 
 
 export function validateDraft(d: MemberDraft): string | null {
   if (!d.name.trim()) return '이름을 입력하세요.';
-  if (d.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(d.birthDate)) return '생년월일은 YYYY-MM-DD 형식입니다.';
   if (d.phoneLast4 && !/^\d{4}$/.test(d.phoneLast4)) return '연락처 뒷자리는 숫자 4자리입니다.';
   return null;
+}
+
+/** 옛 데이터에 남은 생년월일(개인정보)을 뺍니다. 바뀐 게 없으면 같은 배열과 changed=false를 돌려줍니다. */
+export function stripBirthDate(members: Member[]): { members: Member[]; changed: boolean } {
+  let changed = false;
+  const out = members.map((m) => {
+    if (!('birthDate' in m)) return m;
+    changed = true;
+    const { birthDate: _removed, ...rest } = m as Member & { birthDate?: unknown };
+    return rest;
+  });
+  return { members: changed ? out : members, changed };
 }
 
 /** 그룹의 현재 세대주 (없으면 그룹 ID와 같은 id의 성도) */
@@ -45,11 +54,10 @@ export function linkedHeadIdOf(members: Member[], m: Member): string {
   return currentHeadOf(members, m.familyGroupId)?.id ?? '';
 }
 
-function base(d: MemberDraft): Pick<Member, 'name' | 'position' | 'birthDate' | 'phoneLast4'> {
+function base(d: MemberDraft): Pick<Member, 'name' | 'position' | 'phoneLast4'> {
   return {
     name: d.name.trim(),
     position: normalizePosition(d.position),
-    birthDate: d.birthDate || undefined,
     phoneLast4: d.phoneLast4 || undefined,
   };
 }

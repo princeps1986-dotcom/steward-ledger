@@ -24,7 +24,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
         <span className="text-sm text-gray-600">{im.fileName}</span>
       </div>
       <p className="text-xs text-gray-500">
-        컬럼: 이름(필수), 직분, 생년월일(YYYY-MM-DD), 연락처뒷4자리, 세대주여부(Y/N), 세대주이름.
+        컬럼: 이름(필수), 직분, 연락처뒷4자리, 세대주여부(Y/N), 세대주이름.
       </p>
       {im.error ? <p className="text-sm text-red-600">{im.error}</p> : null}
       {im.stats ? (
@@ -36,7 +36,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
       {im.hasPreview ? (
         <>
           <p className="text-sm">
-            정상 {im.summary.ok}건 · 중복 {im.summary.dup}건 · 오류 {im.summary.err}건 (오류 행은 가져오지 않습니다. 중복은 기본 건너뛰기이며, 덮어쓰기는 직분·생년월일·연락처만 갱신합니다.)
+            정상 {im.summary.ok}건 · 중복 {im.summary.dup}건 · 오류 {im.summary.err}건 (오류 행은 가져오지 않습니다. 중복은 기본 건너뛰기이며, 덮어쓰기는 직분·연락처만 갱신합니다.)
           </p>
           <div className="max-h-[50vh] overflow-auto rounded border">
             <table className="w-full">
@@ -46,7 +46,6 @@ function ImportBody({ onClose }: { onClose(): void }) {
                   <th className="th">상태</th>
                   <th className="th">이름</th>
                   <th className="th">직분</th>
-                  <th className="th">생년월일</th>
                   <th className="th">연락처</th>
                   <th className="th">세대주</th>
                   <th className="th">세대주이름</th>
@@ -61,7 +60,6 @@ function ImportBody({ onClose }: { onClose(): void }) {
                     <td className={`td font-semibold ${STATUS_COLOR[r.status]}`}>{r.statusLabel}</td>
                     <td className="td">{r.name}</td>
                     <td className="td">{normalizePosition(r.position) || '-'}</td>
-                    <td className="td">{r.birthDate}</td>
                     <td className="td">{r.phoneLast4}</td>
                     <td className="td">{r.isHead ? 'Y' : ''}</td>
                     <td className="td">{r.headName}</td>

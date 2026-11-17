@@ -3,7 +3,8 @@ import type { Member } from '../contexts/types';
 import { selectFilesToPrune } from './backup/autoBackupService';
 import { computeChecksum, parseAndValidateBackup } from './backup/validation';
 import { sanitizeFileName } from './excel/downloadBridge';
-import { applyImport, buildPreview, decodeCsvBytes, normalizeDate, normalizeRows } from './import/memberImportService';
+import { stripBirthDate } from './domain/memberRules';
+import { applyImport, buildPreview, decodeCsvBytes, normalizeRows } from './import/memberImportService';
 
 const member = (p: Partial<Member>): Member => ({
   id: 'm1',
@@ -66,18 +67,13 @@ describe('member import', () => {
     expect(decodeCsvBytes(cp949)).toBe('이름');
   });
 
-  it('normalizes dates', () => {
-    expect(normalizeDate('1975.3.2')).toBe('1975-03-02');
-    expect(normalizeDate('19750302')).toBe('1975-03-02');
-  });
-
   it('previews errors, duplicates and head links, then applies heads first', () => {
-    const existing = [member({ id: 'e1', name: '박민수', birthDate: '1980-01-01', isFamilyHead: true, familyGroupId: 'e1' })];
+    const existing = [member({ id: 'e1', name: '박민수', phoneLast4: '1234', isFamilyHead: true, familyGroupId: 'e1' })];
     const rows = normalizeRows([
       { 이름: '이영희', 세대주여부: 'N', 세대주이름: '김철수' },
-      { 이름: '김철수', 생년월일: '1975-03-02', 세대주여부: 'Y' },
+      { 이름: '김철수', 세대주여부: 'Y' },
       { 이름: '', 직분: '집사' },
-      { 이름: '박민수', 생년월일: '1980-01-01', 직분: '집사' },
+      { 이름: '박민수', 연락처뒷4자리: '1234', 직분: '집사' },
       { 이름: '최수진', 세대주이름: '박민수' },
       { 이름: '정하나', 세대주이름: '없는사람' },
     ]);
@@ -91,5 +87,25 @@ describe('member import', () => {
     expect(members.find((m) => m.name === '이영희')!.familyGroupId).toBe(kim.id);
     expect(members.find((m) => m.name === '최수진')!.familyGroupId).toBe('e1');
     expect(members.find((m) => m.id === 'e1')!.position).toBe('집사');
+  });
+});
+
+describe('birth date removal', () => {
+  it('strips stored birth dates and reports whether anything changed', () => {
+    const old = [{ ...member({ id: 'a' }), birthDate: '1975-03-02' }] as unknown as Member[];
+    const r = stripBirthDate(old);
+    expect(r.changed).toBe(true);
+    expect('birthDate' in r.members[0]).toBe(false);
+    const clean = [member({ id: 'b' })];
+    const r2 = stripBirthDate(clean);
+    expect(r2.changed).toBe(false);
+    expect(r2.members).toBe(clean);
+  });
+
+  it('ignores birth dates in an old backup file on restore', async () => {
+    const payload = { members: [{ ...member({ id: 'm1' }), birthDate: '1975-03-02' }], offeringTypes: [], donations: [] };
+    const res = await parseAndValidateBackup(JSON.stringify({ schemaVersion: 1, payload }));
+    if (!res.ok) throw new Error(res.error);
+    expect('birthDate' in res.envelope.payload.members[0]).toBe(false);
   });
 });

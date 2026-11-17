@@ -107,7 +107,6 @@ scripts/                testdata-core.mjs(생성 규칙), generate-test-data.mjs
 interface Member {            // 성도
   id: string; name: string;
   position: string;           // 직분. 빈 값 = 없음 ('성도'는 직분이 아님)
-  birthDate?: string;         // YYYY-MM-DD
   phoneLast4?: string;        // 동명이인 구분
   familyGroupId?: string;     // 세대 그룹 = 최초 세대주의 id (세대주가 바뀌어도 유지)
   isFamilyHead: boolean;

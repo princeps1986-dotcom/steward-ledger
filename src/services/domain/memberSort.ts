@@ -2,7 +2,7 @@ import type { Member } from '../../contexts/types';
 import { POSITIONS } from './positions';
 import { compareKo } from './compare';
 
-export type MemberSortKey = 'name' | 'position' | 'birthDate' | 'phoneLast4' | 'family' | 'state';
+export type MemberSortKey = 'name' | 'position' | 'phoneLast4' | 'family' | 'state';
 export type SortDir = 'asc' | 'desc';
 
 interface SortableRow {
@@ -19,7 +19,7 @@ const positionRank = (p: string): number => {
 };
 
 /**
- * 성도 목록 정렬 비교 함수. 값이 없는 항목(생년월일·연락처 '-')은 정렬 방향과 무관하게 항상 맨 뒤에 두고,
+ * 성도 목록 정렬 비교 함수. 값이 없는 항목(연락처 '-')은 정렬 방향과 무관하게 항상 맨 뒤에 두고,
  * 같은 값은 이름 순으로 정렬합니다.
  */
 export function memberComparator(key: MemberSortKey, dir: SortDir): (a: SortableRow, b: SortableRow) => number {
@@ -33,10 +33,9 @@ export function memberComparator(key: MemberSortKey, dir: SortDir): (a: Sortable
       case 'position':
         r = positionRank(a.member.position) - positionRank(b.member.position);
         break;
-      case 'birthDate':
       case 'phoneLast4': {
-        const av = a.member[key] ?? '';
-        const bv = b.member[key] ?? '';
+        const av = a.member.phoneLast4 ?? '';
+        const bv = b.member.phoneLast4 ?? '';
         if (av === '' || bv === '') return av === bv ? byKo(a.member.name, b.member.name) : av === '' ? 1 : -1;
         r = compareKo(av, bv);
         break;

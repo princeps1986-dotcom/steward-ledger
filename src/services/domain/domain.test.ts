@@ -66,9 +66,9 @@ describe('search', () => {
     expect(matchMember(m, '1234')).toBe(true);
     expect(matchMember(m, 'ㅇㅇ')).toBe(false);
   });
-  it('label uses phone, then birth year', () => {
+  it('label uses the phone last 4 digits or a dash', () => {
     expect(memberLabel(member({ phoneLast4: '1234' }))).toBe('김철수 (집사 / 1234)');
-    expect(memberLabel(member({ birthDate: '1975-03-02' }))).toBe('김철수 (집사 / 1975년생)');
+    expect(memberLabel(member({}))).toBe('김철수 (집사 / -)');
   });
 });
 

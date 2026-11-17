@@ -5,7 +5,6 @@ export interface Member {
   id: string;
   name: string;
   position: string;
-  birthDate?: string; // YYYY-MM-DD
   phoneLast4?: string;
   /** 세대 그룹 ID = 최초 세대주의 Member.id. 세대주가 바뀌어도 유지되고 isFamilyHead만 이전됩니다. */
   familyGroupId?: string;

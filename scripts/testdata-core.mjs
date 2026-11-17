@@ -364,5 +364,6 @@ yesterdayLines.slice(20, 22).forEach((gone, i) => {
 });
 
 
-return { payload: { members, offeringTypes, donationsByYear, auditLogsByYear }, households, yesterdayLines, todayLines, YESTERDAY };
+// 성도 정보에는 생년월일을 보관하지 않으므로, 나이로 어른·아이를 가르는 위 계산에만 쓰고 출력에서는 뺍니다.
+return { payload: { members: members.map(({ birthDate: _born, ...m }) => m), offeringTypes, donationsByYear, auditLogsByYear }, households, yesterdayLines, todayLines, YESTERDAY };
 }

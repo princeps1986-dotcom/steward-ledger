@@ -1,5 +1,6 @@
 import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
+import { stripBirthDate } from '../domain/memberRules';
 import type { DesktopApi } from '../desktopBridge';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
 import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
@@ -129,7 +130,7 @@ export async function scanBackupFile(file: ReadableBackup): Promise<ScanResult> 
       if (typeof o.exportedAt === 'string') scan.exportedAt = o.exportedAt;
     } else if (o.t === 'members') {
       if (!Array.isArray(o.data) || !o.data.every(isMember)) return bad('성도 명단 형식이 올바르지 않습니다.');
-      scan.members = o.data;
+      scan.members = stripBirthDate(o.data).members; // 옛 백업의 생년월일은 가져오지 않습니다.
     } else if (o.t === 'offeringTypes') {
       if (!Array.isArray(o.data) || !o.data.every(isOfferingType)) return bad('헌금 종류 형식이 올바르지 않습니다.');
       scan.offeringTypes = o.data;
