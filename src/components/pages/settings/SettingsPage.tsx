@@ -56,8 +56,11 @@ export function SettingsPage() {
         </h3>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
-          앱 종료 시 변경 사항이 있으면 자동 백업 (최근 10개 보관)
+          변경 사항이 있으면 자동 백업: 앱 종료 시(최근 10개 보관)와 사용 중 20분마다(최근 3개 보관)
         </label>
+        <p className="text-xs text-gray-500">
+          파일 이름: 종료 시 <code>backup_날짜_시간.json.gz</code>, 사용 중 <code>autosave_날짜_시간.json.gz</code>. 사용 중 백업이 진행되면 화면 오른쪽 아래에 잠깐 표시됩니다.
+        </p>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-600">저장 폴더:</span>
           <code className="flex-1 truncate rounded bg-gray-100 px-2 py-1">{s.backupDir}</code>
@@ -124,7 +127,7 @@ export function SettingsPage() {
             '헌금 내역이 있는 연도만 백업할 수 있습니다.'
           ) : (
             <>
-              <b className="text-red-700 underline">선택한 연도</b>의 헌금과 성도·헌금 종류가 함께 저장됩니다. 다른 연도의 내역은 이 백업 파일에 들어가지 않습니다.
+              <b className="text-red-700 underline">선택한 연도</b>의 헌금과 성도·헌금 종류가 함께 저장됩니다.<br/>다른 연도의 내역은 이 백업 파일에 들어가지 않습니다.
             </>
           )}
         </p>
@@ -263,7 +266,7 @@ export function SettingsPage() {
               '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
             ) : (
               <>
-                <b className="text-red-700 underline">선택한 연도</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다. 다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.
+                <b className="text-red-700 underline">선택한 연도</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.
               </>
             )}
           </p>

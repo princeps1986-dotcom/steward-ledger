@@ -30,13 +30,16 @@ export function useAppNav() {
  * - 종료 직전 main의 요청에 백업 내용을 응답
  * - 시작 시 지난 종료의 자동 백업 결과를 반영(성공 → 마지막 백업 시각 갱신, 실패 → 경고)
  */
-export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void } {
+export type AutoSaveStatus = { state: 'saving' } | { state: 'done'; at: string } | null;
+
+export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void; autoSave: AutoSaveStatus } {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
   const { markBackupDone, markPeriodicBackupDone } = useSettingsActions();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
+  const [autoSave, setAutoSave] = useState<AutoSaveStatus>(null);
   // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다.
   const [closing, setClosing] = useState(false);
 
@@ -54,22 +57,33 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     };
   }, []);
 
-  // 앱을 쓰는 동안 변경이 있으면 10분마다 조용히 백업합니다(종료 때 한 번뿐이면 비정상 종료 시 그날 입력분을 잃을 수 있음).
+  // 앱을 쓰는 동안 변경이 있으면 20분마다 백업합니다(진행은 작은 표시로 알림)(종료 때 한 번뿐이면 비정상 종료 시 그날 입력분을 잃을 수 있음).
   useEffect(() => {
     if (!desktop() || !loaded) return;
+    let hideTimer: number | undefined;
     const tick = async (): Promise<void> => {
+      setAutoSave({ state: 'saving' });
       try {
         const file = await runPeriodicBackup(settingsRef.current);
         if (file) {
           await markPeriodicBackupDone();
           setFailure((f) => (f?.startsWith('주기 백업') ? null : f));
+          setAutoSave({ state: 'done', at: new Date().toISOString() });
+          window.clearTimeout(hideTimer);
+          hideTimer = window.setTimeout(() => setAutoSave(null), 6000); // 완료 표시는 잠시 보여 주고 사라집니다.
+        } else {
+          setAutoSave(null); // 변경이 없어 할 일이 없었음
         }
       } catch (e) {
+        setAutoSave(null);
         setFailure(`주기 백업에 실패했습니다 (${formatDateTime(new Date().toISOString())}): ${e instanceof Error ? e.message : String(e)}`);
       }
     };
     const timer = window.setInterval(() => void tick(), PERIODIC_BACKUP_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(hideTimer);
+    };
   }, [loaded, markPeriodicBackupDone]);
 
   useEffect(() => {
@@ -97,7 +111,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   }, [loaded]);
 
   const skipBackup = useCallback(() => desktop()?.skipBackup(), []);
-  return { failure, closing, skipBackup };
+  return { failure, closing, skipBackup, autoSave };
 }
 
 const DAY = 24 * 60 * 60 * 1000;

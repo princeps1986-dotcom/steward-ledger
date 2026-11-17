@@ -29,7 +29,10 @@ export async function buildAutoBackup(settings: AppSettings): Promise<AutoBackup
 }
 
 /** 앱을 쓰는 동안의 주기 백업 간격 */
-export const PERIODIC_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
+export const PERIODIC_BACKUP_INTERVAL_MS = 20 * 60 * 1000;
+
+/** main이 다른 백업(직접·종료)이 시작되며 진행 중이던 자동 백업 세션을 취소했을 때의 오류 문구(일부) */
+export const BACKUP_CANCELLED_TEXT = '백업이 취소되었거나 시작되지 않았습니다';
 
 /**
  * 주기 백업(autosave_*, 최근 3개 보관): 변경이 있을 때만 데이터를 달마다 나누어 읽으며 파일로 저장하고(메모리는 한 달치, 저장을 막지 않음)
@@ -47,6 +50,8 @@ export async function runPeriodicBackup(settings: AppSettings): Promise<string |
     return await streamBackup(desktopSink(api, { kind: 'periodic', dir }));
   } catch (e) {
     await markDirty();
+    // 다른 백업이 끼어들어 취소된 것은 실패가 아닙니다(변경 표시를 되돌렸으니 다음 주기에 다시 백업).
+    if (e instanceof Error && e.message.includes(BACKUP_CANCELLED_TEXT)) return null;
     throw e;
   } finally {
     periodicRunning = false;

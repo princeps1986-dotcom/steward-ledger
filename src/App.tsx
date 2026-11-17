@@ -1,6 +1,7 @@
 import { lazy, startTransition, Suspense, useEffect } from 'react';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { AutoSaveToast } from './components/shared/AutoSaveToast';
 import { BackupReminderBanner } from './components/shared/BackupReminderBanner';
 import { DemoBanner } from './components/shared/DemoBanner';
 import { DemoPreparing } from './components/shared/DemoPreparing';
@@ -39,6 +40,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
+      <AutoSaveToast status={backup.autoSave} />
       <DemoBanner />
       {preparing ? <DemoPreparing done={preparing.done} total={preparing.total} /> : null}
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">

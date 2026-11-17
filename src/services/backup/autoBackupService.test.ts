@@ -14,13 +14,13 @@ const d = (id: string, date: string): Donation =>
 const NL = String.fromCharCode(10);
 
 /** main 대신 줄을 모으는 가짜 sink. 세션마다 줄이 따로 쌓이고, restart하면 새 세션이 비어서 시작합니다. */
-function fakeSink(opts: { failAtLine?: number; cancel?: boolean } = {}) {
+function fakeSink(opts: { failAtLine?: number; cancel?: boolean; failMessage?: string } = {}) {
   const log: string[] = [];
   let sessions: string[][] = [];
   const sink: BackupSink = {
     begin: async () => (opts.cancel ? null : (log.push('begin'), sessions.push([]), sessions.length)),
     write: async (id, line) => {
-      if (opts.failAtLine !== undefined && sessions[id - 1].length === opts.failAtLine) throw new Error('디스크 쓰기 실패');
+      if (opts.failAtLine !== undefined && sessions[id - 1].length === opts.failAtLine) throw new Error(opts.failMessage ?? '디스크 쓰기 실패');
       sessions[id - 1].push(line);
     },
     restart: async () => (log.push('restart'), sessions.push([]), sessions.length),
@@ -204,6 +204,13 @@ describe('runPeriodicBackup', () => {
     const f = fakeSink({ failAtLine: 2 });
     fakeDesktop(f.sink);
     await expect(runPeriodicBackup(DEFAULT_SETTINGS)).rejects.toThrow('디스크 쓰기 실패');
+    expect(await isDirtySinceBackup()).toBe(true);
+  });
+
+  it('is not a failure when another backup cancelled it: returns null and keeps the changed flag for the next try', async () => {
+    const f = fakeSink({ failAtLine: 2, failMessage: "Error invoking remote method 'backup:write': Error: 백업이 취소되었거나 시작되지 않았습니다." });
+    fakeDesktop(f.sink);
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBeNull();
     expect(await isDirtySinceBackup()).toBe(true);
   });
 
