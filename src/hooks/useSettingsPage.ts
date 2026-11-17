@@ -59,7 +59,6 @@ export function useSettingsPage() {
   const hasData = useMembers().length > 0 || years.length > 0 || typesChanged;
 
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
-  const [reminderDays, setReminderDays] = useState(String(settings.backupReminderDays));
   const [defaultDir, setDefaultDir] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
@@ -88,8 +87,7 @@ export function useSettingsPage() {
 
   useEffect(() => {
     setThreshold(formatNumber(settings.largeAmountThreshold));
-    setReminderDays(String(settings.backupReminderDays));
-  }, [settings.largeAmountThreshold, settings.backupReminderDays]);
+  }, [settings.largeAmountThreshold]);
 
   useEffect(() => {
     void desktop()?.getDefaultBackupDir().then(setDefaultDir);
@@ -98,20 +96,14 @@ export function useSettingsPage() {
   const saveGeneral = useCallback(async () => {
     const t = parseAmount(threshold);
     if (t.kind !== 'ok') return setMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
-    const days = Number(reminderDays);
-    if (!Number.isInteger(days) || days < 1 || days > 365) return setMessage({ kind: 'error', text: '백업 권고 주기는 1~365일입니다.' });
-    await update({ largeAmountThreshold: t.value, backupReminderDays: days });
+    await update({ largeAmountThreshold: t.value });
     setMessage({ kind: 'info', text: '설정을 저장했습니다.' });
-  }, [threshold, reminderDays, update]);
+  }, [threshold, update]);
 
   /** 저장 시 정규화되는 값(공백 제거·앞자리 0·쉼표)은 정규화한 뒤 비교해, 저장 후에도 변경으로 남지 않게 합니다. */
   function isGeneralDirty(): boolean {
     const t = parseAmount(threshold);
-    return (
-      t.kind !== 'ok' ||
-      t.value !== settings.largeAmountThreshold ||
-      Number(reminderDays) !== settings.backupReminderDays
-    );
+    return t.kind !== 'ok' || t.value !== settings.largeAmountThreshold;
   }
 
   const toggleAutoBackup = useCallback((v: boolean) => !backupBlocked && void update({ autoBackupEnabled: v }), [update, backupBlocked]);
@@ -288,8 +280,6 @@ export function useSettingsPage() {
   return {
     threshold,
     setThreshold: (v: string) => setThreshold(formatAmountInput(v)),
-    reminderDays,
-    setReminderDays: (v: string) => setReminderDays(v.replace(/[^0-9]/g, '').slice(0, 3)),
     saveGeneral,
     /** [설정 저장]을 눌러야 반영되는 항목(큰 금액 기준·백업 주기)에 저장하지 않은 변경이 있는지 */
     dirty: isGeneralDirty(),

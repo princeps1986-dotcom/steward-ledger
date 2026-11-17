@@ -70,8 +70,6 @@ export interface AppSettings {
   recipientEmail: string;
   /** 이 금액을 초과하면 저장 전 확인창 */
   largeAmountThreshold: number;
-  /** 마지막 백업 후 이 일수가 지나면 백업 권고 배너 */
-  backupReminderDays: number;
   autoBackupEnabled: boolean;
   /** 빈 문자열이면 기본 폴더(문서\StewardLedgerBackup) */
   autoBackupDir: string;
@@ -91,7 +89,6 @@ export type PrintTheme = 'MONO' | 'BLUE' | 'WARM' | 'CALM';
 export const DEFAULT_SETTINGS: AppSettings = {
   recipientEmail: '',
   largeAmountThreshold: 10_000_000,
-  backupReminderDays: 30,
   autoBackupEnabled: true,
   autoBackupDir: '',
   lastBackupAt: null,

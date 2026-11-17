@@ -114,8 +114,6 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   return { failure, closing, skipBackup, autoSave };
 }
 
-const DAY = 24 * 60 * 60 * 1000;
-
 /** 백업 권고 배너 */
 export function useBackupReminder(autoBackupFailure: string | null) {
   const settings = useSettings();
@@ -139,9 +137,6 @@ export function useBackupReminder(autoBackupFailure: string | null) {
     text = null;
   } else if (loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
     text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
-  } else if (settings.lastBackupAt) {
-    const days = Math.floor((Date.now() - Date.parse(settings.lastBackupAt)) / DAY);
-    if (days >= settings.backupReminderDays) text = `마지막 백업 후 ${days}일이 지났습니다. 백업을 권장합니다.`;
   }
 
   const backupNow = useCallback(async () => {

@@ -18,10 +18,6 @@ export function SettingsPage() {
             <span className="label">큰 금액 확인 기준 (이 금액 초과 시 확인창)</span>
             <input className="input text-right" inputMode="numeric" value={s.threshold} onChange={(e) => s.setThreshold(e.target.value)} />
           </label>
-          <label>
-            <span className="label">백업 권고 주기 (일)</span>
-            <input className="input text-right" inputMode="numeric" value={s.reminderDays} onChange={(e) => s.setReminderDays(e.target.value)} />
-          </label>
         </div>
         <div className="flex items-center gap-3">
           <button className="btn-primary" onClick={() => void s.saveGeneral()} disabled={!s.dirty}>
