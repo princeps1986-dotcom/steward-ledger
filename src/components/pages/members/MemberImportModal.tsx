@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { useMemberImport } from '../../../hooks/useMemberImport';
+import { useVirtualRows } from '../../../hooks/useVirtualRows';
 import { Modal } from '../../shared/Modal';
 import { normalizePosition } from '../../../services/domain/positions';
 
@@ -11,6 +13,8 @@ const STATUS_COLOR = {
 
 function ImportBody({ onClose }: { onClose(): void }) {
   const im = useMemberImport(onClose);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const v = useVirtualRows(im.preview.length, scrollRef, 37); // 미리보기도 보이는 줄만 그립니다.
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -38,7 +42,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
           <p className="text-sm">
             정상 {im.summary.ok}건 · 중복 {im.summary.dup}건 · 오류 {im.summary.err}건 (오류 행은 가져오지 않습니다. 중복은 기본 건너뛰기이며, 덮어쓰기는 직분·연락처만 갱신합니다.)
           </p>
-          <div className="max-h-[50vh] overflow-auto rounded border">
+          <div ref={scrollRef} className="max-h-[50vh] overflow-auto rounded border">
             <table className="w-full">
               <thead className="sticky top-0">
                 <tr>
@@ -54,8 +58,15 @@ function ImportBody({ onClose }: { onClose(): void }) {
                 </tr>
               </thead>
               <tbody>
-                {im.preview.map((r) => (
-                  <tr key={r.rowNo}>
+                {v.padTop > 0 ? (
+                  <tr aria-hidden="true">
+                    <td colSpan={9} style={{ padding: 0, border: 0, height: v.padTop }} />
+                  </tr>
+                ) : null}
+                {v.indexes.map((i) => {
+                  const r = im.preview[i];
+                  return (
+                  <tr key={r.rowNo} data-index={i} ref={v.measure}>
                     <td className="td">{r.rowNo}</td>
                     <td className={`td font-semibold ${STATUS_COLOR[r.status]}`}>{r.statusLabel}</td>
                     <td className="td">{r.name}</td>
@@ -70,7 +81,13 @@ function ImportBody({ onClose }: { onClose(): void }) {
                       ) : null}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
+                {v.padBottom > 0 ? (
+                  <tr aria-hidden="true">
+                    <td colSpan={9} style={{ padding: 0, border: 0, height: v.padBottom }} />
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

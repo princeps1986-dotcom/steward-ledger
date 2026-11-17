@@ -32,7 +32,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             취소
           </button>
           <button className={isDelete ? 'btn-danger' : 'btn-primary'} onClick={() => void e.submit()} disabled={e.busy}>
-            {isDelete ? '삭제' : '수정 저장'}
+            {isDelete ? '삭제' : '저장'}
           </button>
         </>
       }
@@ -43,7 +43,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
             <>
               {/* 누구의 헌금인지(성도·표기명)는 바꿀 수 없습니다. 잘못 입력했다면 삭제 후 다시 입력하세요. */}
               <div className="col-span-2">
-                <span className="label">성도 · 표기명 (변경 불가)</span>
+                <span className="label">표기명 (변경 불가)</span>
                 <div className="input flex cursor-not-allowed items-center justify-between gap-2 bg-gray-50 text-gray-600" aria-readonly="true">
                   <span className="truncate">{e.donorLabel}</span>
                   {e.donorHousehold ? <span className="whitespace-nowrap rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-700">{e.donorHousehold}</span> : null}

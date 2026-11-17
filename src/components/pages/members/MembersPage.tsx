@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useMembersPage } from '../../../hooks/useMembersPage';
+import { useVirtualRows } from '../../../hooks/useVirtualRows';
 import type { MemberSortKey } from '../../../services/domain/memberSort';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
@@ -28,6 +29,7 @@ export function MembersPage() {
   const p = useMembersPage();
   const scrollRef = useRef<HTMLElement>(null);
   const fit = useFitHeight(scrollRef); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
+  const v = useVirtualRows(p.rows.length, scrollRef); // 보이는 줄만 그립니다.
   return (
     <div className="space-y-4">
       <section className="card flex flex-wrap items-end gap-3">
@@ -73,8 +75,15 @@ export function MembersPage() {
             </tr>
           </thead>
           <tbody>
-            {p.rows.map(({ member: m, familyLabel, stateLabel }, i) => (
-              <tr key={m.id} className={m.isActive ? '' : 'text-gray-400'}>
+            {v.padTop > 0 ? (
+              <tr aria-hidden="true">
+                <td colSpan={8} style={{ padding: 0, border: 0, height: v.padTop }} />
+              </tr>
+            ) : null}
+            {v.indexes.map((i) => {
+              const { member: m, familyLabel, stateLabel } = p.rows[i];
+              return (
+              <tr key={m.id} data-index={i} ref={v.measure} className={m.isActive ? '' : 'text-gray-400'}>
                 <td className="td text-center text-xs text-gray-500">{i + 1}</td>
                 <td className="td font-medium">{m.name}</td>
                 <td className="td">{normalizePosition(m.position) || '-'}</td>
@@ -93,7 +102,13 @@ export function MembersPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
+            {v.padBottom > 0 ? (
+              <tr aria-hidden="true">
+                <td colSpan={8} style={{ padding: 0, border: 0, height: v.padBottom }} />
+              </tr>
+            ) : null}
             {p.rows.length === 0 ? (
               <tr>
                 <td className="td text-center text-gray-500" colSpan={8}>
