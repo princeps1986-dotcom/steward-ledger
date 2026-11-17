@@ -281,6 +281,11 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * 복원은 화면에서 연도 하나씩 고르는 방식을 유지합니다. Dexie 트랜잭션에서는 값이 키마다 따로라 그 한도 문제는 없습니다.
 * 연도 하나 백업이 저장소 전체와 같을 때만 “마지막 백업” 기록을 갱신합니다(`isCompleteYearBackup`).
 * 설정은 백업에 포함되지 않으므로 복원해도 그대로 유지됩니다.
+* **주기 백업:** 종료 때만 백업하면 비정상 종료 시 그날 입력분을 잃을 수 있어, 앱을 쓰는 동안 변경이 있으면 10분마다 조용히 백업합니다(`runPeriodicBackup`). 한 시점의 데이터를 먼저 읽고(`snapshotBackupLines`) 줄로 나누므로, 백업 도중의 저장이 끼어도 월을 옮긴 내역이 중복·누락되지 않습니다. '변경 표시'는 읽기 전에 먼저 내려 백업 중 생긴 변경이 다음 백업에 담기게 하고, 실패하면 되돌립니다. 파일은 `autosave_*`로 종료 때 백업(`backup_*`)과 따로 최근 3개만 보관합니다.
+* **백업 검증:** main이 자동 백업 파일을 쓴 뒤 다시 읽어 끝 줄의 SHA-256을 확인하고(`verifyBackupFile`), 맞을 때만 이름을 바꿔 확정합니다. 실패하면 임시 파일을 지우고 오류로 알립니다(이미 있는 좋은 백업은 그대로).
+* **백업 세션 번호:** 주기 백업과 종료 때 백업이 겹쳐도 줄이 섞이지 않도록 `autoBackupBegin`이 세션 번호를 돌려주고 write·end가 그 번호를 요구합니다(새 백업이 시작되면 이전 세션은 취소). 종료 때 주기 백업이 진행 중이면 종료 백업은 '변경 없음'으로 건너뛰지 않습니다.
+* **전역 오류 안내:** 처리되지 않은 오류·Promise 거부는 `GlobalErrorBanner`가 화면 위쪽에 보여 줍니다(저장소 오류는 `StorageError` 한글 문구 그대로).
+* **큰 복원:** 3개 연도 × 월 1.2만 건(43.2만 건) 복원이 한 트랜잭션으로 약 8초에 끝남을 확인했습니다(fake-indexeddb). 실패하면 전부 취소됩니다.
 
 ## 11. 입력 화면 설계
 
@@ -312,6 +317,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **화면 멈춤 대응:** `render-process-gone`(비정상 종료)이면 창을 다시 불러오고(1분에 3번 넘으면 안내 후 중단), `unresponsive`이면 [기다리기 / 다시 불러오기]를 묻습니다. 데이터는 IndexedDB에 있어 다시 불러와도 이어서 쓸 수 있습니다. React 화면 오류는 `ErrorBoundary`가 화면 단위로 잡아 앱 전체가 하얗게 되지 않고 메뉴를 계속 쓸 수 있습니다(메뉴를 옮기면 새로 시작).
 * **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
 * **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(임시 파일에 쓴 뒤 이름을 바꿔 전원이 꺼져도 잘린 백업 파일이 남지 않음)**끝날 때까지 기다린 뒤 종료**합니다(상한 5분). 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄우고, 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다). 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
+* **보안 설정:** 자동 백업 폴더는 화면이 보낸 경로가 아니라 사용자가 [폴더 선택]으로 고른 폴더(main이 `backup-dir.json`에 기억)와 기본 폴더만 씁니다(`pickBackupDir`; 그 밖의 경로는 기본 폴더로 바뀜). 카메라·위치 같은 모든 권한 요청은 거부합니다. 빌드 때 Electron 퓨즈로 `runAsNode`, `NODE_OPTIONS`, `--inspect` 인자를 끄고 asar 무결성 검증과 asar에서만 불러오기를 켭니다(`electronFuses`).
 * **파일 열기:** `will-download`가 완료된 `.xlsx`의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
 
 ## 14. 저장소 버전
@@ -335,7 +341,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 ## 16. 테스트
 
-`npm test` (Vitest, 20개 파일, 133건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
+`npm test` (Vitest, 25개 파일, 147건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
 
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
@@ -345,9 +351,12 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 엑셀 | `services.test.ts`, `monthExcel.test.ts` | 시트 구성, 수식 인젝션, 월별 파일 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(최대 3개·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
+| 백업 | `backup/autoBackupService.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스냅샷 줄 = 스트리밍 줄, 백업 파일 검증(변조·잘림), 백업 폴더 허용 |
 | 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선 |
 
-**자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, Electron 설치본 전체 흐름. 이 부분은 직접 확인해야 합니다.
+**Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다.
+
+**자동으로 확인하지 못하는 것:** 실제 프린터 출력, 실제 엑셀·한셀에서 열기, 설치본(NSIS) 설치·제거 흐름. 이 부분은 직접 확인해야 합니다.
 
 ## 17. 알려진 한계
 
@@ -371,6 +380,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | `npm run build` | 타입 검사 + 웹 빌드 |
 | `npm test` | 전체 테스트 |
 | `npm run testdata` | 시험 데이터 백업 파일 생성 |
+| `npm run smoke` | Electron 스모크 시험(`npm run build` 후) |
 | `npm run electron:dev` / `electron:start` | 데스크톱 앱 실행(개발 / 빌드 후) |
 | `npm run dist` | Windows 설치 파일(`release/`, NSIS, 설치 경로 변경 가능, 삭제해도 데이터 보존) |
 

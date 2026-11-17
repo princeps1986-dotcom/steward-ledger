@@ -3,14 +3,15 @@
 // - app:// 커스텀 프로토콜로 dist 서빙 + CSP 헤더 강제
 // - 종료 시 자동 로컬 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
-const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
+const { pickBackupDir, resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
+const { verifyBackupFile } = require('./backupVerify.cjs');
 
 const DEV_URL = process.env.ELECTRON_DEV_URL;
 const DIST = path.join(__dirname, '..', 'dist');
@@ -18,6 +19,9 @@ const AUTO_BACKUP_KEEP = 10;
 // 이번 실행 중 앱이 저장한 엑셀 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
 const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json(\.gz)?$/;
+// 앱을 쓰는 동안 주기적으로 만드는 백업(autosave_*)은 종료 때 백업(backup_*)과 따로 최근 3개만 보관합니다.
+const PERIODIC_BACKUP_KEEP = 3;
+const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.json\.gz$/;
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -52,7 +56,8 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   const statusFile = () => path.join(app.getPath('userData'), 'auto-backup-status.json');
-  const defaultBackupDir = () => resolveBackupDir(app.getPath('documents'));
+  // 포장하지 않은 실행(스모크 시험 등)에서만 환경 변수로 백업 폴더를 바꿀 수 있습니다(실제 문서 폴더를 건드리지 않고 시험하려는 용도).
+  const defaultBackupDir = () => (!app.isPackaged && process.env.STEWARD_TEST_BACKUP_DIR) || resolveBackupDir(app.getPath('documents'));
 
   function stamp(d = new Date()) {
     const p = (n) => String(n).padStart(2, '0');
@@ -69,12 +74,24 @@ if (!app.requestSingleInstanceLock()) {
 
   async function pruneBackups(dir) {
     const all = await fs.readdir(dir);
-    // 쓰다 중단된 임시 파일(backup_….json.gz.tmp)은 지웁니다.
-    for (const n of all.filter((x) => /^backup_\d{8}_\d{6}\.json(\.gz)?\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
-    const names = all.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
-    const remove = names.slice(0, Math.max(0, names.length - AUTO_BACKUP_KEEP));
-    for (const n of remove) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    // 쓰다 중단된 임시 파일은 지웁니다.
+    for (const n of all.filter((x) => /^(backup|autosave)_\d{8}_\d{6}\.json(\.gz)?\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    for (const [re, keep] of [[AUTO_BACKUP_FILE_RE, AUTO_BACKUP_KEEP], [PERIODIC_BACKUP_FILE_RE, PERIODIC_BACKUP_KEEP]]) {
+      const names = all.filter((n) => re.test(n)).sort();
+      for (const n of names.slice(0, Math.max(0, names.length - keep))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    }
   }
+
+  // 자동 백업 폴더: 화면이 임의의 경로를 보내도 쓰지 않도록, 사용자가 [폴더 선택]으로 고른 폴더(또는 기본 폴더)만 씁니다.
+  const backupDirFile = () => path.join(app.getPath('userData'), 'backup-dir.json');
+  let chosenBackupDir = null;
+  try {
+    const saved = JSON.parse(fsSync.readFileSync(backupDirFile(), 'utf8'));
+    if (typeof saved.dir === 'string' && path.isAbsolute(saved.dir)) chosenBackupDir = saved.dir;
+  } catch {
+    /* 아직 고른 적 없음 */
+  }
+  const allowedBackupDir = (dir) => pickBackupDir(dir, chosenBackupDir, defaultBackupDir());
 
   // 자동 백업은 렌더러가 월 단위 줄(NDJSON)을 하나씩 보내면 main이 해시를 이어 계산하며 gzip 파일로 바로 씁니다.
   // 전체 JSON을 메모리에 만들지 않으므로 데이터가 커도 메모리가 한 달치 수준에 머뭅니다.
@@ -87,31 +104,38 @@ if (!app.requestSingleInstanceLock()) {
     s.out.destroy();
     await fs.unlink(s.tmp).catch(() => undefined);
   }
-  ipcMain.handle('backup:auto-begin', async (_event, dir) => {
+  // 세션 번호: 앱을 쓰는 동안의 주기 백업과 종료 때 백업이 겹쳐도 서로의 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
+  let sessionCounter = 0;
+  ipcMain.handle('backup:auto-begin', async (_event, dir, kind) => {
     await abortAutoSession();
-    const d = typeof dir === 'string' && path.isAbsolute(dir) ? dir : defaultBackupDir();
+    const d = allowedBackupDir(dir);
     await fs.mkdir(d, { recursive: true });
-    const file = path.join(d, `backup_${stamp()}.json.gz`);
+    const prefix = kind === 'periodic' ? 'autosave' : 'backup';
+    const file = path.join(d, `${prefix}_${stamp()}.json.gz`);
     const tmp = `${file}.tmp`;
     const out = fsSync.createWriteStream(tmp);
     const gz = zlib.createGzip();
-    const session = { file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
-    out.on('error', (e) => (session.error = e));
-    gz.on('error', (e) => (session.error = e));
+    const sess = { id: ++sessionCounter, file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
+    out.on('error', (e) => (sess.error = e));
+    gz.on('error', (e) => (sess.error = e));
     gz.pipe(out);
-    autoSession = session;
-    return true;
+    autoSession = sess;
+    return sess.id;
   });
-  ipcMain.handle('backup:auto-write', (_event, line) => {
+  const sessionOf = (id) => {
     const s = autoSession;
-    if (!s || typeof line !== 'string') throw new Error('자동 백업이 시작되지 않았습니다.');
+    if (!s || s.id !== id) throw new Error('자동 백업이 취소되었거나 시작되지 않았습니다.');
+    return s;
+  };
+  ipcMain.handle('backup:auto-write', (_event, id, line) => {
+    const s = sessionOf(id);
+    if (typeof line !== 'string') throw new Error('잘못된 백업 줄');
     if (s.error) throw s.error;
     s.hash.update(line);
     return new Promise((resolve, reject) => s.gz.write(line, (err) => (err ? reject(err) : resolve(true))));
   });
-  ipcMain.handle('backup:auto-end', async () => {
-    const s = autoSession;
-    if (!s) throw new Error('자동 백업이 시작되지 않았습니다.');
+  ipcMain.handle('backup:auto-end', async (_event, id) => {
+    const s = sessionOf(id);
     if (s.error) throw s.error;
     // 끝 줄: 앞의 모든 줄에 대한 SHA-256. 복원할 때 이 값으로 파일이 온전한지 확인합니다.
     const endLine = `${JSON.stringify({ t: 'end', sha256: s.hash.digest('hex') })}\n`;
@@ -121,7 +145,13 @@ if (!app.requestSingleInstanceLock()) {
       s.gz.end(endLine);
     });
     autoSession = null;
-    // 임시 파일에 다 쓴 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
+    try {
+      await verifyBackupFile(s.tmp);
+    } catch (err) {
+      await fs.unlink(s.tmp).catch(() => undefined); // 검증에 실패한 파일은 남기지 않습니다(이미 있는 좋은 백업은 그대로)
+      throw err;
+    }
+    // 임시 파일에 다 쓰고 검증한 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
     await fs.rename(s.tmp, s.file);
     await pruneBackups(path.dirname(s.file)).catch(() => undefined); // 오래된 파일 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
     return s.file;
@@ -316,7 +346,10 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:select-dir', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const res = await dialog.showOpenDialog(win, { title: '자동 백업 폴더 선택', properties: ['openDirectory', 'createDirectory'] });
-    return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
+    if (res.canceled || res.filePaths.length === 0) return null;
+    chosenBackupDir = res.filePaths[0];
+    await fs.writeFile(backupDirFile(), JSON.stringify({ dir: chosenBackupDir }), 'utf8').catch(() => undefined);
+    return chosenBackupDir;
   });
   ipcMain.handle('backup:get-status', async () => {
     try {
@@ -358,6 +391,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // 이 앱은 카메라·위치·알림 같은 권한이 필요 없으므로 모든 권한 요청을 거부합니다.
+    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
     protocol.handle('app', async (request) => {
       const { pathname } = new URL(request.url);
       const rel = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';

@@ -68,8 +68,32 @@ export async function createBackupJson(years?: readonly string[]): Promise<strin
 /** 줄 단위 백업에서 한 번에 읽는 키 수(메모리에 몇 달치만 올라가게 하면서 읽기 횟수를 줄임) */
 const BACKUP_READ_BATCH = 6;
 
+const ndjsonLine = (o: unknown): string => `${JSON.stringify(o)}\n`;
+
+/**
+ * 앱을 쓰는 중에 만드는 주기 백업용 줄: 한 시점의 데이터(collectPayload, 읽기 트랜잭션 하나)를 먼저 읽고 줄로 나눕니다.
+ * 읽는 도중 다른 저장이 끼어들어도 한 달에서 다른 달로 옮겨진 내역이 중복되거나 빠지지 않습니다(대신 전체가 한 번에 메모리에 올라갑니다).
+ * 형식은 backupLines와 같습니다.
+ */
+export async function* snapshotBackupLines(): AsyncGenerator<string> {
+  const p = await collectPayload();
+  yield ndjsonLine({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
+  yield ndjsonLine({ t: 'members', data: p.members });
+  yield ndjsonLine({ t: 'offeringTypes', data: p.offeringTypes });
+  for (const year of Object.keys(p.auditLogsByYear).sort()) yield ndjsonLine({ t: 'audit', year, data: p.auditLogsByYear[year] });
+  const byMonth = new Map<string, Donation[]>();
+  for (const list of Object.values(p.donationsByYear)) {
+    for (const d of list) {
+      const ym = monthOfDate(d.date);
+      if (!byMonth.has(ym)) byMonth.set(ym, []);
+      byMonth.get(ym)!.push(d);
+    }
+  }
+  for (const ym of [...byMonth.keys()].sort()) yield ndjsonLine({ t: 'donations', ym, data: byMonth.get(ym)! });
+}
+
 export async function* backupLines(): AsyncGenerator<string> {
-  const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
+  const line = ndjsonLine;
   yield line({ ndjson: NDJSON_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString() });
   yield line({ t: 'members', data: (await getItem<Member[]>(KEYS.members)) ?? [] });
   yield line({ t: 'offeringTypes', data: (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [] });

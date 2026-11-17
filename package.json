@@ -13,6 +13,7 @@
     "testdata": "node scripts/generate-test-data.mjs",
     "electron:dev": "cross-env ELECTRON_DEV_URL=http://localhost:5173 electron .",
     "electron:start": "npm run build && electron .",
+    "smoke": "node scripts/smoke.mjs",
     "dist": "npm run build && electron-builder --win nsis"
   },
   "build": {
@@ -43,6 +44,13 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "shortcutName": "청지기 장부"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
     }
   },
   "dependencies": {

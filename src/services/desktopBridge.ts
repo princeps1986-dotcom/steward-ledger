@@ -29,10 +29,14 @@ export interface DesktopApi {
   selectBackupDir(): Promise<string | null>;
   getAutoBackupStatus(): Promise<AutoBackupStatus | null>;
   ackAutoBackupStatus(): Promise<void>;
-  /** 자동 백업을 줄 단위로 main에 보내 파일로 씁니다: begin → write(여러 번) → end(저장된 경로 반환). */
-  autoBackupBegin(dir: string): Promise<boolean>;
-  autoBackupWrite(line: string): Promise<boolean>;
-  autoBackupEnd(): Promise<string>;
+  /**
+   * 자동 백업을 줄 단위로 main에 보내 파일로 씁니다: begin(세션 번호 반환) → write(여러 번) → end(검증 후 저장된 경로 반환).
+   * 다른 백업이 시작되면 이 세션은 취소되어 write·end가 reject됩니다. dir은 main이 허용한 폴더가 아니면 기본 폴더로 바뀝니다.
+   * kind 'periodic'은 앱을 쓰는 동안의 주기 백업(autosave_*, 최근 3개만 보관)입니다.
+   */
+  autoBackupBegin(dir: string, kind?: 'periodic'): Promise<number>;
+  autoBackupWrite(id: number, line: string): Promise<boolean>;
+  autoBackupEnd(id: number): Promise<string>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
   /** 긴급 백업을 백업 폴더에 대화상자 없이 저장합니다. 실패하면 reject. 저장된 전체 경로를 돌려줍니다. */

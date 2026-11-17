@@ -52,4 +52,13 @@ function resolveBackupDir(documents) {
   return next;
 }
 
-module.exports = { resolveUserDataDir, resolveBackupDir, USER_DATA_NAME, BACKUP_DIR_NAME };
+/**
+ * 자동 백업을 쓸 폴더. 화면(렌더러)이 보낸 경로는 사용자가 [폴더 선택]으로 고른 폴더와 같을 때만 쓰고,
+ * 그 밖의 경로(침해된 화면이 임의 위치에 쓰려는 경우 포함)는 기본 폴더로 바꿉니다.
+ */
+function pickBackupDir(requested, chosen, fallback) {
+  if (typeof requested !== 'string' || !chosen || !path.isAbsolute(requested)) return fallback;
+  return path.resolve(requested).toLowerCase() === path.resolve(chosen).toLowerCase() ? chosen : fallback;
+}
+
+module.exports = { pickBackupDir, resolveUserDataDir, resolveBackupDir, USER_DATA_NAME, BACKUP_DIR_NAME };

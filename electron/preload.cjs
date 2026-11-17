@@ -14,9 +14,9 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('download:done', listener);
     return () => ipcRenderer.removeListener('download:done', listener);
   },
-  autoBackupBegin: (dir) => ipcRenderer.invoke('backup:auto-begin', dir),
-  autoBackupWrite: (line) => ipcRenderer.invoke('backup:auto-write', line),
-  autoBackupEnd: () => ipcRenderer.invoke('backup:auto-end'),
+  autoBackupBegin: (dir, kind) => ipcRenderer.invoke('backup:auto-begin', dir, kind),
+  autoBackupWrite: (id, line) => ipcRenderer.invoke('backup:auto-write', id, line),
+  autoBackupEnd: (id) => ipcRenderer.invoke('backup:auto-end', id),
   saveEmergencyBackup: (name, json) => ipcRenderer.invoke('backup:save-emergency', name, json),
   saveBackupAs: (name, json) => ipcRenderer.invoke('backup:save-as', name, json),
   skipBackup: () => ipcRenderer.send('backup:skip'),

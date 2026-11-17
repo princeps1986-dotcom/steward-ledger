@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDonationYears } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useSettings, useSettingsActions, useSettingsSelector } from '../contexts/SettingsContext';
-import { buildAutoBackup } from '../services/backup/autoBackupService';
+import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from '../services/backup/autoBackupService';
 import { saveBackupFile } from '../services/backup/backupService';
 import { formatDateTime } from '../services/domain/dates';
 import { desktop } from '../services/desktopBridge';
@@ -31,7 +31,7 @@ export function useAppNav() {
 export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void } {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
-  const { markBackupDone } = useSettingsActions();
+  const { markBackupDone, markPeriodicBackupDone } = useSettingsActions();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
@@ -51,6 +51,24 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       offCancel();
     };
   }, []);
+
+  // 앱을 쓰는 동안 변경이 있으면 10분마다 조용히 백업합니다(종료 때 한 번뿐이면 비정상 종료 시 그날 입력분을 잃을 수 있음).
+  useEffect(() => {
+    if (!desktop() || !loaded) return;
+    const tick = async (): Promise<void> => {
+      try {
+        const file = await runPeriodicBackup(settingsRef.current);
+        if (file) {
+          await markPeriodicBackupDone();
+          setFailure((f) => (f?.startsWith('주기 백업') ? null : f));
+        }
+      } catch (e) {
+        setFailure(`주기 백업에 실패했습니다 (${formatDateTime(new Date().toISOString())}): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+    const timer = window.setInterval(() => void tick(), PERIODIC_BACKUP_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [loaded, markPeriodicBackupDone]);
 
   useEffect(() => {
     const api = desktop();

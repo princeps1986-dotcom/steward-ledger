@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
-const { resolveUserDataDir, resolveBackupDir } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
+const { resolveUserDataDir, resolveBackupDir, pickBackupDir } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
   resolveUserDataDir(appData: string): string;
   resolveBackupDir(documents: string): string;
+  pickBackupDir(requested: unknown, chosen: string | null, fallback: string): string;
 };
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'steward-'));
@@ -50,5 +51,18 @@ describe('데이터·백업 폴더는 영문 경로', () => {
     const dir = resolveBackupDir(docs);
     expect(dir).toBe(join(docs, 'StewardLedgerBackup'));
     expect(existsSync(join(dir, 'backup_20260101_000000.json'))).toBe(true);
+  });
+});
+
+describe('자동 백업 폴더 허용', () => {
+  const fallback = 'C:/Users/me/Documents/StewardLedgerBackup';
+  const chosen = 'D:/Backups/church';
+  it('사용자가 고른 폴더와 같은 경로만 쓰고(대소문자 무시) 나머지는 기본 폴더로 바꾼다', () => {
+    expect(pickBackupDir(chosen, chosen, fallback)).toBe(chosen);
+    expect(pickBackupDir('d:/backups/CHURCH', chosen, fallback)).toBe(chosen);
+    expect(pickBackupDir('C:/Windows/System32', chosen, fallback)).toBe(fallback);
+    expect(pickBackupDir('../../evil', chosen, fallback)).toBe(fallback);
+    expect(pickBackupDir(undefined, chosen, fallback)).toBe(fallback);
+    expect(pickBackupDir(chosen, null, fallback)).toBe(fallback); // 고른 적이 없으면 어떤 경로도 허용하지 않음
   });
 });

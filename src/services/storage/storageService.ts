@@ -110,7 +110,10 @@ export function transact<R>(
       const out = await db.transaction('rw', db.kv, db.donations, async () => {
         const { writes, result } = await build(getItem);
         const all = [...writes];
-        if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) all.push({ key: KEYS.dirty, value: true });
+        // '마지막 백업 이후 변경' 표시는 아직 꺼져 있을 때만 씁니다(저장마다 같은 값을 다시 쓰지 않음).
+        if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key)) && (await getItem<boolean>(KEYS.dirty)) !== true) {
+          all.push({ key: KEYS.dirty, value: true });
+        }
         if (all.length > 0) await applyWrites(all);
         return { writes, result, keys: all.map((w) => w.key) };
       });
@@ -184,6 +187,11 @@ export async function isDirtySinceBackup(): Promise<boolean> {
 
 export async function clearDirty(): Promise<void> {
   await serialize(() => db.kv.put(false, KEYS.dirty).then(() => undefined));
+}
+
+/** 백업에 실패했을 때 '마지막 백업 이후 변경됨' 표시를 되돌립니다. */
+export async function markDirty(): Promise<void> {
+  await serialize(() => db.kv.put(true, KEYS.dirty).then(() => undefined));
 }
 
 /** [날짜+성도+헌금 종류]가 같은 기존 내역을 색인으로 찾습니다(무명은 중복 없음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */
