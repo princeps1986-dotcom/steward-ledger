@@ -1,5 +1,4 @@
 import { useSettingsPage } from '../../../hooks/useSettingsPage';
-import { InfoTip } from '../../shared/InfoTip';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { ThemePicker } from '../../shared/ThemePicker';
@@ -56,11 +55,8 @@ export function SettingsPage() {
         </h3>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
-          변경 사항이 있으면 자동 백업: 앱 종료 시(최근 10개 보관)와 사용 중 20분마다(최근 3개 보관)
+          변경 사항이 있으면 자동 백업: 앱 종료 시(최근 10개 보관)와 사용 중 10분마다(최근 3개 보관)
         </label>
-        <p className="text-xs text-gray-500">
-          파일 이름: 종료 시 <code>backup_날짜_시간.json.gz</code>, 사용 중 <code>autosave_날짜_시간.json.gz</code>. 사용 중 백업이 진행되면 화면 오른쪽 아래에 잠깐 표시됩니다.
-        </p>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-600">저장 폴더:</span>
           <code className="flex-1 truncate rounded bg-gray-100 px-2 py-1">{s.backupDir}</code>
@@ -80,8 +76,8 @@ export function SettingsPage() {
       <section className="card space-y-3">
         <h3 className="flex items-center gap-2 font-semibold">
           백업 · 복원
-          <InfoTip label="백업·복원 안내" text={s.backupHelp} />
         </h3>
+        <p className="text-sm text-gray-600">{s.backupHelp}</p>
         <div className="flex gap-2">
           <button className="btn-primary" onClick={s.openBackup} disabled={s.busy || s.backupBlocked}>
             백업 파일 저장

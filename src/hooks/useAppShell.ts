@@ -57,7 +57,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     };
   }, []);
 
-  // 앱을 쓰는 동안 변경이 있으면 20분마다 백업합니다(진행은 작은 표시로 알림)(종료 때 한 번뿐이면 비정상 종료 시 그날 입력분을 잃을 수 있음).
+  // 앱을 쓰는 동안 변경이 있으면 10분마다 백업합니다(진행은 작은 표시로 알림)(종료 때 한 번뿐이면 비정상 종료 시 그날 입력분을 잃을 수 있음).
   useEffect(() => {
     if (!desktop() || !loaded) return;
     let hideTimer: number | undefined;

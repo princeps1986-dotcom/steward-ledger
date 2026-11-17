@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../services/domain/dates';
 import type { AutoSaveStatus } from '../../hooks/useAppShell';
 
-/** 사용 중 자동 백업(20분마다)이 도는 동안·끝난 직후 오른쪽 아래에 잠깐 보이는 작은 안내(인쇄에는 나오지 않음) */
+/** 사용 중 자동 백업(10분마다)이 도는 동안·끝난 직후 오른쪽 아래에 잠깐 보이는 작은 안내(인쇄에는 나오지 않음) */
 export function AutoSaveToast({ status }: { status: AutoSaveStatus }) {
   if (!status) return null;
   return (

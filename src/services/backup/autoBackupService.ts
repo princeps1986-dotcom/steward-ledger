@@ -29,7 +29,7 @@ export async function buildAutoBackup(settings: AppSettings): Promise<AutoBackup
 }
 
 /** 앱을 쓰는 동안의 주기 백업 간격 */
-export const PERIODIC_BACKUP_INTERVAL_MS = 20 * 60 * 1000;
+export const PERIODIC_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 
 /** main이 다른 백업(직접·종료)이 시작되며 진행 중이던 자동 백업 세션을 취소했을 때의 오류 문구(일부) */
 export const BACKUP_CANCELLED_TEXT = '백업이 취소되었거나 시작되지 않았습니다';

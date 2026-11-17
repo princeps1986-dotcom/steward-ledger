@@ -300,7 +300,7 @@ export function useSettingsPage() {
       { value: 'XLARGE' as const, label: '매우 크게' },
     ],
     backupHelp:
-      '백업과 복원은 항상 연도 하나를 골라서 합니다. (성도·헌금 종류는 항상 포함). 복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀌므로, 복원 전에 필요하면 [백업 파일 저장]으로 현재 데이터를 먼저 백업해 두세요.',
+      '백업과 복원은 항상 연도 하나를 골라서 합니다(성도·헌금 종류는 항상 포함). 복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀌므로, 복원 전에 필요하면 [백업 파일 저장]으로 현재 데이터를 먼저 백업해 두세요.',
     backupDir: settings.autoBackupDir || defaultDir || '(데스크톱 앱에서만 사용 가능)',
     isCustomDir: !!settings.autoBackupDir,
     selectDir,
