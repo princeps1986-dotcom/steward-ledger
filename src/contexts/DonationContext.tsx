@@ -33,7 +33,10 @@ import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { AuditLog, Donation, DonationDraft, DuplicateResolution, SaveBatch } from './types';
 
 const HISTORY_LIMIT = 10;
-/** 메모리에 남겨 두는 헌금 건수(약 150MB). 지금 화면이 쓰는 연도는 이 수와 상관없이 유지 */
+/**
+ * 메모리에 남겨 두는 헌금 건수. 행당 약 0.22KB(문자열 공유 후 실측, 연 26만 건에서 약 58MB 증가)이므로 약 110MB.
+ * 새 연도를 읽은 뒤에 비우므로 읽는 동안에는 연 한 해치(26만 건 ≈ 60MB)만큼 더 올라갑니다. 지금 화면이 쓰는 연도는 이 수와 상관없이 유지
+ */
 const MAX_LOADED_ROWS = 500_000;
 /** 화면이 연도를 놓았을 때(예: 보고서에서 입력 화면으로 이동) 남겨 두는 건수. 큰 연도를 바로 내려 메모리를 돌려줍니다. */
 const IDLE_LOADED_ROWS = 100_000;
@@ -205,31 +208,47 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   }, [bumpVersions, refreshYears]);
 
   const ensureMonths = useCallback(async (yms: readonly string[]) => {
-    // 한 달씩 차례로 읽습니다: 여러 달을 동시에 읽으면 읽은 원본이 한꺼번에 메모리에 올라 일시적으로 최대치가 커집니다.
+    const gen = generation.current;
+    const todo: string[] = [];
     for (const ym of yms) {
-      await (async () => {
-        lastUsed.current.set(ym.slice(0, 4), Date.now()); // 방금 요청한 연도는 가장 최근에 쓴 것으로 칩니다.
-        if (loadedMonths.current.has(ym) || loadingMonths.current.has(ym)) return;
-        const gen = generation.current;
-        loadingMonths.current.add(ym);
-        try {
-          let list: Donation[];
-          do {
-            staleMonths.current.delete(ym);
-            list = await readMonth(ym);
-            // 읽는 사이 저장이 커밋됐다면(staleMonths) 오래된 값이 될 수 있으므로 다시 읽습니다.
-          } while (staleMonths.current.has(ym) && gen === generation.current);
-          if (gen !== generation.current) return; // 읽는 동안 복원·초기화(reloadAll)가 일어났으면 이 결과는 버립니다.
-          loadedMonths.current.add(ym);
-          monthRows.current.set(ym, list.length);
-          setMonths((prev) => ({ ...prev, [ym]: list }));
-        } catch {
-          // 읽기 실패: 다음에 다시 시도할 수 있도록 '읽는 중' 표시만 지웁니다(화면에는 빈 달로 보임).
-        } finally {
-          if (gen === generation.current) loadingMonths.current.delete(ym);
-        }
-      })();
+      lastUsed.current.set(ym.slice(0, 4), Date.now()); // 방금 요청한 연도는 가장 최근에 쓴 것으로 칩니다.
+      if (loadedMonths.current.has(ym) || loadingMonths.current.has(ym) || todo.includes(ym)) continue;
+      loadingMonths.current.add(ym);
+      todo.push(ym);
     }
+    if (todo.length === 0) return;
+    // 한 달씩 차례로 읽고(여러 달을 동시에 읽으면 공유 전 원본이 한꺼번에 메모리에 올라 일시 최대치가 커짐), 화면에는 한 번에 반영합니다
+    // (달마다 반영하면 보고서가 그때마다 다시 집계됨).
+    const got = new Map<string, Donation[]>();
+    try {
+      for (const ym of todo) {
+        // 읽는 사이 저장이 커밋됐다면(staleMonths) 오래된 값이 될 수 있으므로 다시 읽습니다.
+        do {
+          staleMonths.current.delete(ym);
+          got.set(ym, await readMonth(ym));
+        } while (staleMonths.current.has(ym) && gen === generation.current);
+        if (gen !== generation.current) return; // 읽는 동안 복원·초기화(reloadAll)가 일어났으면 이 결과는 버립니다.
+      }
+      // 먼저 읽은 달이 나중 달을 읽는 사이에 바뀌었다면 반영하기 전에 그 달만 다시 읽습니다.
+      for (let again = todo.filter((ym) => staleMonths.current.has(ym)); again.length && gen === generation.current; again = todo.filter((ym) => staleMonths.current.has(ym))) {
+        for (const ym of again) {
+          staleMonths.current.delete(ym);
+          got.set(ym, await readMonth(ym));
+        }
+      }
+    } catch {
+      // 읽기 실패: 읽은 달까지만 반영하고, 나머지는 다음에 다시 시도할 수 있도록 '읽는 중' 표시만 지웁니다(화면에는 빈 달로 보임).
+    }
+    if (gen !== generation.current) return;
+    // 여기부터 반영까지 기다리는 곳이 없어 사이에 다른 저장이 끼어들지 않습니다.
+    for (const [ym, list] of got) {
+      if (staleMonths.current.has(ym)) continue;
+      loadedMonths.current.add(ym);
+      monthRows.current.set(ym, list.length);
+    }
+    const ready = [...got].filter(([ym]) => loadedMonths.current.has(ym));
+    for (const ym of todo) loadingMonths.current.delete(ym);
+    if (ready.length) setMonths((prev) => ({ ...prev, ...Object.fromEntries(ready) }));
     evictOldYears();
   }, [evictOldYears]);
 
