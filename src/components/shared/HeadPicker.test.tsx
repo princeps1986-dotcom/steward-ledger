@@ -14,12 +14,14 @@ const many = Array.from({ length: 30 }, (_, i) => opt(i, `김${String.fromCharCo
 afterEach(cleanup);
 
 describe('HeadPicker', () => {
-  it('shows at most 20 results, narrows by name or phone, and selects with the keyboard', () => {
+  it('loads 20 at a time as the list is scrolled, narrows by name or phone, and selects with the keyboard', () => {
     const onChange = vi.fn();
     render(<HeadPicker options={many} value="" onChange={onChange} ariaLabel="세대주" />);
     const input = screen.getByRole('combobox');
     fireEvent.focus(input);
     expect(screen.getAllByRole('option')).toHaveLength(20);
+    fireEvent.scroll(screen.getByRole('listbox')); // 끝까지 스크롤 → 다음 20명
+    expect(screen.getAllByRole('option')).toHaveLength(30);
     fireEvent.change(input, { target: { value: '1005' } }); // 연락처 뒷자리로 찾기
     expect(screen.getAllByRole('option')).toHaveLength(1);
     fireEvent.keyDown(input, { key: 'Enter' });
