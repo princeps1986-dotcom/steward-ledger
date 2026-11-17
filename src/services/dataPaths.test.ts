@@ -57,7 +57,8 @@ describe('데이터·백업 폴더는 영문 경로', () => {
 describe('자동 백업 폴더 허용', () => {
   const fallback = 'C:/Users/me/Documents/StewardLedgerBackup';
   const chosen = 'D:/Backups/church';
-  it('사용자가 고른 폴더와 같은 경로만 쓰고(대소문자 무시) 나머지는 기본 폴더로 바꾼다', () => {
+  // Windows 경로(D:/…) 기준 시험이라 Windows에서만 의미가 있습니다(앱은 Windows용, CI는 Linux).
+  it.skipIf(process.platform !== 'win32')('사용자가 고른 폴더와 같은 경로만 쓰고(대소문자 무시) 나머지는 기본 폴더로 바꾼다', () => {
     expect(pickBackupDir(chosen, chosen, fallback)).toBe(chosen);
     expect(pickBackupDir('d:/backups/CHURCH', chosen, fallback)).toBe(chosen);
     expect(pickBackupDir('C:/Windows/System32', chosen, fallback)).toBe(fallback);
