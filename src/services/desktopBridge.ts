@@ -19,8 +19,6 @@ export interface BackupSessionSpec {
   dir?: string;
   /** emergency·manual의 파일 이름(영문·숫자·_- 와 .json.gz) */
   name?: string;
-  /** emergency에서 기본 백업 폴더 아래 별도 폴더에 저장(허용: before-demo = 시연 데이터 생성 직전의 원래 데이터) */
-  folder?: 'before-demo';
 }
 
 export interface SavedFileInfo {
@@ -50,10 +48,6 @@ export interface DesktopApi {
   backupRestart(id: number): Promise<number>;
   backupAbort(id: number): Promise<boolean>;
   backupEnd(id: number): Promise<string>;
-  /** before-demo 폴더의 백업 파일을 조각(최대 4MB)씩 읽습니다: open(파일 이름) → chunk(id, 시작 위치; 빈 조각이면 끝) → close */
-  backupReadOpen(name: string): Promise<{ id: number; size: number }>;
-  backupReadChunk(id: number, offset: number): Promise<Uint8Array>;
-  backupReadClose(id: number): Promise<boolean>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */

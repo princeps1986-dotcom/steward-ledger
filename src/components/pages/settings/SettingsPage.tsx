@@ -154,7 +154,7 @@ export function SettingsPage() {
         open={s.demoOpen}
         onClose={s.cancelDemo}
         title="시연 데이터를 생성할까요?"
-        description="현재 앱의 모든 데이터가 가상의 시연 데이터로 바뀝니다. 시연이 끝나면 [시연 데이터 제거]로 원래 데이터를 되살릴 수 있습니다."
+        description="가상의 시연 데이터가 만들어집니다. 시연이 끝나면 [시연 데이터 제거]로 빈 상태로 되돌립니다."
         footer={
           <>
             <button className="btn" onClick={s.cancelDemo} disabled={s.busy}>
@@ -172,7 +172,7 @@ export function SettingsPage() {
           ) : (
             <p>가상의 성도 800명과 헌금 20만 건(최근 3년, 주 750~2,000건, 매년 12/25·1/1은 하루 5,000건), 수정·삭제 이력 6건이 들어갑니다. 만드는 데 10초 안팎 걸립니다.</p>
           )}
-          <p className="text-red-700">지금 데이터가 있으면 먼저 백업 폴더의 before-demo 폴더에 existing-data-backup_날짜_시간 파일로 저장하고, 시연 데이터를 제거할 때 그 파일로 자동 복구합니다(브라우저에서는 파일을 내려받으며 자동 복구는 되지 않습니다).</p>
+          <p className="text-red-700">성도·헌금 데이터가 이미 있으면 만들 수 없습니다. 시연 데이터는 데이터가 없는 상태에서만 만들 수 있습니다.</p>
         </div>
       </Modal>
 
@@ -194,7 +194,7 @@ export function SettingsPage() {
       >
         <div className="space-y-2 text-sm">
           <p className="font-semibold text-red-700">시연 중에 새로 입력한 실제 데이터도 함께 삭제됩니다.</p>
-          <p>시연 데이터를 만들기 전의 데이터는 백업 폴더의 before-demo 폴더에 있는 existing-data-backup 파일에서 자동으로 복구합니다. 백업 파일을 확인하지 못하면 아무것도 지우지 않습니다.</p>
+          <p>제거하면 앱이 빈 상태(기본 헌금 종류)로 돌아갑니다. 되돌릴 수 없습니다.</p>
         </div>
       </Modal>
 

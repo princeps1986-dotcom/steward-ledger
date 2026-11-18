@@ -1,5 +1,6 @@
 import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
+import { withBackupBusy, withRestoring } from './backupBusy';
 import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
@@ -157,7 +158,8 @@ export const backupFileName = (prefix = 'backup', years?: readonly string[]): st
  * 초기화·복원 직전 긴급 백업. 데스크톱 앱은 백업 폴더에 대화상자 없이 줄 단위로 저장하고(메모리는 한 달치) 실패하면 오류를 던지므로,
  * 이 함수가 끝났다면 백업이 실제로 저장된 것입니다(사용자가 취소할 수 없음). 저장된 위치(또는 파일 이름)를 돌려줍니다.
  */
-export async function saveEmergencyBackup(prefix: string): Promise<string> {
+export const saveEmergencyBackup = (prefix: string): Promise<string> => withBackupBusy(() => saveEmergencyBackupNow(prefix));
+async function saveEmergencyBackupNow(prefix: string): Promise<string> {
   const api = desktop();
   if (api) {
     const saved = await streamBackup(desktopSink(api, { kind: 'emergency', name: `${backupFileName(prefix)}.gz` }));
@@ -169,28 +171,9 @@ export async function saveEmergencyBackup(prefix: string): Promise<string> {
   return name;
 }
 
-/** 시연 데이터를 만들기 직전 원래 데이터를 보관하는 백업 파일 이름 접두어(영어 + 날짜시간으로 한눈에 알아봄) */
-export const DEMO_BACKUP_PREFIX = 'existing-data-backup';
-
-/**
- * 시연 데이터 생성 직전의 원래 데이터를 백업합니다. 데이터가 없으면 아무것도 만들지 않습니다(backupName: null).
- * 데스크톱 앱: 백업 폴더 아래 before-demo 폴더에 저장(대화상자 없음, 실패하면 오류). 브라우저: 파일로 내려받습니다(자동 복구 불가).
- */
-export async function backupBeforeDemo(): Promise<{ backupName: string | null; downloadedName?: string }> {
-  if (!(await hasAnyData())) return { backupName: null };
-  const api = desktop();
-  const name = backupFileName(DEMO_BACKUP_PREFIX);
-  if (!api) {
-    downloadText(await createBackupJson(), name);
-    return { backupName: null, downloadedName: name };
-  }
-  const saved = await streamBackup(desktopSink(api, { kind: 'emergency', folder: 'before-demo', name: `${name}.gz` }));
-  if (!saved) throw new Error('원래 데이터를 백업하지 못했습니다.');
-  return { backupName: `${name}.gz` };
-}
-
 /** 직접 하는 백업: 데스크톱 앱은 저장 위치를 고르게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
-export async function saveBackupFile(prefix: string, years?: readonly string[]): Promise<string> {
+export const saveBackupFile = (prefix: string, years?: readonly string[]): Promise<string> => withBackupBusy(() => saveBackupFileNow(prefix, years));
+async function saveBackupFileNow(prefix: string, years?: readonly string[]): Promise<string> {
   await assertNoDemo();
   const api = desktop();
   if (!api) {
@@ -238,7 +221,8 @@ const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Rec
  * - YEARS: 선택한 연도의 헌금 내역·이력만 백업 내용으로 교체하고, 다른 연도는 그대로 둡니다.
  *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다.
  */
-export async function restoreBackup(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> {
+export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> => withRestoring(() => restoreBackupNow(payload, opts));
+async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> {
   await assertNoDemo();
   const years = new Set(opts.years);
   const donationsByYear = pickYears(payload.donationsByYear, years);

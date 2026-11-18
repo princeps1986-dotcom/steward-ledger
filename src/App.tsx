@@ -1,5 +1,7 @@
 import { lazy, startTransition, Suspense, useEffect } from 'react';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
+import { RestoringOverlay } from './components/shared/RestoringOverlay';
+import { useRestoring } from './services/backup/backupBusy';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AutoSaveToast } from './components/shared/AutoSaveToast';
 import { BackupReminderBanner } from './components/shared/BackupReminderBanner';
@@ -37,9 +39,11 @@ export function App() {
     return () => window.clearTimeout(id);
   }, []);
   const backup = useAutoBackupBridge();
+  const restoring = useRestoring();
   const reminder = useBackupReminder(backup.failure);
   return (
     <div className="flex h-full flex-col">
+      {restoring ? <RestoringOverlay /> : null}
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
       <AutoSaveToast status={backup.autoSave} />
       <DemoBanner />

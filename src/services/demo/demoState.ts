@@ -28,17 +28,6 @@ export async function assertNoDemo(): Promise<void> {
   if (await isDemoBusy()) throw new Error(DEMO_BLOCK_MESSAGE);
 }
 
-/** 시연 데이터를 만들기 직전의 원래 데이터를 어디에 백업했는지(제거할 때 이 파일로 복구) */
-export interface DemoRestoreInfo {
-  /** 데스크톱 앱: 백업 폴더(before-demo)에 저장한 파일 이름. 원래 데이터가 없었으면 null */
-  backupName: string | null;
-  /** 브라우저: 내려받은 파일 이름(자동 복구 불가, 수동 복원 안내용) */
-  downloadedName?: string;
-  createdAt: string;
-}
-
-export const readDemoRestore = (): Promise<DemoRestoreInfo | null> => getItem<DemoRestoreInfo>(KEYS.demoRestore);
-
 // 앱 어디서나(최상단 안내 띠, 설정 화면) 같은 값을 보도록 작은 외부 저장소로 공유합니다.
 let active = false;
 const listeners = new Set<() => void>();

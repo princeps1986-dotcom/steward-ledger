@@ -1,9 +1,9 @@
 import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
+import { withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
-import type { DesktopApi } from '../desktopBridge';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
-import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
+import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, type Write } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { Sha256 } from './sha256';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
@@ -16,42 +16,10 @@ import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_P
  * 다음 실행 때 알려 줍니다(같은 백업으로 다시 복원하면 됨).
  */
 
-/** 줄 단위로 읽을 수 있는 백업 파일(브라우저 File·Blob, 또는 데스크톱 main이 조각으로 읽어 주는 파일) */
+/** 줄 단위로 읽을 수 있는 백업 파일(브라우저 File·Blob) */
 export interface ReadableBackup {
   name?: string;
   stream(): ReadableStream<Uint8Array>;
-}
-
-/** 데스크톱 앱의 before-demo 폴더에 있는 백업 파일을 main에서 조각씩 읽어 오는 파일처럼 다룹니다. */
-export function desktopBackupFile(api: Pick<DesktopApi, 'backupReadOpen' | 'backupReadChunk' | 'backupReadClose'>, name: string): ReadableBackup {
-  return {
-    name,
-    stream: () => {
-      let id: number | null = null;
-      let offset = 0;
-      return new ReadableStream<Uint8Array>({
-        async pull(c) {
-          try {
-            if (id === null) id = (await api.backupReadOpen(name)).id;
-            const chunk = await api.backupReadChunk(id, offset);
-            if (chunk.length === 0) {
-              await api.backupReadClose(id);
-              id = null;
-              c.close();
-              return;
-            }
-            offset += chunk.length;
-            c.enqueue(chunk);
-          } catch (e) {
-            c.error(e);
-          }
-        },
-        cancel() {
-          if (id !== null) void api.backupReadClose(id);
-        },
-      });
-    },
-  };
 }
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -171,7 +139,8 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
  * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
-export async function restoreFromFile(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> {
+export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> => withRestoring(() => restoreFromFileNow(file, scan, years));
+async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> {
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
@@ -197,34 +166,6 @@ export async function restoreFromFile(file: ReadableBackup, scan: BackupScan, ye
       const mapped = remapAudits(fillReason(o.data as AuditLog[]), plan);
       const key = auditKey(o.year);
       if (mapped.length) await transact(async () => ({ writes: [{ key, value: mapped }], result: undefined }));
-    }
-  }
-  await transact(async () => ({ writes: [{ key: KEYS.restoreMarker, value: null }], result: undefined }));
-}
-
-/**
- * 검증을 마친 파일(scanBackupFile)로 모든 데이터를 통째로 되돌립니다: 현재 헌금·이력을 모두 지우고 성도·헌금 종류도 백업 그대로 교체합니다
- * (시연 데이터를 지우고 원래 데이터로 복구할 때). 달마다 따로 저장하며 '복원 중' 표시를 남기는 안전장치는 restoreFromFile과 같습니다.
- * extraStartWrites는 시작 트랜잭션에 함께 쓸 항목(예: 시연 복구 정보 삭제)입니다.
- */
-export async function restoreAllFromFile(file: ReadableBackup, scan: BackupScan, extraStartWrites: Write[] = []): Promise<void> {
-  await transact(async () => {
-    const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: new Date().toISOString(), years: Object.keys(scan.yearCounts) } satisfies RestoreMarker }];
-    writes.push(...(await wipeDonationsWrites()));
-    for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
-    writes.push({ key: KEYS.members, value: scan.members }, { key: KEYS.offeringTypes, value: scan.offeringTypes }, ...extraStartWrites);
-    return { writes, result: undefined };
-  });
-  for await (const line of readFileLines(file)) {
-    const o = parse(line);
-    if (!o) continue;
-    if (o.t === 'donations' && typeof o.ym === 'string') {
-      const write = monthWrite(o.ym, o.data as Donation[]);
-      await transact(async () => ({ writes: [write], result: undefined }));
-    } else if (o.t === 'audit' && typeof o.year === 'string') {
-      const list = fillReason(o.data as AuditLog[]);
-      const key = auditKey(o.year);
-      if (list.length) await transact(async () => ({ writes: [{ key, value: list }], result: undefined }));
     }
   }
   await transact(async () => ({ writes: [{ key: KEYS.restoreMarker, value: null }], result: undefined }));

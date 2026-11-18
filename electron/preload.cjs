@@ -19,9 +19,6 @@ contextBridge.exposeInMainWorld('desktop', {
   backupRestart: (id) => ipcRenderer.invoke('backup:restart', id),
   backupAbort: (id) => ipcRenderer.invoke('backup:abort', id),
   backupEnd: (id) => ipcRenderer.invoke('backup:end', id),
-  backupReadOpen: (name) => ipcRenderer.invoke('backup:read-open', name),
-  backupReadChunk: (id, offset) => ipcRenderer.invoke('backup:read-chunk', id, offset),
-  backupReadClose: (id) => ipcRenderer.invoke('backup:read-close', id),
   skipBackup: () => ipcRenderer.send('backup:skip'),
   onBackupCancelled: (handler) => {
     const listener = () => handler();

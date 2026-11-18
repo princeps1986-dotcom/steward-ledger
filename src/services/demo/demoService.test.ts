@@ -10,7 +10,7 @@ import { buildAutoBackup, runPeriodicBackup } from '../backup/autoBackupService'
 import { restoreBackup, saveBackupFile } from '../backup/backupService';
 import { createDemoData, removeDemoData } from './demoService';
 import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, type DemoSpec } from './demoData';
-import { hasDemoData, isDemoBusy, readDemoRestore } from './demoState';
+import { hasDemoData, isDemoBusy } from './demoState';
 
 const NOW = new Date(2026, 10, 17); // 2026-11-17(화)
 /** 서비스 시험용 작은 규격(주 6개, 성도 30명) */
@@ -82,7 +82,6 @@ describe('allocate', () => {
 /** 메모리에 백업 파일을 보관하는 가짜 데스크톱 */
 function fakeDesktop() {
   const files = new Map<string, Uint8Array>();
-  let open: string | null = null;
   let session: { name: string; lines: string[] } | null = null;
   const api = {
     backupBegin: async (spec: { name: string; folder?: string }) => ((session = { name: `${spec.folder ?? ''}/${spec.name}`, lines: [] }), 1),
@@ -96,13 +95,6 @@ function fakeDesktop() {
       files.set(session!.name.split('/').pop()!, gz);
       return `C:/x/${session!.name}`;
     },
-    backupReadOpen: async (name: string) => {
-      if (!files.has(name)) throw new Error('파일 없음');
-      open = name;
-      return { id: 1, size: files.get(name)!.length };
-    },
-    backupReadChunk: async (_id: number, offset: number) => files.get(open!)!.subarray(offset, offset + 1000),
-    backupReadClose: async () => true,
   } as unknown as DesktopApi;
   vi.stubGlobal('window', { desktop: api });
   return files;
@@ -128,50 +120,34 @@ describe('hasDemoData', () => {
 });
 
 describe('create and remove demo data', () => {
-  it('backs up the original, replaces everything with demo data, then removal restores the original exactly', async () => {
-    const files = fakeDesktop();
-    await transact(async () => ({ writes: [{ key: KEYS.members, value: [real] }, monthWrite('2026-01', [don('a', '2026-01-04', 'real-1'), don('b', '2026-01-11')])], result: 0 }));
-    const info = await createDemoData({ spec: SMALL, today: NOW });
-    expect(info.backupName).toMatch(/^existing-data-backup_\d{8}_\d{6}\.json\.gz$/);
-    expect([...files.keys()]).toEqual([info.backupName]);
+  it('creates demo data on an empty app, refuses to create twice, and removal returns to an empty state (also dropping the old restore key)', async () => {
+    await transact(async () => ({ writes: [{ key: KEYS.demoRestore, value: { backupName: 'old' } }], result: 0 }));
+    await createDemoData({ spec: SMALL, today: NOW });
     expect(await hasDemoData()).toBe(true);
-    expect((await readDemoRestore())?.backupName).toBe(info.backupName);
     expect(await getItem<Member[]>(KEYS.members)).toHaveLength(SMALL.members);
     await expect(createDemoData()).rejects.toThrow('이미 시연');
-    // 시연 중 추가한 데이터
+    // 시연 중 추가한 데이터까지 모두 지웁니다.
     await transact(async () => ({ writes: [monthWrite('2026-11', [don('mine', '2026-11-15', 'real-1')])], result: 0 }));
-    const r = await removeDemoData();
-    expect(r.restored).toBe(true);
+    await removeDemoData();
     expect(await hasDemoData()).toBe(false);
-    expect(await readDemoRestore()).toBeNull();
-    expect((await getItem<Member[]>(KEYS.members))?.map((m) => m.id)).toEqual(['real-1']);
-    expect(await listDonationMonths()).toEqual(['2026-01']);
-    expect((await readMonth('2026-01')).map((x) => x.id).sort()).toEqual(['a', 'b']);
+    expect(await listDonationMonths()).toEqual([]);
+    expect(await getItem(KEYS.demoRestore)).toBeNull();
     expect(await getItem(KEYS.restoreMarker)).toBeNull();
   }, 60000);
 
-  it('does not delete the demo data when the backup file is missing or damaged', async () => {
-    const files = fakeDesktop();
+  it('refuses to create demo data when members or donations already exist, and keeps them untouched', async () => {
     await transact(async () => ({ writes: [monthWrite('2026-01', [don('a', '2026-01-04')])], result: 0 }));
-    const info = await createDemoData({ spec: SMALL, today: NOW });
-    files.set(info.backupName!, new Uint8Array([1, 2, 3])); // 손상
-    await expect(removeDemoData()).rejects.toThrow('제거하지 않았습니다');
-    expect(await hasDemoData()).toBe(true);
-    files.delete(info.backupName!); // 없음
-    await expect(removeDemoData()).rejects.toThrow('제거하지 않았습니다');
-    expect(await hasDemoData()).toBe(true);
-  }, 60000);
+    await expect(createDemoData({ spec: SMALL, today: NOW })).rejects.toThrow('데이터가 있어');
+    expect((await readMonth('2026-01')).map((x) => x.id)).toEqual(['a']);
+    await db.donations.clear();
+    await transact(async () => ({ writes: [{ key: KEYS.members, value: [real] }], result: 0 }));
+    await expect(createDemoData({ spec: SMALL, today: NOW })).rejects.toThrow('데이터가 있어');
+    expect(await getItem<Member[]>(KEYS.members)).toHaveLength(1);
+  });
 
-  it('with no original data nothing is backed up and removal leaves an empty app; without demo data removal does nothing', async () => {
-    const files = fakeDesktop();
+  it('without demo data removal does nothing', async () => {
     await expect(removeDemoData()).rejects.toThrow('제거할 시연 데이터가 없습니다');
-    const info = await createDemoData({ spec: SMALL, today: NOW });
-    expect(info.backupName).toBeNull();
-    expect(files.size).toBe(0);
-    expect((await removeDemoData()).restored).toBe(false);
-    expect(await hasDemoData()).toBe(false);
-    expect(await listDonationMonths()).toEqual([]);
-  }, 60000);
+  });
 });
 
 describe('newest-first creation', () => {
@@ -183,10 +159,8 @@ describe('newest-first creation', () => {
   });
 
   it('is usable after the newest months (onReady), then finishes the older months with exact totals', async () => {
-    fakeDesktop();
     let readyMonths: string[] = [];
-    const info = await createDemoData({ spec: SMALL, today: NOW, onReady: () => void listDonationMonths().then((m) => (readyMonths = m)) });
-    expect(info.backupName).toBeNull();
+    await createDemoData({ spec: SMALL, today: NOW, onReady: () => void listDonationMonths().then((m) => (readyMonths = m)) });
     expect(readyMonths.length).toBeLessThanOrEqual(3);
     const months = await listDonationMonths();
     expect(months.length).toBeGreaterThanOrEqual(readyMonths.length);
@@ -197,7 +171,6 @@ describe('newest-first creation', () => {
   }, 60000);
 
   it('refuses to remove while the demo data is still being made, and works after it finished', async () => {
-    fakeDesktop();
     let refused = '';
     const created = createDemoData({ spec: SMALL, today: NOW, onReady: () => void removeDemoData().catch((e: Error) => (refused = e.message)) });
     await created;
@@ -215,7 +188,6 @@ describe('newest-first creation', () => {
 describe('backups are blocked while demo data exists', () => {
   it('blocks auto backups (close and periodic), manual backup and restore, and allows them again after removal', async () => {
     fakeDesktop();
-    await transact(async () => ({ writes: [{ key: KEYS.members, value: [real] }, monthWrite('2026-01', [don('a', '2026-01-04', 'real-1')])], result: 0 }));
     const settings = { ...DEFAULT_SETTINGS, autoBackupEnabled: true };
     expect(await isDemoBusy()).toBe(false);
     await createDemoData({ spec: SMALL, today: NOW });

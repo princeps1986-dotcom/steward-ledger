@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
 import { nextAnonymousName } from '../services/domain/anonymous';
+import { assertNotRestoring } from '../services/backup/backupBusy';
 import { yearOf } from '../services/domain/dates';
 import {
   applyRowOps,
@@ -299,6 +300,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
 
   const saveBatch = useCallback(
     async (drafts: DonationDraft[], resolution: DuplicateResolution) => {
+      assertNotRestoring();
       if (drafts.length === 0) throw new Error('저장할 금액이 없습니다.');
       const date = drafts[0].date;
       const year = yearOf(date);
@@ -349,6 +351,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
 
   const updateDonation = useCallback(
     async (original: Donation, next: Donation, reason: string) => {
+      assertNotRestoring();
       const oldYm = monthOfDate(original.date);
       const newYm = monthOfDate(next.date);
       const newYear = yearOf(next.date);
@@ -378,6 +381,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
 
   const deleteDonation = useCallback(
     async (target: Donation, reason: string) => {
+      assertNotRestoring();
       const year = yearOf(target.date);
       const ym = monthOfDate(target.date);
       const { writes } = await transact(async (read) => {
@@ -392,6 +396,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   );
 
   const undoLast = useCallback(async () => {
+    assertNotRestoring();
     const batch = historyRef.current[0];
     if (!batch) return null;
     const { writes } = await transact(async (read) => {
