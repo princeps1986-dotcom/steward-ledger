@@ -85,7 +85,7 @@ src/
 │   ├── domain/         [순수 규칙] 금액·검색·세대·집계·월 캐시 …
 │   ├── storage/        db(Dexie 정의)·storageService(트랜잭션·월 키), tabSyncChannel(창 간 동기화)
 │   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
-│   ├── excel/          downloadBridge
+│   ├── downloadBridge.ts  파일 내려받기(브라우저)
 │   ├── import/         memberImportService (CSV 명단)
 │   ├── demo/           demoData (시연 데이터)
 │   └── theme.ts, desktopBridge.ts

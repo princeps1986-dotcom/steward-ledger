@@ -356,6 +356,11 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const before = await readRow(original.date, original.id);
         if (!before) throw new Error('수정할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
         const after: Donation = { ...next, id: before.id, createdAt: before.createdAt };
+        // 날짜나 종류를 바꿔 같은 날짜·성도·종류의 다른 내역과 겹치게 되면 막습니다(입력 때는 합산하므로 같은 규칙). 금액·메모만 고칠 때는 검사하지 않습니다.
+        if (after.date !== before.date || after.offeringTypeId !== before.offeringTypeId) {
+          const dup = await findDuplicateRow(after);
+          if (dup && dup.id !== before.id) throw new Error('같은 날짜·종류의 내역이 이미 있습니다. 그 내역을 수정하거나 삭제한 뒤 다시 시도하세요.');
+        }
         const logs = [...((await read<AuditLog[]>(auditKey(newYear))) ?? [])];
         logs.push(makeAudit('UPDATE', before, after, reason));
         const w: Write[] = [];

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
-import { downloadText } from '../services/excel/downloadBridge';
+import { downloadText } from '../services/downloadBridge';
 import {
   applyImport,
   buildPreview,

@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
-import { applyRowOps, findDuplicate } from '../domain/donationOps';
+import { applyRowOps } from '../domain/donationOps';
 import { db } from './db';
 import {
   countDonationsOfType,
@@ -26,6 +26,10 @@ beforeEach(async () => {
   await db.kv.clear();
   await db.donations.clear();
 });
+
+/** 색인 조회(findDuplicateRow)와 비교하는 기준 구현: 목록을 처음부터 훑어 [날짜+성도+종류]가 같은 첫 내역을 찾습니다(무명 제외). */
+const findDuplicate = (list: Donation[], d: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>): Donation | undefined =>
+  d.memberId === null ? undefined : list.find((x) => x.date === d.date && x.memberId === d.memberId && x.offeringTypeId === d.offeringTypeId);
 
 describe('row-per-donation storage', () => {
   it('reads one month by date range, in entry order, without touching neighbours', async () => {

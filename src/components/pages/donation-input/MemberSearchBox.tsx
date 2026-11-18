@@ -11,6 +11,7 @@ export function MemberSearchBox({ c }: { c: DonationInputController }) {
               c.searchRef.current = el;
             }}
             id="member-search-input"
+            aria-label="무명/방문자 표기명"
             className="input border-amber-400 bg-amber-50"
             value={c.anonName}
             onChange={(e) => c.setAnonName(e.target.value)}
@@ -23,6 +24,7 @@ export function MemberSearchBox({ c }: { c: DonationInputController }) {
               c.searchRef.current = el;
             }}
             id="member-search-input"
+            aria-label="성도 검색"
             className="input"
             value={c.query}
             onChange={(e) => c.onQueryChange(e.target.value)}

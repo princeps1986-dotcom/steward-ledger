@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Donation, DonationDraft, Member } from '../../contexts/types';
 import { formatAmountInput, parseAmount } from './amount';
 import { lastSunday, monthsOfPeriod } from './dates';
-import { buildDonation, findDuplicate, makeAudit, mergeDonation, validateReason } from './donationOps';
-import { buildFamilyLabels, familyKeyOf } from './family';
+import { buildDonation, makeAudit, mergeDonation, validateReason } from './donationOps';
+import { familyKeyOf } from './family';
 import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT } from './memberRules';
 import { matchMember, memberLabel } from './search';
 
@@ -76,12 +76,6 @@ describe('search', () => {
 
 describe('donationOps', () => {
   const existing: Donation = buildDonation(draft({ memo: '첫 봉투' }), 'd1', '2026-11-15T00:00:00Z');
-  it('detects duplicates by date + member + type, never for anonymous', () => {
-    expect(findDuplicate([existing], draft())?.id).toBe('d1');
-    expect(findDuplicate([existing], draft({ offeringTypeId: 't2' }))).toBeUndefined();
-    expect(findDuplicate([existing], draft({ date: '2026-11-08' }))).toBeUndefined();
-    expect(findDuplicate([{ ...existing, memberId: null }], draft({ memberId: null }))).toBeUndefined();
-  });
   it('merges amount and memo', () => {
     const merged = mergeDonation(existing, draft({ amount: 5000, memo: '생일' }));
     expect(merged.amount).toBe(15000);
@@ -150,10 +144,5 @@ describe('family', () => {
     expect(familyKeyOf(d, 'CURRENT', byId)).toBe('h');
     expect(familyKeyOf(d, 'SNAPSHOT', byId)).toBe('solo:w');
     expect(familyKeyOf({ ...d, memberId: null }, 'CURRENT', byId)).toBeNull();
-  });
-  it('disambiguates duplicate family labels', () => {
-    const other = member({ id: 'x', name: '김철수', isFamilyHead: true, familyGroupId: 'x' });
-    const labels = buildFamilyLabels(['h', 'x'], [head, wife, other]);
-    expect(new Set(labels.values()).size).toBe(2);
   });
 });

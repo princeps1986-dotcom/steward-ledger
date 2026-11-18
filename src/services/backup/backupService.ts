@@ -5,7 +5,7 @@ import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
 import { desktop, type BackupSessionSpec, type DesktopApi } from '../desktopBridge';
-import { downloadText } from '../excel/downloadBridge';
+import { downloadText } from '../downloadBridge';
 import {
   AUDIT_KEY_RE,
   KEYS,

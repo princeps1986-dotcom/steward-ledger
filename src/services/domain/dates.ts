@@ -11,7 +11,6 @@ export const todayString = (): string => format(new Date(), 'yyyy-MM-dd');
 
 export const yearOf =(date: string): string => date.slice(0, 4);
 export const monthOf = (date: string): number => Number(date.slice(5, 7));
-export const yearMonthOf = (date: string): string => date.slice(0, 7);
 
 export function isValidDateString(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && isValid(parseISO(s));

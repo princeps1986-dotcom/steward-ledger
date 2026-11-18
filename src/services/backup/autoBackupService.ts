@@ -4,15 +4,6 @@ import { desktop, type AutoBackupPayload } from '../desktopBridge';
 import { clearDirty, isDirtySinceBackup, markDirty } from '../storage/storageService';
 import { backupLines, desktopSink, streamBackup } from './backupService';
 
-export const AUTO_BACKUP_KEEP = 10;
-export const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json(\.gz)?$/;
-
-/** 보관 개수를 넘는 오래된 자동 백업 파일 이름 목록 (main.cjs의 prune과 동일 규칙) */
-export function selectFilesToPrune(names: string[], keep = AUTO_BACKUP_KEEP): string[] {
-  const backups = names.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
-  return backups.slice(0, Math.max(0, backups.length - keep));
-}
-
 /** 주기 백업이 진행 중인지(종료 직전에 겹치면 종료 때 백업이 '변경 없음'으로 건너뛰지 않도록) */
 let periodicRunning = false;
 

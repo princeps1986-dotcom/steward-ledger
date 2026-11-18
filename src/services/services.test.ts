@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Member } from '../contexts/types';
-import { selectFilesToPrune } from './backup/autoBackupService';
 import { computeChecksum, parseAndValidateBackup } from './backup/validation';
-import { sanitizeFileName } from './excel/downloadBridge';
+import { sanitizeFileName } from './downloadBridge';
 import { stripBirthDate } from './domain/memberRules';
 import { applyImport, buildPreview, decodeCsvBytes, normalizeRows } from './import/memberImportService';
 
@@ -48,13 +47,6 @@ describe('backup validation', () => {
     expect(res.migratedFrom).toBe(1);
     expect(Object.keys(res.envelope.payload.donationsByYear).sort()).toEqual(['2025', '2026']);
     expect(res.envelope.payload.donationsByYear['2026'][0].familyGroupIdSnapshot).toBe('g1');
-  });
-});
-
-describe('auto backup retention', () => {
-  it('keeps the newest 10 and ignores other files', () => {
-    const names = Array.from({ length: 12 }, (_, i) => `backup_202601${String(i + 1).padStart(2, '0')}_120000.json`);
-    expect(selectFilesToPrune([...names, 'emergency_before_restore_20260101_000000.json'])).toEqual(names.slice(0, 2));
   });
 });
 

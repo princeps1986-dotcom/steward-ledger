@@ -1,14 +1,6 @@
 import type { AuditLog, Donation, DonationDraft } from '../../contexts/types';
 import { newId, nowIso } from './ids';
 
-/** 무명 헌금을 제외하고 [날짜 + 성도 + 헌금 종류]가 같은 기존 내역을 찾습니다. */
-export function findDuplicate(shard: Donation[], draft: DonationDraft): Donation | undefined {
-  if (draft.memberId === null) return undefined;
-  return shard.find(
-    (d) => d.date === draft.date && d.memberId === draft.memberId && d.offeringTypeId === draft.offeringTypeId,
-  );
-}
-
 /**
  * 메모리에 있는 한 달 목록에 행 단위 변경을 반영합니다. 같은 id를 바꾸면 그 자리에서 교체하고(날짜만 바뀐 경우 포함),
  * 지우기만 한 id는 빼며, 새 내역은 끝에 붙입니다.

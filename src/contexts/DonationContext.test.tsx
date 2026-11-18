@@ -115,6 +115,30 @@ describe('DonationContext', () => {
     await waitFor(() => expect(result.current.years).toEqual(['2026']));
   });
 
+  it('수정으로 같은 날짜·성도·종류의 다른 내역과 겹치게 되면 거절하고 아무것도 바꾸지 않는다', async () => {
+    const a = don('a', '2025-03-02', 'm1', 't1');
+    const b = don('b', '2025-03-02', 'm1', 't2');
+    await seed({ '2025-03': [a, b] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await expect(result.current.actions.updateDonation(b, { ...b, offeringTypeId: 't1' }, '종류 오기입')).rejects.toThrow('이미 있습니다');
+    expect(result.current.months['2025-03']?.map((d) => d.offeringTypeId).sort()).toEqual(['t1', 't2']);
+    expect(await getItem<AuditLog[]>('audit_logs_2025')).toBeFalsy();
+  });
+
+  it('금액만 고치는 수정과 무명 내역의 수정은 겹침 검사에 걸리지 않는다', async () => {
+    const a = don('a', '2025-03-02', 'm1', 't1');
+    const x = don('x', '2025-03-02', null, 't1');
+    const y = don('y', '2025-03-02', null, 't2');
+    await seed({ '2025-03': [a, x, y] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await act(() => result.current.actions.updateDonation(a, { ...a, amount: 2000 }, '금액 오기입'));
+    await act(() => result.current.actions.updateDonation(y, { ...y, offeringTypeId: 't1' }, '종류 오기입'));
+    expect(result.current.months['2025-03']?.find((d) => d.id === 'a')?.amount).toBe(2000);
+    expect(result.current.months['2025-03']?.find((d) => d.id === 'y')?.offeringTypeId).toBe('t1');
+  });
+
   it('되돌리기는 저장한 내역이 다른 달로 옮겨졌어도 찾아서 지운다', async () => {
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-06', '2025-07']));
