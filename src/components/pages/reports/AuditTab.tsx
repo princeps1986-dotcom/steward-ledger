@@ -8,7 +8,7 @@ function DonationLine({ v }: { v: AuditDonationView | null }) {
   if (!v) return <>(삭제됨)</>;
   return (
     <>
-      <DateText date={v.date} /> <NameWithTag name={v.name} tag={v.tag} /> {v.typeName} {v.amount}
+      <DateText date={v.date} plain /> <NameWithTag name={v.name} tag={v.tag} /> {v.typeName} {v.amount}
       {v.memo ? ` (${v.memo})` : ''}
     </>
   );
