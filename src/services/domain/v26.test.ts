@@ -47,6 +47,15 @@ describe('formatPrintStamp', () => {
   });
 });
 
+describe('seoulNow', () => {
+  it('maps an instant to Seoul wall-clock regardless of the PC time zone', async () => {
+    const { seoulNow, formatDateTime } = await import('./dates');
+    const d = seoulNow(new Date('2026-11-15T16:30:00Z')); // 서울은 UTC+9 → 11-16 01:30
+    expect([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]).toEqual([2026, 11, 16, 1, 30]);
+    expect(formatDateTime('2026-11-15T16:30:00Z')).toBe('2026-11-16 01:30:00');
+  });
+});
+
 describe('theme defaults (v2.9)', () => {
   it('defaults to calm blue on screen and black-and-white in print, with 3 + 4 options', async () => {
     const { DEFAULT_SETTINGS } = await import('../../contexts/types');

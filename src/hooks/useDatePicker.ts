@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { buildMonthGrid, shiftMonth, weekdayLabelOf, WEEKDAY_LABELS } from '../services/domain/calendar';
-import { isValidDateString, todayString } from '../services/domain/dates';
+import { isValidDateString, seoulNow, todayString } from '../services/domain/dates';
 
 const CELL_BASE = 'h-8 w-full rounded text-sm';
 const POPUP_BASE = 'no-print mt-1 rounded-lg border border-gray-200 bg-white p-2';
@@ -73,7 +73,7 @@ export function useDatePicker({ value, onChange }: { value: string; onChange(v: 
 
   const yearOptions = useMemo(() => {
     if (!open) return [];
-    const thisYear = new Date().getFullYear();
+    const thisYear = seoulNow().getFullYear();
     const from = Math.min(thisYear - 100, view.year);
     const to = Math.max(thisYear + 1, view.year);
     return Array.from({ length: to - from + 1 }, (_, i) => to - i);

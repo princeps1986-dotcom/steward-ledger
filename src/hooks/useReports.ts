@@ -9,7 +9,7 @@ import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
 import { readMonth } from '../services/storage/storageService';
 import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
-import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
+import { formatDateTime, isValidDateString, lastSunday, monthOf, seoulNow, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
 import { memberLabel } from '../services/domain/search';
@@ -39,7 +39,7 @@ const NO_MONTHS: string[] = [];
 /** loadData가 false이면 이 화면은 보고서 기간의 헌금을 메모리에 올리지 않습니다(전체 입력 내역 탭은 달 단위로 직접 읽음). */
 export function useReportFilters(loadData = true) {
   const years = useDonationYears();
-  const currentYear = String(new Date().getFullYear());
+  const currentYear = String(seoulNow().getFullYear());
   const [selYear, setYear] = useState(currentYear);
   // 보고서 화면에 들어오면 가장 최근의 지난 주일(오늘이 주일이면 오늘)이 속한 주(일~토)의 주별 보고서를 기본으로 보여 줍니다.
   const [selPeriodType, setPeriodTypeState] = useState<PeriodType>('WEEK');
@@ -99,7 +99,7 @@ export function useReportFilters(loadData = true) {
   const setPeriodType = useCallback(
     (t: PeriodType) => {
       setPeriodTypeState(t);
-      setPeriodValue(t === 'MONTH' ? new Date().getMonth() + 1 : t === 'QUARTER' ? Math.floor(new Date().getMonth() / 3) + 1 : 1);
+      setPeriodValue(t === 'MONTH' ? seoulNow().getMonth() + 1 : t === 'QUARTER' ? Math.floor(seoulNow().getMonth() / 3) + 1 : 1);
       if (t === 'WEEK' || t === 'DAY') moveWeek(lastSunday()); // 주별·일별을 선택할 때마다 가장 최근의 지난 주일을 기본 선택
     },
     [moveWeek],

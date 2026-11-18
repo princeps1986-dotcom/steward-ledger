@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { formatPrintStamp } from '../../../services/domain/dates';
+import { formatPrintStamp, seoulNow } from '../../../services/domain/dates';
 
 export interface PrintStat {
   label: string;
@@ -9,10 +9,10 @@ export interface PrintStat {
 
 /** 인쇄하는 순간의 시각을 돌려줍니다. 화면을 오래 열어 두었어도 인쇄 직전(beforeprint)에 갱신됩니다. */
 function usePrintStamp(): string {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => seoulNow());
   useEffect(() => {
     // 인쇄 미리보기가 갱신된 값을 그리도록 동기적으로 반영합니다.
-    const refresh = (): void => flushSync(() => setNow(new Date()));
+    const refresh = (): void => flushSync(() => setNow(seoulNow()));
     window.addEventListener('beforeprint', refresh);
     return () => window.removeEventListener('beforeprint', refresh);
   }, []);

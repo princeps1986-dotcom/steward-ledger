@@ -1,6 +1,6 @@
 import type { AuditLog, BackupPayload, Donation, Member } from '../../contexts/types';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
-import { lastSunday } from '../domain/dates';
+import { lastSunday, seoulNow } from '../domain/dates';
 
 /**
  * 시연용 데이터. 시연 성도·헌금 종류·헌금 id는 모두 DEMO_PREFIX로 시작해, 앱이 시연 중인지 한 건만 보고 알 수 있습니다(demoState.ts).
@@ -141,7 +141,7 @@ export interface DemoPlan {
 }
 
 /** 날짜별 건수를 정하고(가벼움) 달별로 헌금을 만드는 계획을 세웁니다. */
-export function planDemo(spec: DemoSpec = DEMO_SPEC_APP, today: Date = new Date(), seed = 20261116): DemoPlan {
+export function planDemo(spec: DemoSpec = DEMO_SPEC_APP, today: Date = seoulNow(), seed = 20261116): DemoPlan {
   const rnd = rngOf(seed);
   const members = buildMembers(rnd, spec.members);
   const activeMembers = members.filter((m) => m.isActive);
@@ -252,7 +252,7 @@ export function buildDemoAudits(recent: readonly Donation[], seed = 20261116): R
 }
 
 /** 전체를 한 번에 만든 백업 형태(작은 규모의 시험용). 큰 규모는 planDemo로 한 달씩 처리하세요. */
-export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_APP, today: Date = new Date()): BackupPayload {
+export function buildDemoPayload(spec: DemoSpec = DEMO_SPEC_APP, today: Date = seoulNow()): BackupPayload {
   const plan = planDemo(spec, today);
   const donationsByYear: Record<string, Donation[]> = {};
   let last: Donation[] = [];

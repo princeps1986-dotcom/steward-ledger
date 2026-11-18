@@ -24,7 +24,7 @@ export function HistoryPanel({ canUndo, onUndo, onEdit }: Props) {
           <li key={b.batchId} className={`rounded border px-2 py-1.5 text-xs ${i === 0 ? 'border-blue-200 bg-blue-50' : 'border-gray-100'}`}>
             <div className="flex justify-between">
               <b>{b.donorDisplayName}</b>
-              <span className="text-gray-500">{new Date(b.savedAt).toLocaleTimeString('ko-KR')}</span>
+              <span className="text-gray-500">{new Date(b.savedAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })}</span>
             </div>
             {b.lines.map((l) => (
               <div key={l.key} className="flex items-center justify-between gap-2 py-0.5 text-gray-600">
@@ -45,7 +45,7 @@ export function HistoryPanel({ canUndo, onUndo, onEdit }: Props) {
           </li>
         ))}
       </ul>
-      <p className="text-[11px] text-gray-400">[수정]으로 금액·종류·날짜를 바로 고칠 수 있습니다(사유 필수). 앱을 다시 시작하면 이 목록은 비워지며, 이후 정정은 보고서 화면에서 하세요.</p>
+      <p className="text-[11px] text-gray-400">[수정]으로 금액·종류·날짜를 바로 고칠 수 있습니다(사유 필수). 앱을 다시 시작하면 이 목록은 비워지며, 이후 정정은 [보고서 -&gt; 전체 입력 내역]에서 하세요.</p>
     </aside>
   );
 }

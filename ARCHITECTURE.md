@@ -306,6 +306,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **저장 성공 효과:** `useDonationInput.savedSeq`가 저장 성공마다 1씩 올라가고, `Notice`(`success`)와 `DailyTotalsBar`(`flashKey`)가 `key`가 바뀌어 `pop-in`·`flash-save` CSS 애니메이션을 다시 재생합니다. `prefers-reduced-motion`이면 애니메이션을 끕니다.
 * **표 행 강조:** `.rpt-table tbody tr:not(.rpt-total-row):hover > td`와 `.row-hover:hover`(가상 목록)가 `--color-blue-50`을 칠합니다(화면 전용, 고정 열 셀도 같은 색).
 * **글자 크기:** 설정이 루트 글자 크기(100%/112.5%/125%)를 바꾸며 Tailwind가 `rem` 기반이라 화면 전체가 함께 커집니다.
+* **시간대(서울 고정):** "오늘"·"지금 시각"은 PC 시간대와 상관없이 서울 기준입니다. `dates.ts`의 `seoulNow()`가 시각을 서울 벽시계로 바꾼 `Date`를 돌려주고(`todayString`·`lastSunday`·`nowStamp`·`formatDateTime`·인쇄 출력일시·보고서 기본 연/월·시연 데이터가 사용), 데스크톱 앱은 `main.cjs`에서 `TZ=Asia/Seoul`도 지정합니다. 저장된 헌금 날짜는 `YYYY-MM-DD` 문자열이고 백업·이력의 시각은 UTC ISO로 저장되며, 화면에 보일 때만 서울 시각으로 바꿉니다. 새 코드에서 `new Date()`로 날짜를 만들 때는 `seoulNow()`를 쓰세요.
 * **접근성:** 주 메뉴 `aria-current`, 보고서 탭 `role=tablist/tab` + `aria-selected`, 토글 `aria-pressed`, 성도 열 제목 `aria-sort`, 검색 `role=combobox/listbox`, 결과 알림 `aria-live`.
 
 ## 13. Electron 셸
