@@ -163,7 +163,7 @@ interface BackupEnvelope {    // 백업 파일
 | :--- | :--- |
 | `members`, `offering_types`, `settings` | 성도 / 헌금 종류 / 설정 |
 | (테이블 `donations`) | **한 건이 한 행**인 헌금. 기본키 `[date, id]`, 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`. 쓰기 목록(`Write`)의 `donations_YYYY-MM` 키는 '그 달의 행이 바뀐다'는 표시일 뿐 값은 저장되지 않음 |
-| `audit_logs_YYYY` | 연도 단위 수정·삭제 이력 |
+| (테이블 `audits`, v2) | **한 건이 한 행**인 수정·삭제 이력. 기본키 자동 증가 `seq`(기록 순서), 색인 `year`. `audit_logs_YYYY` 키는 '그 해의 이력'을 가리키는 이름이며 `getItem`이 그 해 행을 배열로 모아 돌려줌. 쓰기는 `auditAppend`(행만 덧붙임; 저장·수정·삭제·되돌리기) 또는 값 교체(그 해 전체; 복원·초기화·시연) |
 | `meta_dirty_since_backup` | 마지막 백업 이후 데이터가 바뀌었는지(백업 대상 아님) |
 
 한 건을 저장·수정·삭제하면 **그 행만** 씁니다(`rowWrite`; 날짜가 바뀌면 이전 행을 지우고 새 행을 만듦). 달 전체 교체(`monthWrite`)는 백업 복원에서만 씁니다. 월 1.2만 건에서 저장이 월 배열 방식 약 35ms → 0.6ms입니다(fake-indexeddb 측정).
@@ -178,7 +178,7 @@ interface BackupEnvelope {    // 백업 파일
 
 주의: `build` 안에서는 `read`와 `storageService`의 읽기 함수(`getItem`·`getMany`·`listKeys`·`readMonth`·`readRow` 등)만 기다려야 합니다. 그 밖의 비동기 작업(`fetch`, 해시 계산 등)을 기다리면 IndexedDB 트랜잭션이 먼저 끝나 버립니다.
 
-**저장소 구조(버전 1):** 데이터베이스 `church-offering-ledger`에 `kv`(성도·헌금 종류·설정·연도별 이력·백업 표시)와 `donations`(헌금 한 건이 한 행)가 있습니다. 헌금의 기본키는 `[date, id]`라 월·연 로드가 날짜 범위 읽기이고(월 1.2만 건에서 약 43ms), 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`로 중복 검사(약 0.1ms)와 헌금 종류 사용 수를 셉니다. 한 달 안의 표시 순서는 입력 시각(`createdAt`) 순입니다. 아직 실제 사용 데이터가 없는 개발 단계라 이전 형식(localForage·월 배열)에서 옮기는 코드는 두지 않았습니다.
+**저장소 구조(버전 2):** 데이터베이스 `church-offering-ledger`에 `kv`(성도·헌금 종류·설정·백업 표시)와 `donations`(헌금 한 건이 한 행), `audits`(이력 한 건이 한 행)가 있습니다. v1→v2 업그레이드는 `kv`의 `audit_logs_YYYY` 배열을 기록 순서대로 `audits` 행으로 옮기고 키를 지웁니다(업그레이드 트랜잭션 하나). v1은 수정할 때마다 그 해 이력 배열 전체를 다시 썼습니다. v2로 연 데이터는 v1 앱이 열 수 없습니다(더 새로운 버전 안내). 헌금의 기본키는 `[date, id]`라 월·연 로드가 날짜 범위 읽기이고(월 1.2만 건에서 약 43ms), 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`로 중복 검사(약 0.1ms)와 헌금 종류 사용 수를 셉니다. 한 달 안의 표시 순서는 입력 시각(`createdAt`) 순입니다. 아직 실제 사용 데이터가 없는 개발 단계라 이전 형식(localForage·월 배열)에서 옮기는 코드는 두지 않았습니다.
 
 ### 6.3 연도 경계 수정
 날짜를 고쳐 월·연도가 바뀌면 한 트랜잭션에서 ① 이전 달에서 제거 ② 새 달에 삽입 ③ 새 연도 이력에 기록합니다.

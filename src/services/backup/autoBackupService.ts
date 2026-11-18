@@ -17,7 +17,9 @@ export async function buildAutoBackup(settings: AppSettings): Promise<AutoBackup
   const id = await api.backupBegin({ kind: 'close', dir });
   if (id === null) return null;
   for await (const line of backupLines()) await api.backupWrite(id, line);
-  return { file: await api.backupEnd(id) };
+  const file = await api.backupEnd(id);
+  await clearDirty(); // 종료 중에는 저장이 없으므로 다 쓴 뒤에 내려도 빠지는 변경이 없습니다.
+  return { file };
 }
 
 /** 앱을 쓰는 동안의 주기 백업 간격 */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
 import { applyTheme } from '../services/theme';
-import { clearDirty, getItem, KEYS, transact } from '../services/storage/storageService';
+import { getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import { DEFAULT_SETTINGS, type AppSettings, type FontScale } from './types';
 
@@ -61,8 +61,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const markBackupDone = useCallback(
     async (at = new Date().toISOString()) => {
+      // 변경 표시는 백업이 직접 내립니다(백업 전에 내려야 백업하는 동안의 변경이 다음 백업에 담김).
       await update({ lastBackupAt: at });
-      await clearDirty();
     },
     [update],
   );

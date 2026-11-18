@@ -115,6 +115,20 @@ describe('DonationContext', () => {
     await waitFor(() => expect(result.current.years).toEqual(['2026']));
   });
 
+  it('불러온 연도의 이력에는 수정·삭제 이력이 화면 상태에도 바로 덧붙는다', async () => {
+    const a = don('a', '2025-03-02');
+    const b = don('b', '2025-03-09');
+    await seed({ '2025-03': [a, b] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await act(() => result.current.actions.ensureAuditYear('2025'));
+    expect(result.current.audits['2025']).toEqual([]);
+    await act(() => result.current.actions.updateDonation(a, { ...a, amount: 2000 }, '금액 오기입'));
+    await act(() => result.current.actions.deleteDonation(b, '중복 입력 삭제'));
+    expect(result.current.audits['2025']?.map((l) => l.action)).toEqual(['UPDATE', 'DELETE']);
+    expect((await getItem<AuditLog[]>('audit_logs_2025'))?.map((l) => l.action)).toEqual(['UPDATE', 'DELETE']);
+  });
+
   it('수정으로 같은 날짜·성도·종류의 다른 내역과 겹치게 되면 거절하고 아무것도 바꾸지 않는다', async () => {
     const a = don('a', '2025-03-02', 'm1', 't1');
     const b = don('b', '2025-03-02', 'm1', 't2');
@@ -153,6 +167,35 @@ describe('DonationContext', () => {
     });
     expect(result.current.months['2025-07']).toHaveLength(0);
     expect(result.current.history).toHaveLength(0);
+  });
+
+  it('합산한 내역을 저장 뒤 수정했다면 되돌리기를 막아 그 수정이 사라지지 않는다', async () => {
+    await seed({ '2025-03': [don('a', '2025-03-02', 'm1', 't1', 50000)] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await act(async () => {
+      await result.current.actions.saveBatch([draft('2025-03-02', 10000)], 'MERGE');
+    });
+    const merged = result.current.months['2025-03']!.find((x) => x.id === 'a')!;
+    expect(merged.amount).toBe(60000);
+    await act(() => result.current.actions.updateDonation(merged, { ...merged, amount: 65000 }, '금액 오기입'));
+    await act(async () => {
+      await expect(result.current.actions.undoLast()).rejects.toThrow('수정된 내역');
+    });
+    expect(result.current.months['2025-03']!.find((x) => x.id === 'a')!.amount).toBe(65000);
+  });
+
+  it('합산한 내역을 고치지 않았다면 되돌리기로 합산 전 금액이 된다', async () => {
+    await seed({ '2025-03': [don('a', '2025-03-02', 'm1', 't1', 50000)] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await act(async () => {
+      await result.current.actions.saveBatch([draft('2025-03-02', 10000)], 'MERGE');
+    });
+    await act(async () => {
+      await result.current.actions.undoLast();
+    });
+    expect(result.current.months['2025-03']!.find((x) => x.id === 'a')!.amount).toBe(50000);
   });
 
   it('건수 예산을 넘으면 오래 쓰지 않은 연도부터 내려가 메모리에는 예산 안의 연도만 남는다', async () => {

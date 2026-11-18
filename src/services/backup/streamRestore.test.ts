@@ -62,7 +62,21 @@ describe('restoreFromFile', () => {
     const file = await makeBackup();
     const scan = await scanBackupFile(file);
     if (!scan.ok) throw new Error(scan.error);
-    await expect(restoreFromFile({ stream: () => new ReadableStream({ start: (c) => c.error(new Error('읽기 실패')) }) } as unknown as Blob, scan, ['2026'])).rejects.toThrow('읽기 실패');
+    // 처음 읽기(복원할 id 모으기)는 성공하고, 본문을 쓰는 두 번째 읽기에서 멈춥니다.
+    let reads = 0;
+    const flaky = { stream: () => (reads++ === 0 ? file.stream() : new ReadableStream({ start: (c) => c.error(new Error('읽기 실패')) })) };
+    await expect(restoreFromFile(flaky as unknown as Blob, scan, ['2026'])).rejects.toThrow('읽기 실패');
     expect(await interruptedRestore()).toMatchObject({ years: ['2026'] });
+  });
+
+  it('removes a donation that was moved to another year after the backup, so it is not counted twice', async () => {
+    const file = await makeBackup();
+    // 백업 뒤 b의 날짜를 2025년으로 옮김
+    await transact(async () => ({ writes: [monthWrite('2026-01', [d('c', '2026-01-11')]), monthWrite('2025-03', [d('a', '2025-03-02'), d('b', '2025-03-30')])], result: 0 }));
+    const scan = await scanBackupFile(file);
+    if (!scan.ok) throw new Error(scan.error);
+    await restoreFromFile(file, scan, ['2026']);
+    expect((await readMonth('2026-01')).map((x) => x.id).sort()).toEqual(['b', 'c']);
+    expect((await readMonth('2025-03')).map((x) => x.id)).toEqual(['a']);
   });
 });

@@ -11,7 +11,11 @@ import {
   AUDIT_KEY_RE,
   KEYS,
   auditKey,
+  clearDirty,
   getItem,
+  isDirtySinceBackup,
+  markDirty,
+  strayRowWrites,
   getMany,
   listAuditKeys,
   listDonationMonths,
@@ -175,6 +179,18 @@ async function saveEmergencyBackupNow(prefix: string): Promise<string> {
 export const saveBackupFile = (prefix: string, years?: readonly string[]): Promise<string> => withBackupBusy(() => saveBackupFileNow(prefix, years));
 async function saveBackupFileNow(prefix: string, years?: readonly string[]): Promise<string> {
   await assertNoDemo();
+  // 전체가 담기는 백업이면 변경 표시를 읽기 전에 내립니다: 백업하는 동안 생긴 변경은 표시가 다시 올라가 다음 자동 백업에 담깁니다.
+  const full = !years || (years.length === 1 && (await isCompleteYearBackup(years[0])));
+  const wasDirty = full && (await isDirtySinceBackup());
+  if (wasDirty) await clearDirty();
+  try {
+    return await saveBackupFileTo(prefix, years);
+  } catch (e) {
+    if (wasDirty) await markDirty();
+    throw e;
+  }
+}
+async function saveBackupFileTo(prefix: string, years?: readonly string[]): Promise<string> {
   const api = desktop();
   if (!api) {
     const name = backupFileName(prefix, years);
@@ -249,6 +265,8 @@ async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly 
       }
     }
     for (const [ym, list] of byMonth) writes.push(monthWrite(ym, list));
+    const ids = new Set(Object.values(donationsByYear).flatMap((l) => l.map((d) => d.id)));
+    writes.push(...(await strayRowWrites(ids, years)));
     for (const [y, list] of Object.entries(auditLogsByYear)) {
       const mapped = remapAudits(list, plan);
       if (mapped.length) writes.push({ key: auditKey(y), value: mapped });

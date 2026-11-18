@@ -1,12 +1,13 @@
 import Dexie from 'dexie';
-import type { Donation } from '../../contexts/types';
-import { db } from './db';
-import { donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS } from './keys';
+import type { AuditLog, Donation } from '../../contexts/types';
+import { db, type AuditRow } from './db';
+import { auditKey, donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS } from './keys';
 import { toStorageError } from './storageErrors';
 import { broadcastChanged } from './tabSyncChannel';
 
 /**
- * 헌금 내역은 행 단위 테이블(db.donations, 기본키 [날짜, id])에 한 건씩 저장하고, 수정/삭제 이력은 연도별(audit_logs_YYYY)로 샤딩합니다.
+ * 헌금 내역은 행 단위 테이블(db.donations, 기본키 [날짜, id])에, 수정/삭제 이력은 행 단위 테이블(db.audits, 연도 색인)에 한 건씩 저장합니다.
+ * 이력 키(audit_logs_YYYY)는 헌금 키처럼 '그 해의 이력'을 가리키는 이름으로만 쓰이며 kv에는 저장되지 않습니다.
  * 쓰기 목록(Write)의 헌금 키(donations_YYYY-MM)는 '그 달의 행이 바뀐다'는 표시로 쓰이며(다른 창 알림·백업 이후 변경 표시), 값은 저장되지 않습니다.
  * 저장소는 Dexie(IndexedDB)입니다. 여러 키를 읽고 쓰는 한 번의 작업(transact)은 IndexedDB 트랜잭션 하나로 처리되어,
  * 도중에 앱이 종료돼도 전부 반영되거나 전부 반영되지 않습니다.
@@ -28,7 +29,12 @@ export interface Write {
   key: string;
   value: unknown;
   rowOps?: RowOps;
+  /** 이력 키(audit_logs_YYYY)에만: 있으면 그 해 이력에 이 행들만 덧붙입니다(value는 무시). 없으면 value로 그 해 전체를 교체합니다. */
+  auditPuts?: AuditLog[];
 }
+
+/** 그 해 이력에 몇 건만 덧붙입니다(저장·수정·삭제·되돌리기). 그 해 전체를 다시 쓰지 않습니다. */
+export const auditAppend = (year: string, logs: AuditLog[]): Write => ({ key: auditKey(year), value: null, auditPuts: logs });
 
 /** 그 달 전체를 이 목록으로 교체합니다(비면 그 달의 내역을 모두 지움). 복원처럼 달 전체를 바꿀 때만 쓰세요. */
 export const monthWrite = (ym: string, list: Donation[]): Write => ({ key: donationKey(ym), value: list.length ? list : null });
@@ -48,18 +54,36 @@ export const rowWrite = (ym: string, ops: RowOps): Write => ({ key: donationKey(
 
 export type Reader = <T>(key: string) => Promise<T | null>;
 
-/** 키 하나 읽기(없으면 null). 트랜잭션 안에서 부르면 그 트랜잭션에 참여합니다. */
-export const getItem = async <T>(key: string): Promise<T | null> => ((await db.kv.get(key)) as T | undefined) ?? null;
+const stripRow = ({ year: _y, seq: _s, ...log }: AuditRow): AuditLog => log;
+
+/** 한 해의 이력을 기록한 순서대로 읽습니다(없으면 null). */
+async function readAuditYear(year: string): Promise<AuditLog[] | null> {
+  const rows = await db.audits.where('year').equals(year).sortBy('seq');
+  return rows.length ? rows.map(stripRow) : null;
+}
+
+/**
+ * 키 하나 읽기(없으면 null). 트랜잭션 안에서 부르면 그 트랜잭션에 참여합니다.
+ * 이력 키(audit_logs_YYYY)는 이력 테이블에서 그 해의 행을 모아 배열로 돌려줍니다(v1의 연도별 배열과 같은 모양).
+ */
+export const getItem = async <T>(key: string): Promise<T | null> => {
+  const ay = AUDIT_KEY_RE.exec(key)?.[1];
+  if (ay) return (await readAuditYear(ay)) as T | null;
+  return ((await db.kv.get(key)) as T | undefined) ?? null;
+};
 
 /** 여러 키를 한 번에 읽습니다(결과는 keys와 같은 순서, 없으면 null). 키마다 따로 부르는 것보다 빠릅니다. */
-export const getMany = async <T>(keys: string[]): Promise<(T | null)[]> =>
-  ((await db.kv.bulkGet(keys)) as (T | undefined)[]).map((v) => v ?? null);
+export const getMany = async <T>(keys: string[]): Promise<(T | null)[]> => {
+  const kv = (await db.kv.bulkGet(keys.filter((k) => !AUDIT_KEY_RE.test(k)))) as (T | undefined)[];
+  let i = 0;
+  return Promise.all(keys.map((k) => (AUDIT_KEY_RE.test(k) ? getItem<T>(k) : (kv[i++] ?? null))));
+};
 
 /**
  * 읽기 전용 트랜잭션 하나 안에서 fn을 실행합니다. fn 안에서 getItem·getMany·listKeys로 읽은 값은 모두 같은 시점의 값입니다
  * (읽는 도중 다른 저장이 커밋돼도 섞이지 않음). fn 안에서는 이 파일의 읽기 함수만 기다려야 합니다.
  */
-export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction('r', db.kv, db.donations, fn).catch((e) => Promise.reject(toStorageError(e)));
+export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction('r', db.kv, db.donations, db.audits, fn).catch((e) => Promise.reject(toStorageError(e)));
 
 const isDataKey = (k: string): boolean =>
   k === KEYS.members || k === KEYS.offeringTypes || DONATION_KEY_RE.test(k) || AUDIT_KEY_RE.test(k);
@@ -82,8 +106,15 @@ async function applyDonationWrite(w: Write, written: Set<string> | null): Promis
 
 /**
  * 쓰기 목록을 적용합니다. 반드시 열려 있는 쓰기 트랜잭션 안에서 부릅니다.
- * 헌금 키는 주어진 순서대로 적용하고(삭제→쓰기 순서 유지), 나머지 키는 같은 키의 마지막 쓰기만 적용합니다.
+ * 헌금·이력 키는 주어진 순서대로 적용하고(삭제→쓰기 순서 유지), 나머지 키는 같은 키의 마지막 쓰기만 적용합니다.
  */
+async function applyAuditWrite(w: Write): Promise<void> {
+  const year = AUDIT_KEY_RE.exec(w.key)![1];
+  if (!w.auditPuts) await db.audits.where('year').equals(year).delete();
+  const list = w.auditPuts ?? (w.value as AuditLog[] | null) ?? [];
+  if (list.length) await db.audits.bulkAdd(list.map((l) => ({ ...l, year })));
+}
+
 async function applyWrites(writes: Write[]): Promise<void> {
   const last = new Map<string, Write>();
   let written: Set<string> | null = null; // 비운 뒤 이 묶음에서 이미 쓴 달
@@ -92,6 +123,7 @@ async function applyWrites(writes: Write[]): Promise<void> {
       await db.donations.clear();
       written = new Set();
     } else if (DONATION_KEY_RE.test(w.key)) await applyDonationWrite(w, written);
+    else if (AUDIT_KEY_RE.test(w.key)) await applyAuditWrite(w); // 이력도 주어진 순서대로(교체 → 덧붙이기)
     else last.set(w.key, w);
   }
   const puts: Write[] = [];
@@ -146,7 +178,7 @@ export function transact<R>(
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
     try {
-      const out = await db.transaction('rw', db.kv, db.donations, async () => {
+      const out = await db.transaction('rw', db.kv, db.donations, db.audits, async () => {
         const { writes, result } = await build(getItem);
         const all = [...writes];
         // '마지막 백업 이후 변경' 표시는 아직 꺼져 있을 때만 씁니다(저장마다 같은 값을 다시 쓰지 않음).
@@ -215,6 +247,22 @@ export const readRow = async (date: string, id: string): Promise<Donation | null
 /** id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 전체를 훑으므로 드문 경우에만 쓰세요. */
 export const findDonationById = async (id: string): Promise<Donation | null> => (await db.donations.filter((d) => d.id === id).first()) ?? null;
 
+/**
+ * 연도 복원용: ids 중 years 밖(다른 연도)에 남아 있는 행을 지우는 쓰기 목록. 백업 뒤 날짜를 다른 연도로 옮긴 내역이
+ * 복원으로 원래 연도에 다시 생겨 두 번 집계되지 않게 합니다. 기본키만 훑으므로 내역을 메모리에 올리지 않습니다.
+ */
+export async function strayRowWrites(ids: ReadonlySet<string>, years: ReadonlySet<string>): Promise<Write[]> {
+  if (ids.size === 0) return [];
+  const byMonth = new Map<string, [string, string][]>();
+  await db.donations.toCollection().eachPrimaryKey(([date, id]) => {
+    if (years.has(date.slice(0, 4)) || !ids.has(id)) return;
+    const ym = date.slice(0, 7);
+    if (!byMonth.has(ym)) byMonth.set(ym, []);
+    byMonth.get(ym)!.push([date, id]);
+  });
+  return [...byMonth].map(([ym, deletes]) => rowWrite(ym, { puts: [], deletes }));
+}
+
 /** 헌금 종류를 쓰는 내역 수(색인 사용) */
 export const countDonationsOfType = (offeringTypeId: string): Promise<number> => db.donations.where('offeringTypeId').equals(offeringTypeId).count();
 
@@ -250,7 +298,7 @@ export async function listDonationYears(): Promise<string[]> {
 
 /** 수정/삭제 이력이 있는 연도 키 전체(audit_logs_YYYY) */
 export async function listAuditKeys(): Promise<string[]> {
-  return (await listKeys()).filter((k) => AUDIT_KEY_RE.test(k)).sort();
+  return ((await db.audits.orderBy('year').uniqueKeys()) as string[]).map(auditKey);
 }
 
 export async function isDirtySinceBackup(): Promise<boolean> {

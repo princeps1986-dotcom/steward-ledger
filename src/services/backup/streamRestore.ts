@@ -3,7 +3,7 @@ import { assertNoDemo } from '../demo/demoState';
 import { withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
-import { getItem, listAuditKeys, listDonationMonths, monthWrite, transact, type Write } from '../storage/storageService';
+import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, type Write } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { Sha256 } from './sha256';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
@@ -144,11 +144,18 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
+  // 복원할 연도의 헌금 id(한 해치 id만 메모리에 둠): 다른 연도로 옮겨진 같은 내역을 지우는 데 씁니다.
+  const ids = new Set<string>();
+  for await (const line of readFileLines(file)) {
+    const o = parse(line);
+    if (o?.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) for (const d of o.data as Donation[]) ids.add(d.id);
+  }
   // 시작: 표시를 남기고, 선택한 연도의 기존 헌금·이력을 지우며, 백업에만 있는 성도·종류를 추가합니다(한 트랜잭션).
   await transact(async (read) => {
     const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: new Date().toISOString(), years: [...years] } satisfies RestoreMarker }];
     for (const ym of await listDonationMonths()) if (want.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
     for (const k of await listAuditKeys()) if (want.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
+    writes.push(...(await strayRowWrites(ids, want)));
     const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
     const curTypes = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
     if (plan.addMembers.length) writes.push({ key: KEYS.members, value: [...curMembers, ...plan.addMembers] });

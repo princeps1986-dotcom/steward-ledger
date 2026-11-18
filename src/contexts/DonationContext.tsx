@@ -16,6 +16,7 @@ import { yearsToEvict } from '../services/domain/monthCache';
 import {
   AUDIT_KEY_RE,
   DONATION_KEY_RE,
+  auditAppend,
   auditKey,
   findDonationById,
   findDuplicateRow,
@@ -97,6 +98,9 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   const loadingMonths = useRef(new Set<string>());
   const staleMonths = useRef(new Set<string>());
   const loadedAuditYears = useRef(new Set<string>());
+  // 이력을 읽는 중인 연도 / 읽는 사이 이력이 바뀌어 다시 읽어야 하는 연도
+  const loadingAuditYears = useRef(new Set<string>());
+  const staleAuditYears = useRef(new Set<string>());
   // 연도별 '사용 중' 개수(화면이 쓰는 연도)와 마지막 사용 시각: 오래 쓰지 않은 연도부터 메모리에서 내립니다.
   const pins = useRef(new Map<string, number>());
   const lastUsed = useRef(new Map<string, number>());
@@ -155,7 +159,8 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     const monthPatch = new Map<string, ((list: Donation[]) => Donation[])[]>();
     const addedYears = new Set<string>();
     let maybeEmptied = false;
-    const aPatch: Record<string, AuditLog[] | null> = {};
+    const aPatch: Record<string, AuditLog[] | null> = {}; // 그 해 전체 교체
+    const aAppend: Record<string, AuditLog[]> = {}; // 그 해에 덧붙인 행
     for (const w of writes) {
       const dm = DONATION_KEY_RE.exec(w.key)?.[1];
       if (dm) {
@@ -174,7 +179,14 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         monthPatch.set(dm, fns);
       }
       const ay = AUDIT_KEY_RE.exec(w.key)?.[1];
-      if (ay) aPatch[ay] = (w.value as AuditLog[] | null) ?? null;
+      if (ay) {
+        if (loadingAuditYears.current.has(ay)) staleAuditYears.current.add(ay);
+        if (w.auditPuts) (aAppend[ay] ??= []).push(...w.auditPuts);
+        else {
+          aPatch[ay] = (w.value as AuditLog[] | null) ?? null;
+          delete aAppend[ay];
+        }
+      }
     }
     if (monthPatch.size) {
       bumpVersions(monthPatch.keys());
@@ -195,14 +207,17 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       if (maybeEmptied) refreshYears();
     }
     const aKeys = Object.keys(aPatch);
-    if (aKeys.length) {
+    for (const y of aKeys) loadedAuditYears.current.add(y);
+    // 덧붙이기는 메모리에 올라간 연도에만 반영합니다(안 올라간 연도는 불러올 때 최신 값을 읽음).
+    const appendYears = Object.keys(aAppend);
+    if (aKeys.length || appendYears.length) {
       setAudits((prev) => {
         const next = { ...prev };
         for (const y of aKeys) {
           if (aPatch[y] === null) delete next[y];
           else next[y] = aPatch[y]!;
-          loadedAuditYears.current.add(y);
         }
+        for (const y of appendYears) if (next[y]) next[y] = [...next[y], ...aAppend[y]];
         return next;
       });
     }
@@ -260,7 +275,22 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   const ensureAuditYear = useCallback(async (year: string) => {
     if (loadedAuditYears.current.has(year)) return;
     loadedAuditYears.current.add(year);
-    const list = (await getItem<AuditLog[]>(auditKey(year))) ?? [];
+    loadingAuditYears.current.add(year);
+    const gen = generation.current;
+    let list: AuditLog[];
+    try {
+      // 읽는 사이 이력이 저장됐다면(staleAuditYears) 빠졌을 수 있으므로 다시 읽습니다.
+      do {
+        staleAuditYears.current.delete(year);
+        list = (await getItem<AuditLog[]>(auditKey(year))) ?? [];
+      } while (staleAuditYears.current.has(year));
+    } catch {
+      loadedAuditYears.current.delete(year); // 읽기에 실패하면 다음에 다시 읽습니다(빈 목록으로 굳지 않게).
+      return;
+    } finally {
+      loadingAuditYears.current.delete(year);
+    }
+    if (gen !== generation.current) return; // 읽는 동안 복원·초기화(reloadAll)가 일어났으면 버립니다.
     setAudits((prev) => (prev[year] ? prev : { ...prev, [year]: list }));
   }, []);
 
@@ -271,6 +301,8 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     loadingMonths.current.clear();
     staleMonths.current.clear();
     loadedAuditYears.current.clear();
+    loadingAuditYears.current.clear();
+    staleAuditYears.current.clear();
     lastUsed.current.clear();
     setMonths({});
     setEpoch((e) => e + 1);
@@ -305,8 +337,8 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       const date = drafts[0].date;
       const year = yearOf(date);
       const ym = monthOfDate(date);
-      const { writes, result } = await transact(async (read) => {
-        const logs = [...((await read<AuditLog[]>(auditKey(year))) ?? [])];
+      const { writes, result } = await transact(async () => {
+        const logs: AuditLog[] = [];
         const now = nowIso();
         const batch: SaveBatch = {
           batchId: newId(),
@@ -315,6 +347,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           donorDisplayName: drafts[0].donorDisplayName,
           createdIds: [],
           mergedBefore: [],
+          mergedAfter: [],
           lines: [],
         };
         // 이번 묶음에서 이미 만들거나 합친 내역(같은 성도·종류가 한 묶음에 또 나오면 그 내역에 합침)
@@ -338,8 +371,9 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
             batch.lines.push({ offeringTypeId: d.offeringTypeId, amount: d.amount, merged: false });
           }
         }
+        batch.mergedAfter = batch.mergedBefore.map((b) => touched.get(b.id)!);
         const w: Write[] = [rowWrite(ym, { puts: [...touched.values()], deletes: [] })];
-        if (batch.mergedBefore.length) w.push({ key: auditKey(year), value: logs });
+        if (logs.length) w.push(auditAppend(year, logs));
         return { writes: w, result: batch };
       });
       applyWrites(writes);
@@ -355,7 +389,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       const oldYm = monthOfDate(original.date);
       const newYm = monthOfDate(next.date);
       const newYear = yearOf(next.date);
-      const { writes } = await transact(async (read) => {
+      const { writes } = await transact(async () => {
         const before = await readRow(original.date, original.id);
         if (!before) throw new Error('수정할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
         const after: Donation = { ...next, id: before.id, createdAt: before.createdAt };
@@ -364,14 +398,12 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           const dup = await findDuplicateRow(after);
           if (dup && dup.id !== before.id) throw new Error('같은 날짜·종류의 내역이 이미 있습니다. 그 내역을 수정하거나 삭제한 뒤 다시 시도하세요.');
         }
-        const logs = [...((await read<AuditLog[]>(auditKey(newYear))) ?? [])];
-        logs.push(makeAudit('UPDATE', before, after, reason));
         const w: Write[] = [];
         // 날짜가 바뀌면 이전 행을 지우고 새 날짜의 행을 만듭니다(달(연도) 경계를 넘으면 두 달의 행이 바뀝니다).
         const moved = before.date !== after.date;
         if (oldYm === newYm) w.push(rowWrite(oldYm, { puts: [after], deletes: moved ? [[before.date, before.id]] : [] }));
         else w.push(rowWrite(oldYm, { puts: [], deletes: [[before.date, before.id]] }), rowWrite(newYm, { puts: [after], deletes: [] }));
-        w.push({ key: auditKey(newYear), value: logs });
+        w.push(auditAppend(newYear, [makeAudit('UPDATE', before, after, reason)]));
         return { writes: w, result: undefined };
       });
       applyWrites(writes);
@@ -384,11 +416,10 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       assertNotRestoring();
       const year = yearOf(target.date);
       const ym = monthOfDate(target.date);
-      const { writes } = await transact(async (read) => {
+      const { writes } = await transact(async () => {
         const before = await readRow(target.date, target.id);
         if (!before) throw new Error('삭제할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
-        const logs = [...((await read<AuditLog[]>(auditKey(year))) ?? []), makeAudit('DELETE', before, null, reason)];
-        return { writes: [rowWrite(ym, { puts: [], deletes: [[before.date, before.id]] }), { key: auditKey(year), value: logs }], result: undefined };
+        return { writes: [rowWrite(ym, { puts: [], deletes: [[before.date, before.id]] }), auditAppend(year, [makeAudit('DELETE', before, null, reason)])], result: undefined };
       });
       applyWrites(writes);
     },
@@ -399,7 +430,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     assertNotRestoring();
     const batch = historyRef.current[0];
     if (!batch) return null;
-    const { writes } = await transact(async (read) => {
+    const { writes } = await transact(async () => {
       const now = nowIso();
       const ops = new Map<string, RowOps>();
       const opsOf = (date: string): RowOps => {
@@ -408,9 +439,9 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         return ops.get(ym)!;
       };
       const logs = new Map<string, AuditLog[]>();
-      const auditOf = async (date: string): Promise<AuditLog[]> => {
+      const auditOf = (date: string): AuditLog[] => {
         const y = yearOf(date);
-        if (!logs.has(y)) logs.set(y, [...((await read<AuditLog[]>(auditKey(y))) ?? [])]);
+        if (!logs.has(y)) logs.set(y, []);
         return logs.get(y)!;
       };
       // 저장한 날짜에서 먼저 찾고, 저장 후 [수정]으로 날짜가 바뀌었다면 id로 찾습니다(드문 경우라 전체를 훑음).
@@ -419,19 +450,22 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const removed = await locate(id, batch.date);
         if (!removed) continue; // 이미 다른 경로로 삭제됨
         opsOf(removed.date).deletes.push([removed.date, removed.id]);
-        (await auditOf(removed.date)).push(makeAudit('DELETE', removed, null, REASON_UNDO, now));
+        auditOf(removed.date).push(makeAudit('DELETE', removed, null, REASON_UNDO, now));
       }
-      for (const before of batch.mergedBefore) {
+      for (const [i, before] of batch.mergedBefore.entries()) {
         const current = await locate(before.id, before.date);
         if (!current) continue;
-        (await auditOf(current.date)).push(makeAudit('UPDATE', current, before, REASON_UNDO, now));
-        // 합산 전 상태(원래 날짜)로 복원: 날짜가 달라졌다면 현재 행은 지우고 원래 날짜의 행으로 되돌립니다.
-        if (current.date !== before.date) opsOf(current.date).deletes.push([current.date, current.id]);
+        // 합산 뒤에 [수정]한 내역을 합산 전으로 되돌리면 그 수정이 조용히 사라지므로 막습니다.
+        const after = batch.mergedAfter[i];
+        if (current.amount !== after.amount || current.date !== after.date || current.offeringTypeId !== after.offeringTypeId || current.memo !== after.memo) {
+          throw new Error('저장한 뒤 수정된 내역이 있어 되돌릴 수 없습니다. 내역 화면에서 직접 수정하거나 삭제하세요.');
+        }
+        auditOf(current.date).push(makeAudit('UPDATE', current, before, REASON_UNDO, now));
         opsOf(before.date).puts.push(before);
       }
       const w: Write[] = [];
       for (const [m, o] of ops) w.push(rowWrite(m, o));
-      for (const [y, l] of logs) w.push({ key: auditKey(y), value: l });
+      for (const [y, l] of logs) w.push(auditAppend(y, l));
       return { writes: w, result: undefined };
     });
     applyWrites(writes);

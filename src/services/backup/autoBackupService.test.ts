@@ -172,6 +172,36 @@ describe('desktop save functions use the streaming sessions', () => {
     await expect(saveBackupFile('backup')).rejects.toThrow('저장을 취소');
   });
 
+  it('a full manual backup clears the changed flag before reading, so changes made while it writes stay flagged', async () => {
+    const quiet = fakeSink();
+    fakeDesktop(quiet.sink);
+    expect(await isDirtySinceBackup()).toBe(true);
+    await saveBackupFile('backup');
+    expect(await isDirtySinceBackup()).toBe(false);
+
+    await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('x', '2026-03-01')], deletes: [] })], result: 0 }));
+    const busy = fakeSink();
+    const write = busy.sink.write;
+    let saved = false;
+    busy.sink.write = async (id, line) => {
+      if (!saved && line.includes('"t":"donations"')) {
+        saved = true; // 백업이 내역을 쓰는 도중 저장
+        await transact(async () => ({ writes: [rowWrite('2026-03', { puts: [d('late', '2026-03-02')], deletes: [] })], result: 0 }));
+      }
+      return write(id, line);
+    };
+    fakeDesktop(busy.sink);
+    await saveBackupFile('backup');
+    expect(await isDirtySinceBackup()).toBe(true);
+  });
+
+  it('puts the changed flag back when a full manual backup is cancelled', async () => {
+    fakeDesktop(fakeSink({ cancel: true }).sink);
+    expect(await isDirtySinceBackup()).toBe(true);
+    await expect(saveBackupFile('backup')).rejects.toThrow('저장을 취소');
+    expect(await isDirtySinceBackup()).toBe(true);
+  });
+
   it('desktopSink forwards to the bridge', async () => {
     const f = fakeSink();
     fakeDesktop(f.sink);

@@ -116,6 +116,8 @@ export interface SaveBatch {
   donorDisplayName: string;
   createdIds: string[];
   mergedBefore: Donation[];
+  /** 합산 직후의 내역(mergedBefore와 같은 id). 되돌리기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
+  mergedAfter: Donation[];
   lines: { offeringTypeId: string; amount: number; merged: boolean }[];
 }
 
