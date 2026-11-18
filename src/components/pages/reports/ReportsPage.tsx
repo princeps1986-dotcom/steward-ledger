@@ -151,9 +151,9 @@ export function ReportsPage() {
       </nav>
 
       {tab === 'SUMMARY' ? (
-        <div className="no-print flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" role="group" aria-label="표시할 헌금 종류">
+        <div className="no-print space-y-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" role="group" aria-label="표시할 헌금 종류">
           <span className="text-gray-600">표시할 헌금 종류</span>
-          <span className="text-xs text-gray-500">(헌금 종류에서 활성 상태인 종류만 기본으로 체크됩니다)</span>
           {typeOptions.map((o) => (
             <label key={o.id} className="flex cursor-pointer items-center gap-1">
               <input type="checkbox" checked={!hidden.has(o.id)} onChange={() => toggleType(o.id)} />
@@ -165,6 +165,8 @@ export function ReportsPage() {
               모두 표시
             </button>
           ) : null}
+        </div>
+        <p className="text-xs text-gray-500">헌금 종류에서 활성 상태인 종류만 기본으로 체크됩니다.</p>
         </div>
       ) : null}
       <div className={f.pending ? 'opacity-50 transition-opacity' : 'transition-opacity'} aria-busy={f.pending}>
