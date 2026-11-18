@@ -80,7 +80,7 @@ export const getMany = async <T>(keys: string[]): Promise<(T | null)[]> => {
 };
 
 /**
- * 읽기 전용 트랜잭션 하나 안에서 fn을 실행합니다. fn 안에서 getItem·getMany·listKeys로 읽은 값은 모두 같은 시점의 값입니다
+ * 읽기 전용 트랜잭션 하나 안에서 fn을 실행합니다. fn 안에서 getItem·getMany로 읽은 값은 모두 같은 시점의 값입니다
  * (읽는 도중 다른 저장이 커밋돼도 섞이지 않음). fn 안에서는 이 파일의 읽기 함수만 기다려야 합니다.
  */
 export const snapshot = <T>(fn: () => Promise<T>): Promise<T> => db.transaction('r', db.kv, db.donations, db.audits, fn).catch((e) => Promise.reject(toStorageError(e)));
@@ -168,7 +168,7 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * 최신 저장 값을 읽어 쓰기 목록을 만들고 하나의 IndexedDB 트랜잭션으로 커밋합니다. build 안에서는 read와
- * 이 파일의 읽기 함수(getItem·getMany·listKeys·listDonationKeys)만 기다려야 합니다(다른 비동기 작업을 기다리면 트랜잭션이 먼저 끝납니다).
+ * 이 파일의 읽기 함수(getItem·getMany·readMonth·readRow 등)만 기다려야 합니다(다른 비동기 작업을 기다리면 트랜잭션이 먼저 끝납니다).
  * 데이터 키가 바뀌면 '마지막 백업 이후 변경' 플래그를 세웁니다.
  * 저장 공간 부족 같은 저장소 오류는 한글 안내(StorageError)로 바뀌고, build가 던진 업무 규칙 오류는 그대로 전달됩니다.
  */
@@ -206,10 +206,6 @@ export async function openStorage(): Promise<void> {
   } catch (e) {
     throw toStorageError(e);
   }
-}
-
-export async function listKeys(): Promise<string[]> {
-  return (await db.kv.toCollection().primaryKeys()).map(String);
 }
 
 const byEntryOrder = (a: Donation, b: Donation): number =>

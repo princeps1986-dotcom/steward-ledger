@@ -48,9 +48,31 @@ describe('backup validation', () => {
     expect(Object.keys(res.envelope.payload.donationsByYear).sort()).toEqual(['2025', '2026']);
     expect(res.envelope.payload.donationsByYear['2026'][0].familyGroupIdSnapshot).toBe('g1');
   });
+
+  it('rejects a backup with a date that does not exist, even when the checksum matches', async () => {
+    for (const date of ['2025-02-30', '2025-13-01']) {
+      const d = { id: 'd1', date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't1', amount: 1000, createdAt: '' };
+      const payload = { members: [], offeringTypes: [], donationsByYear: { '2025': [d] }, auditLogsByYear: {} };
+      const env = { appVersion: '2.0.0', schemaVersion: 2, exportedAt: '2026-01-01T00:00:00Z', checksum: await computeChecksum(payload), payload };
+      expect((await parseAndValidateBackup(JSON.stringify(env))).ok).toBe(false);
+    }
+  });
 });
 
 describe('member import', () => {
+  it('links a new household member to the existing head when the same list is imported again', () => {
+    const existing = [member({ id: 'h', name: '김철수', phoneLast4: '1234', isFamilyHead: true, familyGroupId: 'h' })];
+    const rows = normalizeRows([
+      { 이름: '김철수', 연락처뒷4자리: '1234', 세대주여부: 'Y' },
+      { 이름: '박민수', 세대주여부: 'N', 세대주이름: '김철수' },
+    ]);
+    const preview = buildPreview(rows, existing);
+    expect(preview.map((r) => r.status)).toEqual(['DUPLICATE', 'OK']);
+    expect(preview[1].headRef).toEqual({ kind: 'EXISTING', memberId: 'h' });
+    const { members } = applyImport(preview, new Set(), existing);
+    expect(members.find((m) => m.name === '박민수')?.familyGroupId).toBe('h');
+  });
+
   it('decodes CP949 and UTF-8 BOM', () => {
     const utf8 = new TextEncoder().encode('﻿이름\r\n김철수');
     expect(decodeCsvBytes(utf8)).toBe('이름\r\n김철수');

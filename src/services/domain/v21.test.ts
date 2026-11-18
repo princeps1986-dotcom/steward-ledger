@@ -95,7 +95,7 @@ describe('buildWeeklyMatrix', () => {
     ];
     const m = buildWeeklyMatrix(list, types, range);
     expect(m.columns.map((c) => c.name)).toEqual(['십일조', '주일헌금', '건축헌금']); // 비활성·미사용 종류 제외
-    expect(m.rows.map((r) => r.name)).toEqual(['김철수', '이영희', '무명2', '무명10']);
+    expect(m.rows.map((r) => r.name)).toEqual(['김철수', '이영희', '무명2 (일)', '무명10 (일)']);
     expect(m.rows[0].cells).toEqual([50000, 8000, 0]);
     expect(m.rows[0].total).toBe(58000);
     expect(m.columnTotals).toEqual([150000, 11000, 0]);
@@ -112,9 +112,24 @@ describe('buildWeeklyMatrix', () => {
     ];
     const m = buildWeeklyMatrix(list, types, range);
     expect(m.columns.map((c) => c.name)).toEqual(['십일조', '주일헌금', '건축헌금', '옛헌금']);
-    expect(m.rows.map((r) => r.name)).toEqual(['박동명', '박동명', '무명1']);
+    expect(m.rows.map((r) => r.name)).toEqual(['박동명', '박동명', '무명1 (일)']);
     expect(m.rows[2].total).toBe(1000);
     expect(m.total).toBe(1003);
+  });
+
+  it('splits same-name anonymous donors from different days of the week and labels the weekday', () => {
+    const list = [
+      don({ memberId: null, donorDisplayName: '무명1', offeringTypeId: 't1', amount: 300, date: '2026-11-18' }),
+      don({ memberId: null, donorDisplayName: '무명2', offeringTypeId: 't1', amount: 200 }),
+      don({ memberId: null, donorDisplayName: '무명1', offeringTypeId: 't1', amount: 100 }),
+    ];
+    const m = buildWeeklyMatrix(list, types, range);
+    expect(m.rows.map((r) => [r.name, r.total])).toEqual([['무명1 (일)', 100], ['무명2 (일)', 200], ['무명1 (수)', 300]]);
+    expect(m.total).toBe(600);
+    // 월별(한 주보다 긴 범위)은 같은 요일이 여러 번이므로 날짜도 붙입니다.
+    expect(buildWeeklyMatrix(list, types, { start: '2026-11-01', end: '2026-11-30' }).rows.map((r) => r.name)).toEqual(['무명1 (11/15 일)', '무명2 (11/15 일)', '무명1 (11/18 수)']);
+    // 하루 보고서는 요일을 붙이지 않습니다.
+    expect(buildWeeklyMatrix(list, types, { start: '2026-11-15', end: '2026-11-15' }).rows.map((r) => r.name)).toEqual(['무명1', '무명2']);
   });
 
   it('adds a placeholder column for unknown offering types so totals stay consistent', () => {

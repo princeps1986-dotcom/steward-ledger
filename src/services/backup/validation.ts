@@ -1,5 +1,6 @@
 import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
+import { isValidDateString } from '../domain/dates';
 import { stripBirthDate } from '../domain/memberRules';
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -73,7 +74,7 @@ export function isDonation(v: unknown): v is Donation {
     isObj(v) &&
     isStr(v.id) &&
     isStr(v.date) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(v.date) &&
+    isValidDateString(v.date) && // 형식뿐 아니라 실제로 있는 날짜인지(2025-02-30·2025-13-01 거부)
     (v.memberId === null || isStr(v.memberId)) &&
     isStr(v.offeringTypeId) &&
     Number.isSafeInteger(v.amount)

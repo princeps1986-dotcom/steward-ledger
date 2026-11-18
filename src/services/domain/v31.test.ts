@@ -23,7 +23,7 @@ describe('buildWeeklyMatrix ordering', () => {
 
   it('sorts members by name in Korean order and keeps anonymous rows last in numeric order', () => {
     const m = buildWeeklyMatrix(donations, types, range, (id) => (byId.has(id) ? [...byId.keys()].join('') + id : id));
-    expect(m.rows.map((r) => r.name)).toEqual(['가나다', '김철수', '김철수', '김철수', '무명1', '무명2', '무명10']);
+    expect(m.rows.map((r) => r.name)).toEqual(['가나다', '김철수', '김철수', '김철수', '무명1 (일)', '무명2 (일)', '무명10 (일)']);
   });
   it('orders same-named members by the tie-break key', () => {
     const m = buildWeeklyMatrix(donations, types, range, (id) => memberOrderKey(byId.get(id)));

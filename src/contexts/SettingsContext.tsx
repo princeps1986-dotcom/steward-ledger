@@ -7,10 +7,8 @@ import { DEFAULT_SETTINGS, type AppSettings, type FontScale } from './types';
 
 interface SettingsActions {
   update(patch: Partial<AppSettings>): Promise<void>;
-  /** 백업 성공 기록: 마지막 백업 시각 갱신 + 변경 플래그 해제 */
+  /** 백업 성공 기록: 마지막 백업 시각만 갱신합니다(변경 표시는 백업이 직접 관리). */
   markBackupDone(at?: string): Promise<void>;
-  /** 주기 백업이 끝났을 때: 마지막 백업 시각만 기록합니다(변경 표시는 건드리지 않음). */
-  markPeriodicBackupDone(at?: string): Promise<void>;
 }
 
 interface SettingsState {
@@ -59,18 +57,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings(result);
   }, []);
 
-  const markBackupDone = useCallback(
-    async (at = new Date().toISOString()) => {
-      // 변경 표시는 백업이 직접 내립니다(백업 전에 내려야 백업하는 동안의 변경이 다음 백업에 담김).
-      await update({ lastBackupAt: at });
-    },
-    [update],
-  );
+  // 변경 표시는 백업이 직접 내립니다(백업 전에 내려야 백업하는 동안의 변경이 다음 백업에 담김).
+  const markBackupDone = useCallback((at = new Date().toISOString()) => update({ lastBackupAt: at }), [update]);
 
-  /** 주기 백업이 끝났을 때: 마지막 백업 시각만 기록합니다(변경 표시는 백업이 직접 관리). */
-  const markPeriodicBackupDone = useCallback((at = new Date().toISOString()) => update({ lastBackupAt: at }), [update]);
-
-  const actions = useMemo(() => ({ update, markBackupDone, markPeriodicBackupDone }), [update, markBackupDone, markPeriodicBackupDone]);
+  const actions = useMemo(() => ({ update, markBackupDone }), [update, markBackupDone]);
   const value = useMemo(() => ({ settings, loaded, actions }), [settings, loaded, actions]);
   return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;
 }

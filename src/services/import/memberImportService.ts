@@ -117,23 +117,39 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     return row;
   });
 
+  // 이름별로 묶어 두고 같은 이름끼리만 비교합니다(행마다 전체를 훑지 않도록).
+  const groupBy = <T,>(list: readonly T[], keep: (x: T) => boolean, name: (x: T) => string): Map<string, T[]> => {
+    const out = new Map<string, T[]>();
+    for (const x of list) {
+      if (!keep(x)) continue;
+      const k = name(x);
+      if (!out.has(k)) out.set(k, []);
+      out.get(k)!.push(x);
+    }
+    return out;
+  };
+
   // 파일 내 중복
-  const seen: PreviewRow[] = [];
+  const seen = new Map<string, PreviewRow[]>();
   for (const row of preview) {
     if (row.status === 'ERROR') continue;
-    if (seen.some((s) => isSamePerson(s, row))) {
+    const same = seen.get(row.name) ?? [];
+    if (same.some((s) => isSamePerson(s, row))) {
       row.status = 'ERROR';
       row.messages.push('파일 안에 같은 사람이 이미 있습니다.');
       continue;
     }
-    seen.push(row);
+    seen.set(row.name, [...same, row]);
   }
 
   // 세대주 연결 확인
+  const fileHeadsByName = groupBy(preview, (p) => p.isHead && p.status !== 'ERROR', (p) => p.name);
+  const existingHeadsByName = groupBy(existing, (m) => m.isActive && m.isFamilyHead, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR' || row.isHead || !row.headName) continue;
-    const fileHeads = preview.filter((p) => p.isHead && p.status !== 'ERROR' && p.name === row.headName);
-    const existingHeads = existing.filter((m) => m.isActive && m.isFamilyHead && m.name === row.headName);
+    const existingHeads = existingHeadsByName.get(row.headName) ?? [];
+    // 이미 등록된 세대주와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
+    const fileHeads = (fileHeadsByName.get(row.headName) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
     if (fileHeads.length === 1 && existingHeads.length === 0) row.headRef = { kind: 'FILE', rowNo: fileHeads[0].rowNo };
     else if (fileHeads.length === 0 && existingHeads.length === 1) row.headRef = { kind: 'EXISTING', memberId: existingHeads[0].id };
     else if (fileHeads.length + existingHeads.length === 0) {
@@ -146,9 +162,10 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   }
 
   // 기존 성도와 중복
+  const existingByName = groupBy(existing, () => true, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR') continue;
-    const dup = existing.find((m) => isSamePerson(m, row));
+    const dup = existingByName.get(row.name)?.find((m) => isSamePerson(m, row));
     if (dup) {
       row.duplicateOfId = dup.id;
       row.status = 'DUPLICATE';
@@ -164,7 +181,9 @@ export function applyImport(
   overwriteRowNos: Set<number>,
   existing: Member[],
 ): { members: Member[]; stats: ImportStats } {
-  let members = existing.map((m) => ({ ...m }));
+  let members = [...existing];
+  // applyMemberSave는 끝에 덧붙이기만 하므로 기존 성도의 자리는 그대로입니다.
+  const indexById = new Map(existing.map((m, i) => [m.id, i]));
   const stats: ImportStats = { created: 0, skipped: 0, overwritten: 0, errors: 0 };
   const createdIdByRow = new Map<number, string>();
   const now = nowIso();
@@ -198,8 +217,9 @@ export function applyImport(
         stats.skipped++;
         continue;
       }
-      const m = members.find((x) => x.id === row.duplicateOfId);
-      if (m) {
+      const i = indexById.get(row.duplicateOfId);
+      if (i !== undefined) {
+        const m = (members[i] = { ...members[i] }); // 덮어쓸 성도만 복사해서 바꿉니다.
         // 덮어쓰기는 직분·연락처만 갱신합니다(세대 연결은 유지).
         if (normalizePosition(row.position)) m.position = normalizePosition(row.position);
         if (row.phoneLast4) m.phoneLast4 = row.phoneLast4;

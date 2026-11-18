@@ -176,7 +176,7 @@ interface BackupEnvelope {    // 백업 파일
 
 도중에 오류가 나거나 앱이 멈추면 **트랜잭션 전체가 취소**되어 아무것도 바뀌지 않습니다(행 테이블과 `kv`의 쓰기가 한 트랜잭션입니다).
 
-주의: `build` 안에서는 `read`와 `storageService`의 읽기 함수(`getItem`·`getMany`·`listKeys`·`readMonth`·`readRow` 등)만 기다려야 합니다. 그 밖의 비동기 작업(`fetch`, 해시 계산 등)을 기다리면 IndexedDB 트랜잭션이 먼저 끝나 버립니다.
+주의: `build` 안에서는 `read`와 `storageService`의 읽기 함수(`getItem`·`getMany`·`readMonth`·`readRow` 등)만 기다려야 합니다. 그 밖의 비동기 작업(`fetch`, 해시 계산 등)을 기다리면 IndexedDB 트랜잭션이 먼저 끝나 버립니다.
 
 **저장소 구조(버전 2):** 데이터베이스 `church-offering-ledger`에 `kv`(성도·헌금 종류·설정·백업 표시)와 `donations`(헌금 한 건이 한 행), `audits`(이력 한 건이 한 행)가 있습니다. v1→v2 업그레이드는 `kv`의 `audit_logs_YYYY` 배열을 기록 순서대로 `audits` 행으로 옮기고 키를 지웁니다(업그레이드 트랜잭션 하나). v1은 수정할 때마다 그 해 이력 배열 전체를 다시 썼습니다. v2로 연 데이터는 v1 앱이 열 수 없습니다(더 새로운 버전 안내). 헌금의 기본키는 `[date, id]`라 월·연 로드가 날짜 범위 읽기이고(월 1.2만 건에서 약 43ms), 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`로 중복 검사(약 0.1ms)와 헌금 종류 사용 수를 셉니다. 한 달 안의 표시 순서는 입력 시각(`createdAt`) 순입니다. 아직 실제 사용 데이터가 없는 개발 단계라 이전 형식(localForage·월 배열)에서 옮기는 코드는 두지 않았습니다.
 

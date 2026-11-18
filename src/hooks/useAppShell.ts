@@ -35,7 +35,7 @@ export type AutoSaveStatus = { state: 'saving' } | { state: 'done'; at: string }
 export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void; autoSave: AutoSaveStatus } {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
-  const { markBackupDone, markPeriodicBackupDone } = useSettingsActions();
+  const { markBackupDone } = useSettingsActions();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       try {
         const file = await runPeriodicBackup(settingsRef.current);
         if (file) {
-          await markPeriodicBackupDone();
+          await markBackupDone();
           setFailure((f) => (f?.startsWith('주기 백업') ? null : f));
           setAutoSave({ state: 'done', at: new Date().toISOString() });
           window.clearTimeout(hideTimer);
@@ -84,7 +84,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       window.clearInterval(timer);
       window.clearTimeout(hideTimer);
     };
-  }, [loaded, markPeriodicBackupDone]);
+  }, [loaded, markBackupDone]);
 
   useEffect(() => {
     const api = desktop();
@@ -142,7 +142,8 @@ export function useBackupReminder(autoBackupFailure: string | null) {
   const backupNow = useCallback(async () => {
     setBusy(true);
     try {
-      await saveBackupFile('backup');
+      // 'backup_날짜_시각'은 종료 백업 이름이라 최근 10개만 남기고 지워지므로 직접 백업은 다른 이름으로 저장합니다.
+      await saveBackupFile('backup_manual');
       await markBackupDone();
       setDismissed(true);
     } catch {

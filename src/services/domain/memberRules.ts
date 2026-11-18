@@ -72,15 +72,18 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
   const err = validateDraft(draft);
   if (err) return { ok: false, error: err };
   const now = nowIso();
-  const list = members.map((m) => ({ ...m }));
-  const head = draft.headMemberId ? list.find((m) => m.id === draft.headMemberId) : undefined;
-  if (draft.headMemberId && !head) return { ok: false, error: '연결할 세대주를 찾을 수 없습니다.' };
+  // 배열만 복사하고, 바꾸는 성도만 그 자리에서 복사합니다(가져오기처럼 여러 번 부를 때 전체를 매번 복사하지 않도록).
+  const list = [...members];
+  const own = (i: number): Member => (list[i] = { ...list[i] });
+  const headIdx = draft.headMemberId ? list.findIndex((m) => m.id === draft.headMemberId) : -1;
+  if (draft.headMemberId && headIdx < 0) return { ok: false, error: '연결할 세대주를 찾을 수 없습니다.' };
+  const head = headIdx >= 0 ? list[headIdx] : undefined;
 
-  const ensureHeadGroup = (h: Member): string => {
-    if (!h.familyGroupId) {
-      h.familyGroupId = h.id;
-      h.updatedAt = now;
-    }
+  const ensureHeadGroup = (): string => {
+    if (list[headIdx].familyGroupId) return list[headIdx].familyGroupId!;
+    const h = own(headIdx);
+    h.familyGroupId = h.id;
+    h.updatedAt = now;
     return h.familyGroupId;
   };
 
@@ -90,7 +93,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
       id,
       ...base(draft),
       isFamilyHead: draft.isFamilyHead,
-      familyGroupId: draft.isFamilyHead ? id : head ? ensureHeadGroup(head) : undefined,
+      familyGroupId: draft.isFamilyHead ? id : head ? ensureHeadGroup() : undefined,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -99,20 +102,18 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
     return { ok: true, members: list, saved: m };
   }
 
-  const m = list.find((x) => x.id === editingId);
-  if (!m) return { ok: false, error: '성도를 찾을 수 없습니다.' };
-  if (head && head.id === m.id) return { ok: false, error: '본인을 세대주로 연결할 수 없습니다.' };
+  const idx = list.findIndex((x) => x.id === editingId);
+  if (idx < 0) return { ok: false, error: '성도를 찾을 수 없습니다.' };
+  if (head && head.id === editingId) return { ok: false, error: '본인을 세대주로 연결할 수 없습니다.' };
+  const m = own(idx);
   Object.assign(m, base(draft), { updatedAt: now });
 
   if (draft.isFamilyHead && !m.isFamilyHead) {
     if (m.familyGroupId) {
       // 세대주 변경: 그룹 ID 유지, 기존 세대주 플래그 해제
-      for (const o of list) {
-        if (o.id !== m.id && o.familyGroupId === m.familyGroupId && o.isFamilyHead) {
-          o.isFamilyHead = false;
-          o.updatedAt = now;
-        }
-      }
+      list.forEach((o, i) => {
+        if (o.id !== m.id && o.familyGroupId === m.familyGroupId && o.isFamilyHead) Object.assign(own(i), { isFamilyHead: false, updatedAt: now });
+      });
     } else {
       m.familyGroupId = m.id;
     }
@@ -123,9 +124,9 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
       return { ok: false, error: '세대원이 있는 세대주는 해제할 수 없습니다. 다른 구성원을 세대주로 지정하세요.' };
     }
     m.isFamilyHead = false;
-    m.familyGroupId = head ? ensureHeadGroup(head) : undefined;
+    m.familyGroupId = head ? ensureHeadGroup() : undefined;
   } else if (!draft.isFamilyHead) {
-    m.familyGroupId = head ? ensureHeadGroup(head) : undefined;
+    m.familyGroupId = head ? ensureHeadGroup() : undefined;
   }
   return { ok: true, members: list, saved: m };
 }

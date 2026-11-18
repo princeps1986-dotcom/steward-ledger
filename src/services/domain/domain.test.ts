@@ -129,6 +129,19 @@ describe('memberRules', () => {
     expect(canDeactivate([head, wife], wife)).toBeNull();
   });
 
+  it('copies only the members it changes and never mutates the input', () => {
+    const head = member({ id: 'h', name: '김철수', isFamilyHead: true });
+    const other = member({ id: 'o', name: '박민수' });
+    const input = [head, other];
+    const r = applyMemberSave(input, { ...EMPTY_MEMBER_DRAFT, name: '이영희', headMemberId: 'h' });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.members[1]).toBe(other); // 건드리지 않은 성도는 같은 객체
+    expect(r.members[0]).not.toBe(head); // 세대 그룹이 새로 생긴 세대주만 복사
+    expect(r.members[0].familyGroupId).toBe('h');
+    expect(head.familyGroupId).toBeUndefined(); // 입력 배열의 성도는 그대로
+    expect(input).toHaveLength(2);
+  });
+
   it('validates draft fields', () => {
     expect(applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: '' }).ok).toBe(false);
     expect(applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: 'a', phoneLast4: '12' }).ok).toBe(false);
