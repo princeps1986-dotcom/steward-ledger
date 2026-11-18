@@ -142,7 +142,7 @@ export function desktopSink(api: DesktopApi, spec: BackupSessionSpec): BackupSin
   };
 }
 
-/** 연도를 골라 만든 백업은 파일 이름에 연도를 넣습니다: backup_2025_…, backup_2024-2026_… */
+/** 연도를 선택해 만든 백업은 파일 이름에 연도를 넣습니다: backup_2025_…, backup_2024-2026_… */
 export function backupYearsLabel(years?: readonly string[]): string {
   if (!years || years.length === 0) return '';
   const s = [...years].sort();
@@ -171,7 +171,7 @@ async function saveEmergencyBackupNow(prefix: string): Promise<string> {
   return name;
 }
 
-/** 직접 하는 백업: 데스크톱 앱은 저장 위치를 고르게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
+/** 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 export const saveBackupFile = (prefix: string, years?: readonly string[]): Promise<string> => withBackupBusy(() => saveBackupFileNow(prefix, years));
 async function saveBackupFileNow(prefix: string, years?: readonly string[]): Promise<string> {
   await assertNoDemo();

@@ -4,7 +4,7 @@ import { DatePicker } from '../../shared/DatePicker';
 import { Modal } from '../../shared/Modal';
 
 const OTHER = '기타(직접 입력)';
-/** 자주 쓰는 사유. 고르면 입력 칸에 채워지고 그대로 고쳐 쓸 수 있습니다. */
+/** 자주 쓰는 사유. 선택하면 입력 칸에 채워지고 그대로 고쳐 쓸 수 있습니다. */
 const EDIT_REASONS = ['금액 오기입', '헌금 종류 오기입', '날짜 오기입', '메모 수정', OTHER];
 const DELETE_REASONS = ['중복 입력 삭제', '성도 잘못 선택(삭제 후 다시 입력)', '금액 오기입(삭제 후 다시 입력)', OTHER];
 
@@ -13,7 +13,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
   const isDelete = e.mode === 'DELETE';
   const reasonRef = useRef<HTMLInputElement>(null);
   const reasonMissing = !!e.error?.startsWith('사유');
-  // 목록에서 고른 문구. 입력 칸의 글자가 이것과 다르면(직접 쓴 경우) 목록은 "기타"로 바뀌고 잠깁니다.
+  // 목록에서 선택한 문구. 입력 칸의 글자가 이것과 다르면(직접 쓴 경우) 목록은 "기타"로 바뀌고 잠깁니다.
   const [picked, setPicked] = useState('');
   useEffect(() => setPicked(''), [e.isOpen]);
   const reason = d?.reason ?? '';
@@ -90,7 +90,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
                 if (v) reasonRef.current?.focus();
               }}
             >
-              <option value="">자주 쓰는 사유에서 고르기</option>
+              <option value="">자주 쓰는 사유에서 선택하기</option>
               {(isDelete ? DELETE_REASONS : EDIT_REASONS).map((r) => (
                 <option key={r} value={r}>
                   {r}

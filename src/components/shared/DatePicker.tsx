@@ -10,7 +10,7 @@ interface Props {
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-/** 일요일이 빨간색으로 표시되는 달력 선택기. 직접 입력은 할 수 없고 입력 칸을 누르면 달력이 열려 달력에서만 고릅니다. */
+/** 일요일이 빨간색으로 표시되는 달력 선택기. 직접 입력은 할 수 없고 입력 칸을 누르면 달력이 열려 달력에서만 선택합니다. */
 export function DatePicker({ value, onChange, ariaLabel }: Props) {
   const p = useDatePicker({ value, onChange });
   return (

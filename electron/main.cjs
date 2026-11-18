@@ -82,14 +82,14 @@ if (!app.requestSingleInstanceLock()) {
     }
   }
 
-  // 자동 백업 폴더: 화면이 임의의 경로를 보내도 쓰지 않도록, 사용자가 [폴더 선택]으로 고른 폴더(또는 기본 폴더)만 씁니다.
+  // 자동 백업 폴더: 화면이 임의의 경로를 보내도 쓰지 않도록, 사용자가 [폴더 선택]으로 지정한 폴더(또는 기본 폴더)만 씁니다.
   const backupDirFile = () => path.join(app.getPath('userData'), 'backup-dir.json');
   let chosenBackupDir = null;
   try {
     const saved = JSON.parse(fsSync.readFileSync(backupDirFile(), 'utf8'));
     if (typeof saved.dir === 'string' && path.isAbsolute(saved.dir)) chosenBackupDir = saved.dir;
   } catch {
-    /* 아직 고른 적 없음 */
+    /* 아직 선택한 적 없음 */
   }
   const allowedBackupDir = (dir) => pickBackupDir(dir, chosenBackupDir, defaultBackupDir());
 
@@ -372,7 +372,7 @@ if (!app.requestSingleInstanceLock()) {
     return true;
   });
 
-  // PDF 저장: 현재 화면을 인쇄 모양(A4 가로, @page)대로 PDF로 만들어 저장 위치를 고르게 합니다. 저장하면 download:done으로 알립니다.
+  // PDF 저장: 현재 화면을 인쇄 모양(A4 가로, @page)대로 PDF로 만들어 저장 위치를 선택하게 합니다. 저장하면 download:done으로 알립니다.
   ipcMain.handle('report:save-pdf', async (event, name) => {
     if (typeof name !== 'string' || !/^[^\\/:*?"<>|]+\.pdf$/i.test(name)) throw new Error('잘못된 파일 이름');
     const win = BrowserWindow.fromWebContents(event.sender);

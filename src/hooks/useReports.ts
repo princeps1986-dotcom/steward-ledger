@@ -100,7 +100,7 @@ export function useReportFilters(loadData = true) {
     (t: PeriodType) => {
       setPeriodTypeState(t);
       setPeriodValue(t === 'MONTH' ? new Date().getMonth() + 1 : t === 'QUARTER' ? Math.floor(new Date().getMonth() / 3) + 1 : 1);
-      if (t === 'WEEK' || t === 'DAY') moveWeek(lastSunday()); // 주별·일별을 고를 때마다 가장 최근의 지난 주일을 기본 선택
+      if (t === 'WEEK' || t === 'DAY') moveWeek(lastSunday()); // 주별·일별을 선택할 때마다 가장 최근의 지난 주일을 기본 선택
     },
     [moveWeek],
   );
@@ -409,11 +409,11 @@ export function useReportExport(f: ReportFilters) {
       ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.pdf`
       : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.pdf`;
 
-  // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 고르게 합니다.
+  // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 선택하게 합니다.
   const savePdf = useCallback(async () => {
     const d = desktop();
     if (!d) {
-      say("인쇄 창에서 대상을 'PDF로 저장'으로 고르세요.");
+      say("인쇄 창에서 대상을 'PDF로 저장'으로 선택하세요.");
       window.print();
       return;
     }

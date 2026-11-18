@@ -60,7 +60,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
     await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }));
     done++;
     opts.onProgress?.(done, total);
-    if (done === 1) await audits(donations); // 이력은 가장 최근 달에서 고릅니다.
+    if (done === 1) await audits(donations); // 이력은 가장 최근 달에서 선택합니다.
     if (done === Math.min(READY_MONTHS, total)) {
       await refreshDemoState();
       opts.onReady?.();

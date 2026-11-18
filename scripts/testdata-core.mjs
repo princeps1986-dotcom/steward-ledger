@@ -292,7 +292,7 @@ function genDay(date, count, withEdgeCases) {
       memberLines.push({ member: m, t, amount: weighted(AMOUNTS[t]), memo: chance(0.12) ? pick(MEMOS) : undefined });
     }
   }
-  // 같은 날짜·성도·종류가 따로 저장된 내역(중복 확인창에서 '별도 저장'을 고른 경우)
+  // 같은 날짜·성도·종류가 따로 저장된 내역(중복 확인창에서 '별도 저장'을 선택한 경우)
   const dups = [];
   for (let d = 0; d < dupN; d++) {
     const base = memberLines[int(0, memberLines.length - 1)];

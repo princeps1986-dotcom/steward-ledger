@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { HELP_SECTIONS } from '../components/pages/help/helpContent';
 
-/** 사용 설명서: 목차에서 메뉴를 고르면 해당 설명으로 이동하고 현재 위치를 강조합니다. */
+/** 사용 설명서: 목차에서 메뉴를 선택하면 해당 설명으로 이동하고 현재 위치를 강조합니다. */
 export function useHelpPage() {
   const [activeId, setActiveId] = useState(HELP_SECTIONS[0].id);
 

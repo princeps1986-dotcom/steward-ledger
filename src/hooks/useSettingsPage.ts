@@ -62,7 +62,7 @@ export function useSettingsPage() {
   const [defaultDir, setDefaultDir] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
-  // 백업·복원은 항상 연도 하나를 골라서 합니다(셀렉트 박스, 헌금 내역이 있는 연도만).
+  // 백업·복원은 항상 연도 하나를 선택해서 합니다(셀렉트 박스, 헌금 내역이 있는 연도만).
   const [backupYearPick, setBackupYearPick] = useState('');
   const [restoreYearPick, setRestoreYearPick] = useState('');
   // 선택값이 목록에 없으면(처음, 또는 연도가 사라졌을 때) 가장 최근 연도를 씁니다.
