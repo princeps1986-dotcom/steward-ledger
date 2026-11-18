@@ -41,11 +41,11 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
           value={draft.headMemberId}
           onChange={setField('headMemberId')}
           disabled={draft.isFamilyHead}
-          disabledText="(세대주는 연결하지 않습니다)"
+          disabledText="세대주는 연결하지 않습니다"
           ariaLabel="소속 세대주 연결"
         />
       </div>
-      <p className="col-span-2 -mt-1 text-xs text-gray-500">(기존 세대의 구성원을 지정하면 세대주가 변경되고 세대는 유지됩니다)</p>
+      <p className="col-span-2 -mt-1 text-xs text-gray-500">기존 세대의 구성원을 지정하면 세대주가 변경되고 세대는 유지됩니다</p>
       {error ? <p className="col-span-2 text-sm text-red-600">{error}</p> : null}
     </div>
   );

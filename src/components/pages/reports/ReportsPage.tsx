@@ -166,7 +166,7 @@ export function ReportsPage() {
             </button>
           ) : null}
         </div>
-        <p className="text-xs text-gray-500">헌금 종류에서 활성 상태인 종류만 기본으로 체크됩니다.</p>
+        <p className="text-xs text-gray-500">[헌금 종류]에서 활성 상태인 헌금만 기본으로 체크됩니다.</p>
         </div>
       ) : null}
       <div className={f.pending ? 'opacity-50 transition-opacity' : 'transition-opacity'} aria-busy={f.pending}>
