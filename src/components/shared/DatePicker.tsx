@@ -1,5 +1,6 @@
 import { useDatePicker } from '../../hooks/useDatePicker';
 import { withWeekday } from '../../services/domain/dates';
+import { DateText } from './DateText';
 
 interface Props {
   value: string;
@@ -15,21 +16,30 @@ export function DatePicker({ value, onChange, ariaLabel }: Props) {
   return (
     <div className="relative" ref={p.rootRef} onKeyDown={p.onRootKeyDown}>
       <div className="flex gap-1">
-        <input
-          ref={p.inputRef}
-          className={`input cursor-pointer ${p.weekday?.isSunday ? 'text-red-600' : ''}`}
-          placeholder="달력에서 선택"
-          value={withWeekday(value)}
-          readOnly
-          onClick={p.openCalendar}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
-              e.preventDefault();
-              p.openCalendar();
-            }
-          }}
-          aria-label={ariaLabel}
-        />
+        {/* 입력 칸 글자는 투명하게 두고, 같은 자리에 요일만 빨갛게 칠한 글자를 겹쳐 보여 줍니다(읽기 전용이라 값·접근성은 입력 칸이 그대로 가짐). */}
+        <div className="relative min-w-0 flex-1">
+          <input
+            ref={p.inputRef}
+            className="input cursor-pointer text-transparent"
+            placeholder="달력에서 선택"
+            value={withWeekday(value)}
+            readOnly
+            onClick={p.openCalendar}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                p.openCalendar();
+              }
+            }}
+            aria-label={ariaLabel}
+            spellCheck={false}
+          />
+          {value ? (
+            <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-[9px] flex items-center text-sm">
+              <DateText date={value} />
+            </span>
+          ) : null}
+        </div>
         <button type="button" tabIndex={-1} className="btn px-2" onClick={p.toggle} aria-label={`${ariaLabel} 달력 열기`} aria-expanded={p.open}>
           📅
         </button>
