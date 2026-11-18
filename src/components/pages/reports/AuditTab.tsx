@@ -1,5 +1,6 @@
 import { usePaging } from '../../../hooks/usePaging';
 import { useAuditLogTab, type AuditDonationView, type ReportFilters } from '../../../hooks/useReports';
+import { DateText } from '../../shared/DateText';
 import { Pager } from '../../shared/Pager';
 import { NameWithTag } from './NameWithTag';
 
@@ -7,7 +8,7 @@ function DonationLine({ v }: { v: AuditDonationView | null }) {
   if (!v) return <>(삭제됨)</>;
   return (
     <>
-      {v.date} <NameWithTag name={v.name} tag={v.tag} /> {v.typeName} {v.amount}
+      <DateText date={v.date} /> <NameWithTag name={v.name} tag={v.tag} /> {v.typeName} {v.amount}
       {v.memo ? ` (${v.memo})` : ''}
     </>
   );

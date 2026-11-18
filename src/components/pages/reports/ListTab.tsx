@@ -3,6 +3,7 @@ import { useDonationEditor } from '../../../hooks/useDonationEditor';
 import { usePaging } from '../../../hooks/usePaging';
 import { useDonationListReport, type ReportFilters } from '../../../hooks/useReports';
 import { formatNumber, formatWon } from '../../../services/domain/amount';
+import { DateText } from '../../shared/DateText';
 import { Pager } from '../../shared/Pager';
 import { DonationEditModal } from './DonationEditModal';
 import { NameWithTag } from './NameWithTag';
@@ -11,7 +12,7 @@ import { PAGER_RESERVE, REPORT_SCROLL, useFitHeight } from './reportScroll';
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 30;
 // 번호 · 날짜 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
-const GRID = 'grid grid-cols-[2.75rem_8rem_10rem_8.5rem_9rem_minmax(8rem,1fr)_7.5rem] items-center';
+const GRID = 'grid grid-cols-[2.75rem_9rem_10rem_8.5rem_9rem_minmax(8rem,1fr)_7.5rem] items-center';
 
 type Row = ReturnType<ReturnType<typeof useDonationListReport>['rowAt']>;
 
@@ -34,7 +35,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
     ) : (
       <>
         <span className="text-center text-xs text-gray-500">{no}</span>
-        <span>{row.donation.date}</span>
+        <DateText date={row.donation.date} />
         <span className="truncate">
           <NameWithTag name={row.donation.donorDisplayName} tag={row.tag} />
         </span>

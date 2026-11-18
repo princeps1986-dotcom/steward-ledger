@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, DonationDraft, Member } from '../../contexts/types';
 import { formatAmountInput, parseAmount } from './amount';
-import { lastSunday, monthsOfPeriod } from './dates';
+import { lastSunday, monthsOfPeriod, withWeekday } from './dates';
 import { buildDonation, makeAudit, mergeDonation, validateReason } from './donationOps';
 import { familyKeyOf } from './family';
 import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT } from './memberRules';
@@ -144,5 +144,14 @@ describe('family', () => {
     expect(familyKeyOf(d, 'CURRENT', byId)).toBe('h');
     expect(familyKeyOf(d, 'SNAPSHOT', byId)).toBe('solo:w');
     expect(familyKeyOf({ ...d, memberId: null }, 'CURRENT', byId)).toBeNull();
+  });
+});
+
+describe('withWeekday', () => {
+  it('날짜 뒤에 요일을 붙이고, 날짜가 아니면 그대로 돌려줍니다', () => {
+    expect(withWeekday('2026-11-15')).toBe('2026-11-15 (일)');
+    expect(withWeekday('2026-11-21')).toBe('2026-11-21 (토)');
+    expect(withWeekday('')).toBe('');
+    expect(withWeekday('2026-13-40')).toBe('2026-13-40');
   });
 });

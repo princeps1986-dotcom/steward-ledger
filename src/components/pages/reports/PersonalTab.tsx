@@ -4,13 +4,14 @@ import { usePaging } from '../../../hooks/usePaging';
 import { usePersonalReport, type ReportFilters } from '../../../hooks/useReports';
 import { formatWon } from '../../../services/domain/amount';
 import { MemberPicker } from '../../shared/MemberPicker';
+import { DateText } from '../../shared/DateText';
 import { Pager } from '../../shared/Pager';
 import { DonationEditModal } from './DonationEditModal';
 import { NameWithTag } from './NameWithTag';
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 40;
-const GRID = 'grid grid-cols-[110px_1fr_140px_130px_1fr_120px] items-center';
+const GRID = 'grid grid-cols-[135px_1fr_140px_130px_1fr_120px] items-center';
 
 export function PersonalTab({ f }: { f: ReportFilters }) {
   const r = usePersonalReport(f);
@@ -66,7 +67,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             <div className="max-h-[480px] overflow-y-auto">
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
                 <div key={donation.id} className={`${GRID} w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
-                  <span>{donation.date}</span>
+                  <DateText date={donation.date} />
                   <span className="truncate">
                     <NameWithTag name={donation.donorDisplayName} tag={tagOf(donation.memberId)} />
                   </span>

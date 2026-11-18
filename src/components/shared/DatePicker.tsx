@@ -1,4 +1,5 @@
 import { useDatePicker } from '../../hooks/useDatePicker';
+import { withWeekday } from '../../services/domain/dates';
 
 interface Props {
   value: string;
@@ -16,9 +17,9 @@ export function DatePicker({ value, onChange, ariaLabel }: Props) {
       <div className="flex gap-1">
         <input
           ref={p.inputRef}
-          className="input cursor-pointer"
+          className={`input cursor-pointer ${p.weekday?.isSunday ? 'text-red-600' : ''}`}
           placeholder="달력에서 선택"
-          value={value}
+          value={withWeekday(value)}
           readOnly
           onClick={p.openCalendar}
           onKeyDown={(e) => {
@@ -29,12 +30,6 @@ export function DatePicker({ value, onChange, ariaLabel }: Props) {
           }}
           aria-label={ariaLabel}
         />
-        <span
-          className={`flex w-9 shrink-0 items-center justify-center text-sm font-medium ${p.weekday?.isSunday ? 'text-red-600' : 'text-gray-600'}`}
-          aria-label={p.weekday ? `${p.weekday.label}요일` : undefined}
-        >
-          {p.weekday ? `(${p.weekday.label})` : ''}
-        </span>
         <button type="button" tabIndex={-1} className="btn px-2" onClick={p.toggle} aria-label={`${ariaLabel} 달력 열기`} aria-expanded={p.open}>
           📅
         </button>

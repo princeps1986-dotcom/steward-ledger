@@ -9,7 +9,7 @@ import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
 import { readMonth } from '../services/storage/storageService';
 import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
-import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, type PeriodType } from '../services/domain/dates';
+import { formatDateTime, isValidDateString, lastSunday, monthOf, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
 import { memberLabel } from '../services/domain/search';
@@ -146,7 +146,7 @@ export function useReportFilters(loadData = true) {
     prevDay: () => moveWeek(shiftDay(latestWeek.current, -1)),
     nextDay: () => moveWeek(shiftDay(latestWeek.current, 1)),
     goLastSunday: () => moveWeek(lastSunday()),
-    label: isDay ? `${week.start} 일별` : isWeek ? `${week.start} ~ ${week.end} 주별` : periodLabel(year, periodType, periodValue),
+    label: isDay ? `${withWeekday(week.start)} 일별` : isWeek ? `${withWeekday(week.start)} ~ ${withWeekday(week.end)} 주별` : periodLabel(year, periodType, periodValue),
   };
 }
 
@@ -218,7 +218,7 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
   return useMemo(() => {
     const matrix = buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), range, orderKey);
     // 주별은 "시작 ~ 종료", 월별은 "YYYY-MM"으로 표시
-    const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : f.personKind === 'DAY' ? range.start : `${range.start} ~ ${range.end}`;
+    const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : f.personKind === 'DAY' ? withWeekday(range.start) : `${withWeekday(range.start)} ~ ${withWeekday(range.end)}`;
     return { matrix, rangeLabel, hasData: matrix.count > 0 };
   }, [f.donations, types, range, orderKey, hidden, f.personKind]);
 }

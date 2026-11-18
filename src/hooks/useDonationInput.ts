@@ -7,7 +7,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import type { Donation, DonationDraft, DuplicateResolution, Member } from '../contexts/types';
 import { addQuickAmount, formatAmountInput, formatWon, parseAmount } from '../services/domain/amount';
 import { shiftWeek } from '../services/domain/calendar';
-import { isValidDateString, lastSunday } from '../services/domain/dates';
+import { isValidDateString, lastSunday, withWeekday } from '../services/domain/dates';
 import { memberLabel, searchMembers } from '../services/domain/search';
 
 export interface DuplicateItem {
@@ -363,7 +363,7 @@ export function useDonationInput() {
       exclusive(async () => {
         try {
           const b = await actions.undoLast();
-          if (b) setMessage({ kind: 'info', text: `되돌림: ${b.donorDisplayName} (${b.date})` });
+          if (b) setMessage({ kind: 'info', text: `되돌림: ${b.donorDisplayName} (${withWeekday(b.date)})` });
         } catch (err) {
           setMessage({ kind: 'error', text: `되돌리기 실패: ${(err as Error).message}` });
         }

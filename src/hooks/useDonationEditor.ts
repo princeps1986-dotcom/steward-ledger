@@ -4,7 +4,7 @@ import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 import { formatAmountInput, formatNumber, formatWon, parseAmount } from '../services/domain/amount';
-import { isValidDateString } from '../services/domain/dates';
+import { isValidDateString, withWeekday } from '../services/domain/dates';
 import { validateReason } from '../services/domain/donationOps';
 import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
@@ -126,7 +126,7 @@ export function useDonationEditor() {
     donorLabel,
     donorHousehold,
     typeOptions,
-    targetSummary: target ? `${target.date} ${target.donorDisplayName} ${formatWon(target.amount)}` : '',
+    targetSummary: target ? `${withWeekday(target.date)} ${target.donorDisplayName} ${formatWon(target.amount)}` : '',
     error,
     busy,
     open,

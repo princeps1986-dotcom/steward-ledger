@@ -1,5 +1,5 @@
 import { format, isSunday, previousSunday, parseISO, isValid } from 'date-fns';
-import { WEEKDAY_LABELS } from './calendar';
+import { WEEKDAY_LABELS, weekdayLabelOf } from './calendar';
 
 /** 가장 가까운 지난 주일. 오늘이 주일이면 오늘. */
 export function lastSunday(today: Date = new Date()): string {
@@ -33,6 +33,12 @@ export function periodLabel(year: string, type: PeriodType, value: number): stri
   if (type === 'QUARTER') return `${year}년 ${value}분기`;
   return `${year}년 전체`;
 }
+
+/** 날짜에 요일을 붙입니다: 2026-11-15 (일). 날짜 형식이 아니면 그대로 돌려줍니다. */
+export const withWeekday = (date: string): string => {
+  const w = weekdayLabelOf(date);
+  return w ? `${date} (${w.label})` : date;
+};
 
 /** 인쇄 출력일시: 2026-11-16 (월) 08:47 */
 export const formatPrintStamp = (d: Date): string => `${format(d, 'yyyy-MM-dd')} (${WEEKDAY_LABELS[d.getDay()]}) ${format(d, 'HH:mm')}`;
