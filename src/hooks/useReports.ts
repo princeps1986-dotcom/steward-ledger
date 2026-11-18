@@ -52,9 +52,11 @@ export function useReportFilters(loadData = true) {
 
   // 선택 칸(연도·기간·주)은 바로 바뀌지만, 보고서 계산·표시는 선택이 잠시(REPORT_DELAY_MS) 멈춘 뒤에 합니다.
   // 주 이동 등을 연타할 때 중간 보고서를 매번 계산하지 않기 위함입니다.
+  // 주별은 같은 주(일~토) 안에서 날짜만 바꿔도 보고서가 같으므로, 기준 날짜를 그 주의 시작일로 맞춰 다시 계산하지 않게 합니다.
+  const weekKey = selPeriodType === 'WEEK' ? weekRangeOf(selWeekBase).start : selWeekBase;
   const selection = useMemo(
-    () => ({ year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, weekBase: selWeekBase }),
-    [selYear, selPeriodType, selPeriodValue, selWeekBase],
+    () => ({ year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, weekBase: weekKey }),
+    [selYear, selPeriodType, selPeriodValue, weekKey],
   );
   const applied = useDebouncedValue(selection, REPORT_DELAY_MS);
   const pending = applied !== selection;
