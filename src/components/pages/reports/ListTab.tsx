@@ -6,11 +6,10 @@ import { formatNumber, formatWon } from '../../../services/domain/amount';
 import { Pager } from '../../shared/Pager';
 import { DonationEditModal } from './DonationEditModal';
 import { NameWithTag } from './NameWithTag';
-import { REPORT_SCROLL, useFitHeight } from './reportScroll';
+import { PAGER_RESERVE, REPORT_SCROLL, useFitHeight } from './reportScroll';
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 30;
-const PAGER_HEIGHT = 48; // 스크롤 영역 아래 페이저가 화면 안에 들어오도록 남겨 둘 높이
 // 번호 · 날짜 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
 const GRID = 'grid grid-cols-[2.75rem_8rem_10rem_8.5rem_9rem_minmax(8rem,1fr)_7.5rem] items-center';
 
@@ -26,7 +25,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
   const editor = useDonationEditor();
   const paging = usePaging(r.count, PAGE_SIZE, `${f.label}|${r.query}`);
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const fit = useFitHeight(parentRef, PAGER_HEIGHT);
+  const fit = useFitHeight(parentRef, PAGER_RESERVE);
 
   const cells = (row: Row, no: number) =>
     !row.donation ? (

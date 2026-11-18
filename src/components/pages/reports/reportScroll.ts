@@ -7,6 +7,9 @@ import { useEffect, useState, type CSSProperties, type RefObject } from 'react';
  */
 export const REPORT_SCROLL = 'max-h-[var(--fit-h,72vh)] overflow-auto print:max-h-none print:overflow-visible';
 
+/** 표 아래 페이저(54px)·위 간격(12px)·main 아래 여백(16px)+여유가 화면 안에 들어오도록 `useFitHeight`에 넘길 reserve */
+export const PAGER_RESERVE = 84;
+
 const MIN_HEIGHT = 240;
 const BOTTOM_GAP = 16;
 
