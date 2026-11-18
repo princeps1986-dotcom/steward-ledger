@@ -1,4 +1,5 @@
 import { lazy, startTransition, Suspense, useEffect } from 'react';
+import { BrowserNotice } from './components/shared/BrowserNotice';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { RestoringOverlay } from './components/shared/RestoringOverlay';
 import { useRestoring } from './services/backup/backupBusy';
@@ -46,6 +47,7 @@ export function App() {
       {restoring ? <RestoringOverlay /> : null}
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
       <AutoSaveToast status={backup.autoSave} />
+      <BrowserNotice />
       <DemoBanner />
       {preparing ? <DemoPreparing done={preparing.done} total={preparing.total} /> : null}
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">
