@@ -33,7 +33,7 @@ export function parseQuickAmounts(text: string): number[] | string {
 
 export function useOfferingsPage() {
   const types = useOfferingTypes();
-  const { save, countUsage, remove } = useOfferingActions();
+  const { save, countUsage, remove, reorder } = useOfferingActions();
   const sorted = useMemo(() => [...types].sort((a, b) => a.sortOrder - b.sortOrder), [types]);
   const nextOrder = (sorted.at(-1)?.sortOrder ?? 0) + 1;
   const [form, setForm] = useState<FormState | null>(null);
@@ -41,6 +41,22 @@ export function useOfferingsPage() {
   /** 삭제 흐름: 입력된 헌금이 있으면 안내(notice)만, 없으면 확인(confirming) 후 삭제 */
   const [notice, setNotice] = useState<{ title: string; body: string } | null>(null);
   const [confirming, setConfirming] = useState<OfferingType | null>(null);
+
+  /** 끌어서 순서 바꾸기: dragId 행을 overId 행의 위(before) 또는 아래에 놓습니다. */
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
+  const endDrag = useCallback(() => {
+    setDragId(null);
+    setDrop(null);
+  }, []);
+  const dropRow = useCallback(() => {
+    if (dragId && drop && dragId !== drop.id) {
+      const ids = sorted.map((t) => t.id).filter((id) => id !== dragId);
+      ids.splice(ids.indexOf(drop.id) + (drop.after ? 1 : 0), 0, dragId);
+      if (ids.some((id, i) => id !== sorted[i].id)) void reorder(ids);
+    }
+    endDrag();
+  }, [dragId, drop, sorted, reorder, endDrag]);
 
   const openNew = useCallback(() => {
     setError(null);
@@ -124,6 +140,12 @@ export function useOfferingsPage() {
     })),
     form,
     error,
+    dragId,
+    drop,
+    startDrag: setDragId,
+    overRow: setDrop,
+    dropRow,
+    endDrag,
     openNew,
     openEdit,
     close: () => setForm(null),

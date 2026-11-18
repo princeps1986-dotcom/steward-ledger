@@ -7,7 +7,9 @@ export function OfferingsPage() {
   return (
     <div className="space-y-4">
       <section className="card flex items-center justify-between">
-        <p className="text-sm text-gray-600">'기본 나열'은 입력 화면에 항상 표시되고, '기타 드롭다운'은 선택해서 입력합니다.</p>
+        <p className="text-sm text-gray-600">
+          '기본 나열'은 입력 화면에 항상 표시되고, '기타 드롭다운'은 선택해서 입력합니다. 행을 끌어서 순서를 바꿀 수 있습니다.
+        </p>
         <button className="btn-primary" onClick={p.openNew}>
           + 헌금 종류 추가
         </button>
@@ -26,8 +28,33 @@ export function OfferingsPage() {
           </thead>
           <tbody>
             {p.rows.map(({ type: t, areaLabel, quickLabel }) => (
-              <tr key={t.id} className={t.isActive ? '' : 'text-gray-400'}>
-                <td className="td">{t.sortOrder}</td>
+              <tr
+                key={t.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', t.id); // Firefox는 데이터가 있어야 끌기가 시작됩니다.
+                  p.startDrag(t.id);
+                }}
+                onDragOver={(e) => {
+                  if (!p.dragId) return;
+                  e.preventDefault();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  p.overRow({ id: t.id, after: e.clientY > r.top + r.height / 2 });
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  p.dropRow();
+                }}
+                onDragEnd={p.endDrag}
+                className={`${t.isActive ? '' : 'text-gray-400'} ${p.dragId === t.id ? 'opacity-40' : ''} ${p.dragId && p.drop?.id === t.id && p.dragId !== t.id ? (p.drop.after ? 'shadow-[inset_0_-2px_0_#2563eb]' : 'shadow-[inset_0_2px_0_#2563eb]') : ''}`}
+              >
+                <td className="td cursor-grab select-none" title="끌어서 순서 바꾸기">
+                  <span aria-hidden="true" className="mr-1 text-gray-400">
+                    ⠿
+                  </span>
+                  {t.sortOrder}
+                </td>
                 <td className="td font-medium">{t.name}</td>
                 <td className="td">{areaLabel}</td>
                 <td className="td">{quickLabel}</td>

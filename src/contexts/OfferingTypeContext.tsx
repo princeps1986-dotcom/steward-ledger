@@ -14,6 +14,8 @@ interface OfferingActions {
   countUsage(id: string): Promise<number>;
   /** 입력된 헌금이 없을 때만 삭제합니다. 삭제하면 'deleted', 입력된 헌금이 있으면 사용 건수, 없는 종류면 'missing'. */
   remove(id: string): Promise<{ kind: 'deleted' } | { kind: 'used'; count: number } | { kind: 'missing' }>;
+  /** 주어진 id 순서대로 정렬 순서를 1..n으로 다시 매깁니다(목록에 없는 종류는 뒤에 그대로 이어 붙임). */
+  reorder(ids: readonly string[]): Promise<void>;
   reload(): Promise<void>;
 }
 
@@ -95,7 +97,19 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
     return result;
   }, []);
 
-  const actions = useMemo(() => ({ save, countUsage, remove, reload }), [save, countUsage, remove, reload]);
+  const reorder = useCallback(async (ids: readonly string[]) => {
+    const { result } = await transact<OfferingType[]>(async (read) => {
+      const latest = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
+      const byId = new Map(latest.map((t) => [t.id, t]));
+      const first = ids.flatMap((id) => byId.get(id) ?? []);
+      const rest = latest.filter((t) => !ids.includes(t.id)).sort((a, b) => a.sortOrder - b.sortOrder);
+      const list = [...first, ...rest].map((t, i) => ({ ...t, sortOrder: i + 1 }));
+      return { writes: [{ key: KEYS.offeringTypes, value: list }], result: list };
+    });
+    setTypes(result);
+  }, []);
+
+  const actions = useMemo(() => ({ save, countUsage, remove, reorder, reload }), [save, countUsage, remove, reorder, reload]);
   const activeTypes = useMemo(() => types.filter((t) => t.isActive).sort((a, b) => a.sortOrder - b.sortOrder), [types]);
   const typeById = useMemo(() => new Map(types.map((t) => [t.id, t])), [types]);
   const value = useMemo(() => ({ types, activeTypes, typeById, loaded, actions }), [types, activeTypes, typeById, loaded, actions]);
