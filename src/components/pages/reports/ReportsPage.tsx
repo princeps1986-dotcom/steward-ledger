@@ -102,10 +102,10 @@ export function ReportsPage() {
         {/* 인쇄·PDF 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
         {tab === 'SUMMARY' ? (
           <>
-            <button className="btn-primary" onClick={ex.print} disabled={f.pending}>
+            <button className="btn-primary" onClick={ex.print} disabled={f.pending || f.loadFailed}>
               보고서 인쇄
             </button>
-            <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || f.pending}>
+            <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || f.pending || f.loadFailed}>
               PDF 저장
             </button>
           </>
@@ -134,6 +134,11 @@ export function ReportsPage() {
           <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" aria-hidden="true" />
           {f.pending ? '보고서를 불러오는 중…' : ''}
         </span>
+        {f.loadFailed ? (
+          <span role="alert" className="self-center pr-1 text-xs text-red-600">
+            보고서를 불러오지 못했습니다. 다시 선택해 주세요.
+          </span>
+        ) : null}
       </nav>
 
       {tab === 'SUMMARY' ? (

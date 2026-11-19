@@ -50,11 +50,12 @@ function useMonthVersionKey(yms: readonly string[]): string {
  * 구한 합계는 달의 버전과 함께 기억해 두어 연도를 바꿨다 돌아오거나 저장한 뒤에도 바뀐 달만 다시 읽습니다.
  * yms 전체를 다 구한 뒤에 한 번에 바뀌며, 다른 달 목록을 구하는 동안은 sums가 null(loading)입니다.
  */
-function useMonthSums(yms: readonly string[]): { sums: ReadonlyMap<string, MonthSums> | null; loading: boolean } {
+function useMonthSums(yms: readonly string[]): { sums: ReadonlyMap<string, MonthSums> | null; loading: boolean; failed: boolean } {
   const key = yms.join(',');
   const versionKey = useMonthVersionKey(yms);
   const cache = useRef(new Map<string, { version: string; sums: MonthSums }>());
   const [result, setResult] = useState<{ key: string; sums: ReadonlyMap<string, MonthSums> } | null>(null);
+  const [failedKey, setFailedKey] = useState('');
   useEffect(() => {
     if (!key) return;
     let stop = false;
@@ -74,13 +75,16 @@ function useMonthSums(yms: readonly string[]): { sums: ReadonlyMap<string, Month
         out.set(ym, sums);
       }
       if (!stop) setResult({ key, sums: out });
-    })().catch(() => undefined); // 읽기 실패: 이전 결과를 그대로 두고 다음 변경 때 다시 시도합니다.
+    })().catch(() => {
+      if (!stop) setFailedKey(`${key}#${versionKey}`); // 읽기 실패: '불러오는 중'을 끝내고 알립니다(기간·데이터가 바뀌면 다시 시도).
+    });
     return () => {
       stop = true;
     };
   }, [key, versionKey]);
   const ready = !!key && result?.key === key;
-  return { sums: ready ? result!.sums : null, loading: !!key && !ready };
+  const failed = !!key && !ready && failedKey === `${key}#${versionKey}`;
+  return { sums: ready ? result!.sums : null, loading: !!key && !ready && !failed, failed };
 }
 
 /** loadData가 false이면 이 화면은 보고서 기간의 헌금을 메모리에 올리지 않습니다(전체 입력 내역 탭은 달 단위로 직접 읽음). */
@@ -172,6 +176,8 @@ export function useReportFilters(loadData = true) {
     // 선택 칸에 보이는 값과 변경 함수(적용은 잠시 뒤). pending이면 아직 이전 선택의 보고서가 보이는 중입니다.
     sel: { year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, isWeek: selPeriodType === 'WEEK', isDay: selPeriodType === 'DAY', isRange: selPeriodType === 'WEEK' || selPeriodType === 'DAY' },
     pending: pending || monthSums.loading,
+    /** 분기·연도 합계를 읽지 못함(보고서 숫자를 믿을 수 없음) */
+    loadFailed: monthSums.failed,
     setYear,
     yearOptions,
     setPeriodType,
@@ -366,6 +372,7 @@ export function usePersonalReport(f: ReportFilters) {
   // 선택·기간·대상 성도가 같으면 같은 조회입니다(이 값과 versionKey가 바뀔 때만 다시 읽음).
   const queryKey = selected ? [selected.id, mode, basis, listMonths.join(','), listRange?.start ?? '', listRange?.end ?? '', memberIds?.join(',') ?? ''].join('|') : '';
   const [found, setFound] = useState<{ key: string; list: Donation[] } | null>(null);
+  const [failedKey, setFailedKey] = useState('');
   const latest = useRef({ selected, memberIds, listMonths, listRange, memberById });
   latest.current = { selected, memberIds, listMonths, listRange, memberById };
   useEffect(() => {
@@ -388,13 +395,16 @@ export function usePersonalReport(f: ReportFilters) {
       .then((list) => {
         if (!stop) setFound({ key: queryKey, list: list.sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt)) });
       })
-      .catch(() => undefined); // 읽기 실패: 이전 결과를 두고 다음 변경 때 다시 시도합니다.
+      .catch(() => {
+        if (!stop) setFailedKey(`${queryKey}#${versionKey}`); // 읽기 실패: '불러오는 중'을 끝내고 알립니다(선택·데이터가 바뀌면 다시 시도).
+      });
     return () => {
       stop = true;
     };
   }, [queryKey, versionKey]);
   const rows = useMemo(() => (found && found.key === queryKey ? found.list : []), [found, queryKey]);
-  const loading = !!selected && found?.key !== queryKey;
+  const failed = !!selected && found?.key !== queryKey && failedKey === `${queryKey}#${versionKey}`;
+  const loading = !!selected && found?.key !== queryKey && !failed;
   // 0.3초 안에 끝나는 조회는 '불러오는 중' 문구를 띄우지 않습니다(깜빡임 방지).
   const slow = useDebouncedValue(loading, 300);
 
@@ -424,6 +434,7 @@ export function usePersonalReport(f: ReportFilters) {
     hasSelection: !!selected,
     loading,
     slow,
+    failed,
     mode,
     setMode,
     rows: rows.map((d) => ({

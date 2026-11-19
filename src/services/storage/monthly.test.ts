@@ -121,16 +121,6 @@ describe('atomic transactions', () => {
   });
 });
 
-describe('createBackupJson single-stringify', () => {
-  it('produces valid JSON that passes checksum validation', async () => {
-    const { createBackupJson } = await import('../backup/backupService');
-    const { parseAndValidateBackup } = await import('../backup/validation');
-    const text = await createBackupJson();
-    expect(Object.keys(JSON.parse(text))).toEqual(['appVersion', 'schemaVersion', 'exportedAt', 'checksum', 'payload']);
-    expect((await parseAndValidateBackup(text)).ok).toBe(true);
-  });
-});
-
 describe('streaming (v3) backup lines', () => {
   it('round-trips through parseAndValidateBackup and detects tampering/truncation', async () => {
     const { backupLines, collectPayload } = await import('../backup/backupService');

@@ -62,4 +62,22 @@ describe('useReportFilters 분기·연도 요약', () => {
     await act(() => result.current.actions.reloadAll());
     await waitFor(() => expect(result.current.f.monthSums?.get('2024-03')?.get('t')?.amount).toBe(1500));
   });
+
+  it('합계를 읽지 못하면 불러오는 중을 끝내고 실패로 알립니다', async () => {
+    const { db } = await import('../services/storage/db');
+    const { result } = renderHook(() => useReportFilters(), { wrapper });
+    await waitFor(() => expect(result.current.pending).toBe(false));
+    db.close({ disableAutoOpen: true }); // 이후 읽기가 모두 실패
+    try {
+      act(() => {
+        result.current.setPeriodType('YEAR');
+        result.current.setYear('2023');
+      });
+      await wait(REPORT_DELAY_MS + 50);
+      await waitFor(() => expect(result.current.loadFailed).toBe(true));
+      expect(result.current.pending).toBe(false);
+    } finally {
+      await db.open();
+    }
+  });
 });

@@ -36,6 +36,13 @@ describe('lookups without scanning every row', () => {
     expect(await findDonationById('zz')).toBeNull();
   });
 
+  it('findDonationById keeps scanning past a chunk boundary', async () => {
+    // 키 순서: a, b | c, n — 묶음이 2개면 n은 둘째 묶음에 있고, 셋째 묶음은 비어 있음
+    expect((await findDonationById('n', 2))?.date).toBe('2026-01-04');
+    expect((await findDonationById('c', 1))?.date).toBe('2026-01-04');
+    expect(await findDonationById('zz', 2)).toBeNull();
+  });
+
   it('readMemberDonations reads only the given members across years', async () => {
     expect((await readMemberDonations(['m1'])).map((x) => x.id).sort()).toEqual(['a', 'b']);
     expect(await readMemberDonations([])).toEqual([]);

@@ -250,14 +250,13 @@ export const readRow = async (date: string, id: string): Promise<Donation | null
  * id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 기본키([날짜, id])만 묶음으로 훑어(내역 본문은 읽지 않음) 찾으면 그 한 건만 읽습니다.
  * 데이터가 많으면 여전히 전체 키를 훑을 수 있으니 드문 경우에만 쓰세요.
  */
-export async function findDonationById(id: string): Promise<Donation | null> {
-  const CHUNK = 50_000;
+export async function findDonationById(id: string, chunk = 50_000): Promise<Donation | null> {
   for (let after: [string, string] | null = null; ; ) {
     const coll = after ? db.donations.where('[date+id]').above(after) : db.donations.toCollection();
-    const keys = (await coll.limit(CHUNK).primaryKeys()) as unknown as [string, string][];
+    const keys = (await coll.limit(chunk).primaryKeys()) as unknown as [string, string][];
     const hit = keys.find((k) => k[1] === id);
     if (hit) return (await db.donations.get(hit)) ?? null;
-    if (keys.length < CHUNK) return null;
+    if (keys.length < chunk) return null;
     after = keys[keys.length - 1];
   }
 }

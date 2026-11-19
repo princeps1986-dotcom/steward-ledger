@@ -1,7 +1,7 @@
-import type { AuditLog, BackupEnvelope, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
+import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
 import { withBackupBusy, withRestoring } from './backupBusy';
-import { APP_VERSION, SCHEMA_VERSION } from '../../contexts/types';
+import { APP_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
@@ -30,7 +30,7 @@ import {
   type Write,
 } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
-import { NDJSON_VERSION, sha256Hex } from './validation';
+import { NDJSON_VERSION } from './validation';
 import { Sha256 } from './sha256';
 
 /**
@@ -60,14 +60,6 @@ export async function collectPayload(years?: readonly string[]): Promise<BackupP
       auditLogsByYear,
     };
   });
-}
-
-export async function createBackupJson(years?: readonly string[]): Promise<string> {
-  // payload는 한 번만 문자열로 만들어 체크섬을 구하고 그대로 봉투에 끼웁니다(큰 데이터에서 메모리·시간 절약).
-  // 결과는 JSON.stringify(envelope)와 같은 글자이므로 형식·호환성은 그대로입니다.
-  const payloadJson = JSON.stringify(await collectPayload(years));
-  const head: Omit<BackupEnvelope, 'checksum' | 'payload'> = { appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() };
-  return `${JSON.stringify(head).slice(0, -1)},"checksum":"${await sha256Hex(payloadJson)}","payload":${payloadJson}}`;
 }
 
 /** 줄 단위 백업에서 한 번에 읽는 키 수(이력 키를 묶어 읽어 읽기 횟수를 줄임) */
@@ -181,27 +173,38 @@ async function saveEmergencyBackupNow(prefix: string): Promise<string> {
  * 체크섬은 데스크톱 앱과 같은 끝 줄({"t":"end","sha256"})로 붙입니다. 읽는 도중의 저장은 막지 않습니다(데스크톱 주기 백업과 같은 기준).
  */
 export async function createBackupBlob(years?: readonly string[]): Promise<Blob> {
-  for (let attempt = 1; ; attempt++) {
-    const seq = structuralCommitCount();
-    const hash = new Sha256();
-    const enc = new TextEncoder();
-    const parts: Blob[] = [];
-    for await (const line of backupLines({ years })) {
-      hash.update(enc.encode(line));
-      parts.push(new Blob([line]));
-    }
-    if (structuralCommitCount() === seq) {
-      parts.push(new Blob([ndjsonLine({ t: 'end', sha256: hash.digestHex() })]));
-      return new Blob(parts, { type: 'application/x-ndjson' });
-    }
-    if (attempt >= 3) throw new Error('백업하는 동안 내역이 다른 달로 옮겨지는 변경이 계속되어 백업하지 못했습니다. 잠시 뒤 다시 시도하세요.');
-  }
+  const enc = new TextEncoder();
+  let hash = new Sha256();
+  let parts: Blob[] = [];
+  // 메모리에 모으는 sink: 처음부터 다시 쓰기(재시도)와 오류 문구는 streamBackup 한 곳에서 처리합니다.
+  const reset = async () => {
+    hash = new Sha256();
+    parts = [];
+    return 1;
+  };
+  await streamBackup(
+    {
+      begin: reset,
+      write: async (_id, line) => {
+        hash.update(enc.encode(line));
+        parts.push(new Blob([line]));
+      },
+      restart: reset,
+      abort: reset,
+      end: async () => {
+        parts.push(new Blob([ndjsonLine({ t: 'end', sha256: hash.digestHex() })]));
+        return '';
+      },
+    },
+    { years },
+  );
+  return new Blob(parts, { type: 'application/x-ndjson' });
 }
 
-/** 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 /** onProgress(저장한 달, 전체 달): 데스크톱 앱에서 달마다 부릅니다(웹 브라우저는 한 번에 만들어 부르지 않음). */
 export type BackupProgress = (done: number, total: number) => void;
 
+/** 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
 export const saveBackupFile = (prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> =>
   withBackupBusy(() => saveBackupFileNow(prefix, years, onProgress));
 async function saveBackupFileNow(prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> {

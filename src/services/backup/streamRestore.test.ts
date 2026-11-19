@@ -4,7 +4,7 @@ import type { Donation } from '../../contexts/types';
 import { db } from '../storage/db';
 import { listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
 import { backupLines } from './backupService';
-import { interruptedRestore, isNdjsonFile, restoreFromFile, scanBackupFile } from './streamRestore';
+import { interruptedRestore, isNdjsonFile, readFileLines, restoreFromFile, scanBackupFile } from './streamRestore';
 import { sha256Hex } from './validation';
 
 const d = (id: string, date: string): Donation =>
@@ -22,6 +22,25 @@ beforeEach(async () => {
   await db.kv.clear();
   await db.donations.clear();
   await transact(async () => ({ writes: [monthWrite('2025-03', [d('a', '2025-03-02')]), monthWrite('2026-01', [d('b', '2026-01-04'), d('c', '2026-01-11')])], result: 0 }));
+});
+
+describe('readFileLines', () => {
+  it('rebuilds lines split across tiny chunks, including multi-byte characters', async () => {
+    const lines = ['{"a":"헌금"}' + NL, NL, '{"b":"무명1 가나다라마바사"}' + NL, 'tail-no-newline'];
+    const bytes = new TextEncoder().encode(lines.join(''));
+    const tiny = {
+      stream: () =>
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            for (let i = 0; i < bytes.length; i += 3) c.enqueue(bytes.slice(i, i + 3));
+            c.close();
+          },
+        }),
+    };
+    const out: string[] = [];
+    for await (const l of readFileLines(tiny)) out.push(l);
+    expect(out).toEqual(lines);
+  });
 });
 
 describe('scanBackupFile', () => {

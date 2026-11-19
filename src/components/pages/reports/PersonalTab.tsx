@@ -118,6 +118,10 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
                   </p>
                 ) : null}
               </>
+            ) : r.failed ? (
+              <p role="alert" className="px-3 py-4 text-center text-sm text-red-600">
+                내역을 불러오지 못했습니다. 다시 선택해 주세요.
+              </p>
             ) : r.rows.length === 0 ? (
               <p className="px-3 py-4 text-center text-sm text-gray-500">해당 기간 내역이 없습니다.</p>
             ) : null}
