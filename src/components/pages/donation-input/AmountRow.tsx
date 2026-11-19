@@ -22,7 +22,7 @@ export function KoreanAmount({ value }: { value: string }) {
 
 export const AmountRow = memo(function AmountRow({ label, value, quickAmounts, inputRef, onChange, onQuick, onClear, onKeyDown, keepFocus }: Props) {
   return (
-    <div className="grid grid-cols-[140px_200px_1fr] items-start gap-2">
+    <div className="grid grid-cols-[140px_140px_1fr] items-start gap-x-5 gap-y-2">
       <span className="pt-1.5 text-sm font-medium">{label}</span>
       <div>
         <input

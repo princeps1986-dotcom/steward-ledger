@@ -62,7 +62,7 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
               />
             ))}
             {c.dropdownTypes.length > 0 ? (
-              <div className="grid grid-cols-[140px_200px] items-start gap-2">
+              <div className="grid grid-cols-[140px_140px] items-start gap-x-5 gap-y-2">
                 <select className="input w-28" value={c.extraTypeId} onChange={(e) => c.setExtraTypeId(e.target.value)} aria-label="기타 헌금 종류">
                   <option value="">기타 선택</option>
                   {c.dropdownTypes.map((t) => (

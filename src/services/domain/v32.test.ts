@@ -6,7 +6,7 @@ describe('defaults v2.14', () => {
   it('seeds 구제헌금 as a primary type with quick amounts and 특별헌금 as a dropdown type', () => {
     const relief = DEFAULT_OFFERING_TYPES.find((d) => d.name === '구제헌금')!;
     const special = DEFAULT_OFFERING_TYPES.find((d) => d.name === '특별헌금')!;
-    expect(relief).toMatchObject({ displayArea: 'PRIMARY', quickAmounts: [1000, 5000, 10000, 30000, 50000, 100000], isActive: true });
+    expect(relief).toMatchObject({ displayArea: 'PRIMARY', quickAmounts: [1000, 5000, 10000], isActive: true });
     expect(special).toMatchObject({ displayArea: 'DROPDOWN', quickAmounts: [], isActive: true });
   });
 });

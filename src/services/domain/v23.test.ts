@@ -44,7 +44,7 @@ describe('addQuickAmount', () => {
 });
 
 describe('tithe quick amounts (v2.4)', () => {
-  it('seed includes 300,000 and 400,000', () => {
-    expect(DEFAULT_OFFERING_TYPES.find((t) => t.name === '십일조')!.quickAmounts).toEqual([100000, 200000, 300000, 400000, 500000]);
+  it('seed quick amounts are 1,000 / 10,000 / 100,000', () => {
+    expect(DEFAULT_OFFERING_TYPES.find((t) => t.name === '십일조')!.quickAmounts).toEqual([1000, 10000, 100000]);
   });
 });
