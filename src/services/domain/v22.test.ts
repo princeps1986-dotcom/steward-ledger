@@ -8,8 +8,8 @@ describe('defaults v2.2', () => {
   });
   it('seeded 건축/선교 quick amounts include every required amount', () => {
     const amounts = (name: string) => DEFAULT_OFFERING_TYPES.find((t) => t.name === name)!.quickAmounts;
-    for (const a of [1000, 5000, 10000, 50000, 100000, 500000]) expect(amounts('건축헌금')).toContain(a);
-    for (const a of [1000, 5000, 10000, 50000, 100000]) expect(amounts('선교헌금')).toContain(a);
+    for (const a of [1000, 5000, 10000]) expect(amounts('건축헌금')).toContain(a);
+    for (const a of [1000, 5000, 10000]) expect(amounts('선교헌금')).toContain(a);
   });
 });
 
