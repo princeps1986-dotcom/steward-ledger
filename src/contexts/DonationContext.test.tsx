@@ -96,9 +96,11 @@ describe('DonationContext', () => {
     failing.keys.add(donationKey('2025-05'));
     await act(() => result.current.actions.ensureMonths(['2025-05']));
     expect(result.current.months['2025-05']).toBeUndefined();
+    expect(result.current.failedMonths['2025-05']).toBe(true); // 빈 달(0원)이 아니라 실패로 알 수 있음
     failing.keys.clear();
     await act(() => result.current.actions.ensureMonths(['2025-05']));
     expect(result.current.months['2025-05']).toHaveLength(1);
+    expect(result.current.failedMonths['2025-05']).toBeUndefined();
   });
 
   it('수정으로 달·연도를 옮기면 두 달이 함께 갱신되고 새 연도에 이력이 남는다', async () => {
@@ -153,7 +155,7 @@ describe('DonationContext', () => {
     expect(result.current.months['2025-03']?.find((d) => d.id === 'y')?.offeringTypeId).toBe('t1');
   });
 
-  it('되돌리기는 저장한 내역이 다른 달로 옮겨졌어도 찾아서 지운다', async () => {
+  it('저장한 새 내역을 다른 달로 옮겼다면 되돌리기를 막아 그 수정이 사라지지 않는다', async () => {
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-06', '2025-07']));
     await act(async () => {
@@ -163,10 +165,37 @@ describe('DonationContext', () => {
     await act(() => result.current.actions.updateDonation(created, { ...created, date: '2025-07-06' }, '이동'));
     expect(result.current.months['2025-07']).toHaveLength(1);
     await act(async () => {
+      await expect(result.current.actions.undoLast()).rejects.toThrow('수정된 내역');
+    });
+    expect(result.current.months['2025-07']).toHaveLength(1);
+    expect(result.current.history).toHaveLength(1);
+  });
+
+  it('저장한 새 내역의 금액을 고쳤다면 되돌리기를 막는다', async () => {
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-06']));
+    await act(async () => {
+      await result.current.actions.saveBatch([draft('2025-06-08', 50000)], 'MERGE');
+    });
+    const created = result.current.months['2025-06']![0];
+    await act(() => result.current.actions.updateDonation(created, { ...created, amount: 60000 }, '금액 오기입'));
+    await act(async () => {
+      await expect(result.current.actions.undoLast()).rejects.toThrow('수정된 내역');
+    });
+    expect(result.current.months['2025-06']![0].amount).toBe(60000);
+  });
+
+  it('저장한 새 내역을 고치지 않았다면 되돌리기로 지워진다', async () => {
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-06']));
+    await act(async () => {
+      await result.current.actions.saveBatch([draft('2025-06-08')], 'MERGE');
+    });
+    expect(result.current.months['2025-06']).toHaveLength(1);
+    await act(async () => {
       await result.current.actions.undoLast();
     });
-    expect(result.current.months['2025-07']).toHaveLength(0);
-    expect(result.current.history).toHaveLength(0);
+    expect(result.current.months['2025-06']).toHaveLength(0);
   });
 
   it('합산한 내역을 저장 뒤 수정했다면 되돌리기를 막아 그 수정이 사라지지 않는다', async () => {

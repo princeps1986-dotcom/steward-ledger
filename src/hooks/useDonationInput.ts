@@ -389,6 +389,9 @@ export function useDonationInput() {
         e.preventDefault();
         document.getElementById('cash-count-input')?.focus();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && isFormEmpty && history.length > 0) {
+        // 값이 든 칸(현금 계수 등)의 Ctrl+Z는 글자 되돌리기이므로 저장 되돌리기로 가로채지 않습니다.
+        const t = e.target as HTMLInputElement | null;
+        if ((t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA') && t.value !== '') return;
         e.preventDefault();
         void undo();
       }

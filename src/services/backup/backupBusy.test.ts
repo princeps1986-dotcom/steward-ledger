@@ -31,7 +31,8 @@ describe('backup/restore lock', () => {
     const settings = { ...DEFAULT_SETTINGS, autoBackupEnabled: true };
     await withBackupBusy(async () => {
       expect(await runPeriodicBackup(settings)).toBeNull();
-      expect(await buildAutoBackup(settings)).toBeNull();
+      // 종료 때 백업은 건너뛰면 진행 중인 작업이 끊긴 채 닫히므로, 오류로 알려 main이 종료 여부를 묻게 합니다.
+      await expect(buildAutoBackup(settings)).rejects.toThrow('진행 중');
     });
     expect(begin).not.toHaveBeenCalled();
   });

@@ -6,7 +6,8 @@ import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
 import { backupLines, collectPayload, desktopSink, saveBackupFile, saveEmergencyBackup, streamBackup, type BackupSink } from './backupService';
-import { runPeriodicBackup } from './autoBackupService';
+import { buildAutoBackup, runPeriodicBackup } from './autoBackupService';
+import { withBackupBusy } from './backupBusy';
 import { parseAndValidateBackup, sha256Hex } from './validation';
 
 const d = (id: string, date: string): Donation =>
@@ -267,5 +268,18 @@ describe('hasAnyData', () => {
     await db.kv.clear();
     await db.donations.clear();
     expect(await hasAnyData()).toBe(false);
+  });
+});
+
+describe('buildAutoBackup (종료 때 백업)', () => {
+  it('직접 백업·복원이 진행 중이면 건너뛰지 않고 오류를 던져 종료 여부를 묻게 한다', async () => {
+    const f = fakeSink();
+    fakeDesktop(f.sink);
+    let release!: () => void;
+    const busy = withBackupBusy(() => new Promise<void>((r) => (release = r)));
+    await expect(buildAutoBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: true })).rejects.toThrow('진행 중');
+    expect(f.log).toEqual([]); // 진행 중인 세션을 건드리지 않음
+    release();
+    await busy;
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAllAudits, useDonationActions, useDonationEpoch, useDonationMonths, useDonationYears, useMonthVersions } from '../contexts/DonationContext';
+import { useAllAudits, useDonationActions, useDonationEpoch, useDonationMonths, useDonationYears, useMonthsLoadFailed, useMonthVersions } from '../contexts/DonationContext';
 import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useMemberOrderKey, useNameTag } from './useNameTag';
 import { useOfferingTypeById, useOfferingTypes } from '../contexts/OfferingTypeContext';
@@ -129,7 +129,9 @@ export function useReportFilters(loadData = true) {
   // 개인별 탭은 색인으로 직접 읽으므로 이 기간의 내역이 필요 없습니다.
   // 합계는 전체 입력 내역 탭(loadData=false)에서도 구해 그 탭의 건수·합계를 바로 보여 줍니다(내역은 메모리에 올리지 않음).
   const summaryMode = !isRange && periodType !== 'MONTH';
-  const source = useDonationMonths(loadData && !summaryMode ? neededMonths : NO_MONTHS);
+  const sourceMonths = loadData && !summaryMode ? neededMonths : NO_MONTHS;
+  const source = useDonationMonths(sourceMonths);
+  const sourceFailed = useMonthsLoadFailed(sourceMonths);
   const monthSums = useMonthSums(summaryMode ? neededMonths : NO_MONTHS);
   const listMonths = useMemo(() => [...neededMonths].sort().reverse(), [neededMonths]); // 전체 입력 내역 탭이 직접 읽는 달(최신 달부터)
 
@@ -176,8 +178,8 @@ export function useReportFilters(loadData = true) {
     // 선택 칸에 보이는 값과 변경 함수(적용은 잠시 뒤). pending이면 아직 이전 선택의 보고서가 보이는 중입니다.
     sel: { year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, isWeek: selPeriodType === 'WEEK', isDay: selPeriodType === 'DAY', isRange: selPeriodType === 'WEEK' || selPeriodType === 'DAY' },
     pending: pending || monthSums.loading,
-    /** 분기·연도 합계를 읽지 못함(보고서 숫자를 믿을 수 없음) */
-    loadFailed: monthSums.failed,
+    /** 기간의 내역이나 분기·연도 합계를 읽지 못함(보고서 숫자를 믿을 수 없음) */
+    loadFailed: monthSums.failed || sourceFailed,
     setYear,
     yearOptions,
     setPeriodType,

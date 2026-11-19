@@ -10,8 +10,19 @@ export function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?
       {/* flashKey가 바뀔 때(저장 성공) 합계 영역이 잠깐 강조됩니다. */}
       <div key={flashKey} className={`rounded px-1 ${flashKey > 0 ? 'flash-save' : ''}`}>
         <div className="text-xs text-gray-500"><DateText date={date} /> 입력 합계</div>
-        <div className="text-xl font-bold">{formatWon(t.total)}</div>
-        <div className="text-xs text-gray-500">{formatNumber(t.count)}건</div>
+        {t.failed ? (
+          <div role="alert" className="flex items-center gap-2 text-sm font-semibold text-red-700">
+            이 달 내역을 불러오지 못했습니다.
+            <button type="button" className="btn px-2 py-0.5 text-xs" onClick={t.retry}>
+              다시 불러오기
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="text-xl font-bold">{formatWon(t.total)}</div>
+            <div className="text-xs text-gray-500">{formatNumber(t.count)}건</div>
+          </>
+        )}
       </div>
       <div className="flex flex-1 flex-wrap gap-2">
         {t.rows.map((r) => (

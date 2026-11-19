@@ -179,12 +179,19 @@ if (!app.requestSingleInstanceLock()) {
     if (s.error) throw s.error;
     // 끝 줄: 앞의 모든 줄에 대한 SHA-256. 복원할 때 이 값으로 파일이 온전한지 확인합니다.
     const endLine = `${JSON.stringify({ t: 'end', sha256: s.hash.digest('hex') })}\n`;
+    // 마무리하는 동안 새 백업이 시작돼도 이 세션을 강제로 닫지 않도록 먼저 떼어 냅니다(닫히면 'finish'가 오지 않아 영원히 기다림).
+    autoSession = null;
     await new Promise((resolve, reject) => {
       s.out.once('finish', resolve);
       s.out.once('error', reject);
+      s.gz.once('error', reject);
       s.gz.end(endLine);
+    }).catch(async (err) => {
+      s.gz.destroy();
+      s.out.destroy();
+      await fs.unlink(s.tmp).catch(() => undefined); // 떼어 낸 세션은 abort가 정리하지 않으므로 여기서 지웁니다.
+      throw err;
     });
-    autoSession = null;
     try {
       await verifyBackupFile(s.tmp);
     } catch (err) {

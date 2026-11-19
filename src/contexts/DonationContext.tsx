@@ -70,6 +70,8 @@ interface DonationState {
   years: string[];
   /** 이번 실행 중 저장한 묶음 (최신순, 메모리 전용) */
   history: SaveBatch[];
+  /** 읽기에 실패한 달('YYYY-MM'). 다시 읽어 성공하면 빠집니다(화면이 빈 달을 0원으로 보여 주지 않고 실패를 알리도록). */
+  failedMonths: Record<string, true>;
   actions: DonationActions;
 }
 
@@ -89,6 +91,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   const [audits, setAudits] = useState<Record<string, AuditLog[]>>({});
   const [years, setYears] = useState<string[]>([]);
   const [history, setHistory] = useState<SaveBatch[]>([]);
+  const [failedMonths, setFailedMonths] = useState<Record<string, true>>({});
   const historyRef = useRef<SaveBatch[]>([]);
   historyRef.current = history;
   // 메모리에 올라간 달 / 읽는 중인 달 / 읽는 동안 저장이 커밋되어 다시 읽어야 하는 달
@@ -267,6 +270,15 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     const ready = [...got].filter(([ym]) => loadedMonths.current.has(ym));
     for (const ym of todo) loadingMonths.current.delete(ym);
     if (ready.length) setMonths((prev) => ({ ...prev, ...Object.fromEntries(ready) }));
+    // 읽지 못한 달은 실패로 표시하고, 이번에 읽은 달은 이전 실패 표시를 지웁니다.
+    const failed = todo.filter((ym) => !got.has(ym));
+    setFailedMonths((prev) => {
+      if (!failed.length && !todo.some((ym) => prev[ym])) return prev;
+      const next = { ...prev };
+      for (const ym of todo) delete next[ym];
+      for (const ym of failed) next[ym] = true;
+      return next;
+    });
     evictOldYears();
   }, [evictOldYears]);
 
@@ -308,6 +320,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     setEpoch((e) => e + 1);
     setAudits({});
     setHistory([]);
+    setFailedMonths({});
     setYears(await listDonationYears());
   }, []);
 
@@ -346,6 +359,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           date,
           donorDisplayName: drafts[0].donorDisplayName,
           createdIds: [],
+          createdAfter: [],
           mergedBefore: [],
           mergedAfter: [],
           lines: [],
@@ -372,6 +386,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           }
         }
         batch.mergedAfter = batch.mergedBefore.map((b) => touched.get(b.id)!);
+        batch.createdAfter = batch.createdIds.map((id) => touched.get(id)!);
         const w: Write[] = [rowWrite(ym, { puts: [...touched.values()], deletes: [] })];
         if (logs.length) w.push(auditAppend(year, logs));
         return { writes: w, result: batch };
@@ -446,20 +461,23 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       };
       // 저장한 날짜에서 먼저 찾고, 저장 후 [수정]으로 날짜가 바뀌었다면 id로 찾습니다(드문 경우라 전체를 훑음).
       const locate = async (id: string, date: string): Promise<Donation | null> => (await readRow(date, id)) ?? (await findDonationById(id));
-      for (const id of batch.createdIds) {
+      // 저장 뒤에 [수정]한 내역을 되돌리면 그 수정이 조용히 사라지므로 막습니다(새 내역·합산 내역 모두).
+      const assertUnchanged = (current: Donation, after: Donation | undefined) => {
+        if (after && (current.amount !== after.amount || current.date !== after.date || current.offeringTypeId !== after.offeringTypeId || current.memo !== after.memo)) {
+          throw new Error('저장한 뒤 수정된 내역이 있어 되돌릴 수 없습니다. 내역 화면에서 직접 수정하거나 삭제하세요.');
+        }
+      };
+      for (const [i, id] of batch.createdIds.entries()) {
         const removed = await locate(id, batch.date);
         if (!removed) continue; // 이미 다른 경로로 삭제됨
+        assertUnchanged(removed, batch.createdAfter[i]);
         opsOf(removed.date).deletes.push([removed.date, removed.id]);
         auditOf(removed.date).push(makeAudit('DELETE', removed, null, REASON_UNDO, now));
       }
       for (const [i, before] of batch.mergedBefore.entries()) {
         const current = await locate(before.id, before.date);
         if (!current) continue;
-        // 합산 뒤에 [수정]한 내역을 합산 전으로 되돌리면 그 수정이 조용히 사라지므로 막습니다.
-        const after = batch.mergedAfter[i];
-        if (current.amount !== after.amount || current.date !== after.date || current.offeringTypeId !== after.offeringTypeId || current.memo !== after.memo) {
-          throw new Error('저장한 뒤 수정된 내역이 있어 되돌릴 수 없습니다. 내역 화면에서 직접 수정하거나 삭제하세요.');
-        }
+        assertUnchanged(current, batch.mergedAfter[i]);
         auditOf(current.date).push(makeAudit('UPDATE', current, before, REASON_UNDO, now));
         opsOf(before.date).puts.push(before);
       }
@@ -477,7 +495,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
     () => ({ ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll }),
     [ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll],
   );
-  const value = useMemo(() => ({ months, epoch, monthVersions, audits, years, history, actions }), [months, epoch, monthVersions, audits, years, history, actions]);
+  const value = useMemo(() => ({ months, epoch, monthVersions, audits, years, history, failedMonths, actions }), [months, epoch, monthVersions, audits, years, history, failedMonths, actions]);
   return <DonationCtx.Provider value={value}>{children}</DonationCtx.Provider>;
 }
 
@@ -517,7 +535,9 @@ export function useDonationMonths(yms: readonly string[]): Donation[] {
   }
   return memo.current!.value;
 }
-export const useAllAudits = (): Record<string, AuditLog[]> => useDonationSelector((s) => s.audits);
+/** 지정한 달 중 하나라도 읽기에 실패했는지(다시 읽으려면 actions.ensureMonths) */
+export const useMonthsLoadFailed = (yms: readonly string[]): boolean => useDonationSelector((s) => yms.some((ym) => s.failedMonths[ym]));
+export const useAllAudits =(): Record<string, AuditLog[]> => useDonationSelector((s) => s.audits);
 export const useDonationYears = () => useDonationSelector((s) => s.years);
 export const useMonthVersions = () => useDonationSelector((s) => s.monthVersions);
 export const useDonationEpoch = () => useDonationSelector((s) => s.epoch);

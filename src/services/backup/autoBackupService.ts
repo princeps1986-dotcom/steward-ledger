@@ -11,7 +11,9 @@ let periodicRunning = false;
 /** 종료 시 백업 내용 생성: 비활성화했거나 변경이 없으면 null(생략). 종료 중에는 저장이 없으므로 다시 읽을 필요 없이 한 번에 씁니다. */
 export async function buildAutoBackup(settings: AppSettings): Promise<AutoBackupPayload | null> {
   const api = desktop();
-  if (!api || !settings.autoBackupEnabled || isBackupBusy() || (await isDemoBusy())) return null; // 시연 데이터는 백업하지 않고, 직접 백업·복원 중이면 끼어들지 않습니다.
+  if (!api || !settings.autoBackupEnabled || (await isDemoBusy())) return null; // 시연 데이터는 백업하지 않습니다.
+  // 직접 백업·복원 중이면 끼어들지 않되, 그냥 닫히면 진행 중인 작업이 끊기므로 오류로 알려 main이 종료 여부를 묻게 합니다.
+  if (isBackupBusy()) throw new Error('백업 또는 복원이 진행 중입니다. 끝난 뒤 닫아 주세요.');
   if (!periodicRunning && !(await isDirtySinceBackup())) return null;
   const dir = settings.autoBackupDir || (await api.getDefaultBackupDir());
   const id = await api.backupBegin({ kind: 'close', dir });

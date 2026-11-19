@@ -115,6 +115,8 @@ export interface SaveBatch {
   date: string;
   donorDisplayName: string;
   createdIds: string[];
+  /** 저장 직후의 새 내역(createdIds와 같은 순서). 되돌리기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
+  createdAfter: Donation[];
   mergedBefore: Donation[];
   /** 합산 직후의 내역(mergedBefore와 같은 id). 되돌리기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
   mergedAfter: Donation[];
