@@ -84,15 +84,15 @@ src/
 ├── services/
 │   ├── domain/         [순수 규칙] 금액·검색·세대·집계·월 캐시 …
 │   ├── storage/        db(Dexie 정의)·storageService(트랜잭션·월 키), tabSyncChannel(창 간 동기화)
-│   ├── backup/         backupService, mergeRules, validation(체크섬·버전 변환), autoBackupService
+│   ├── backup/         backupService, streamRestore(줄 단위 복원), mergeRules, validation(체크섬·버전 변환), sha256, autoBackupService, backupBusy
 │   ├── downloadBridge.ts  파일 내려받기(브라우저)
 │   ├── import/         memberImportService (CSV 명단)
 │   ├── demo/           demoData (시연 데이터)
 │   └── theme.ts, desktopBridge.ts
 └── components/
-    ├── shared/         DatePicker, Modal, Notice, InfoTip, ThemePicker, MemberFormFields …
+    ├── shared/         DatePicker, Modal, Notice, ThemePicker, MemberFormFields, MemberPicker, Pager …
     └── pages/          donation-input · reports · members · offerings · settings · help
-electron/               main.cjs, preload.cjs
+electron/               main.cjs(창·백업 IPC), preload.cjs(노출 API), backupVerify.cjs(백업 검증), dataPaths.cjs(데이터 폴더)
 scripts/                testdata-core.mjs(생성 규칙), generate-test-data.mjs(파일 생성)
 .github/workflows/      pages.yml (시연 페이지 자동 배포)
 ```
@@ -152,7 +152,7 @@ interface BackupEnvelope {    // 백업 파일
 
 * 한 번의 저장(봉투)은 종류마다 독립된 `Donation`을 만듭니다(묶음 ID 없음). 같은 날짜·성도·종류의 중복 감지도 기록 단위입니다.
 * 세대 그룹은 별도 엔티티 없이 세대주의 `Member.id`를 그룹 ID로 씁니다. 세대주 변경은 `isFamilyHead`만 옮기고, 분가·이동해도 과거 기록은 스냅샷 덕분에 영향이 없습니다.
-* **백업 파일 형식(`schemaVersion` 2)은 저장 방식이 바뀌어도 그대로**입니다. 연도별 `donationsByYear`로 담고 읽을 때 월 키로 나눕니다.
+* **백업 형식:** 지금 만드는 파일은 줄 단위 v3(§10, `NDJSON_VERSION` 3)입니다. 위 봉투 형식(`schemaVersion` 2, 연도별 `donationsByYear`)은 예전 파일이며, 복원할 때 자동으로 읽습니다.
 
 ## 6. 저장소 설계
 
@@ -199,7 +199,7 @@ interface BackupEnvelope {    // 백업 파일
 | :--- | :--- |
 | 달을 읽는 도중 저장이 커밋됨 | `staleMonths`로 표시하고 다시 읽는다 |
 | 읽는 도중 복원·초기화(`reloadAll`) | `generation`이 바뀌면 읽은 결과를 버린다 |
-| 읽기 실패 | `finally`에서 “읽는 중” 표시를 지워 다음에 다시 시도한다 |
+| 읽기 실패 | 빈 결과로 굳히지 않고 다음 요청 때 다시 읽는다. 보고서 합계 읽기가 실패하면 안내를 보여 주고 인쇄·PDF를 막는다(8.1) |
 | 연도 목록을 여러 번 새로 읽음 | `refreshYears` 토큰으로 마지막 요청만 반영한다 |
 | 저장 후 [수정]으로 달이 바뀐 내역을 되돌리기 | 저장한 달을 먼저 읽고, 못 찾은 내역만 나머지 달에서 찾는다 |
 
@@ -209,7 +209,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 8. 보고서
 
 ### 8.1 선택과 계산의 분리 (250ms 지연)
-`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·PDF 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회).
+`useReportFilters`는 **선택 값**(`f.sel`: 연도·기간·분기/월·주)과 **적용 값**(`f.year`, `f.periodType`, `f.periodValue`, `f.week`)을 나눕니다. 적용 값은 `useDebouncedValue`로 선택이 250ms(`REPORT_DELAY_MS`) 멈춘 뒤에 바뀝니다. 이 사이(`f.pending`)에는 “불러오는 중…” 표시와 본문 흐림, 인쇄·PDF 단추 비활성으로 **화면과 다른 기간이 저장되는 일을 막습니다.** [이전/다음 주]는 ref(`latestWeek`)로 최신 선택에서 이어 가므로 연타해도 누른 만큼 이동합니다. 연타 중에는 중간 보고서를 계산하지 않습니다(30번 연타 → 계산 1회). 합계 읽기가 실패하면(`loadFailed`) “불러오는 중”을 끝내고 안내를 보여 주며 인쇄·PDF를 막고, 선택이나 데이터가 바뀌면 다시 읽습니다.
 
 ### 8.2 종류별 표
 | 기간 | 표 | 집계 |
@@ -313,7 +313,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 13. Electron 셸
 
 * `requestSingleInstanceLock()`으로 중복 실행 차단. `contextIsolation: true`, `nodeIntegration: false`. CSP는 응답 헤더로 강제. 서비스 워커·PWA·자동 업데이트 없음.
-* **영문 저장·백업 경로:** 데이터 폴더는 `%APPDATA%\StewardLedger`, 기본 자동 백업 폴더는 `문서\StewardLedgerBackup`입니다(`electron/dataPaths.cjs`). 이전 버전의 한글 폴더(`교회헌금회계`, `교회헌금백업`)가 있으면 앱이 데이터를 열기 전에 한 번 이름을 바꿔 옮기고, 옮기지 못하면(다른 프로그램이 사용 중 등) 데이터를 잃지 않도록 이전 폴더를 계속 씁니다. 설치 폴더 이름도 영문입니다: `productName`이 `StewardLedger`라 기본 설치 위치는 `%LOCALAPPDATA%\Programs\StewardLedger`, 설치 파일은 `StewardLedger Setup 1.0.0.exe`이며 데이터와는 별개입니다(바탕화면·시작 메뉴 바로가기 이름 `청지기 장부`와 창 제목은 표시용이라 한글 그대로). 이미 한글 폴더(`청지기장부`)에 설치된 PC에 새 설치 파일을 실행하면 설치 프로그램이 이전 설치 위치를 그대로 재사용할 수 있으므로, 영문 폴더로 옮기려면 기존 프로그램을 먼저 제거(데이터는 `deleteAppDataOnUninstall: false`로 보존)한 뒤 설치합니다. 테스트는 `dataPaths.test.ts`.
+* **영문 저장·백업 경로:** 데이터 폴더는 `%APPDATA%\StewardLedger`, 기본 자동 백업 폴더는 `문서\StewardLedgerBackup`입니다(`electron/dataPaths.cjs`). 이전 버전의 한글 폴더(`교회헌금회계`, `교회헌금백업`)가 있으면 앱이 데이터를 열기 전에 한 번 이름을 바꿔 옮기고, 옮기지 못하면(다른 프로그램이 사용 중 등) 데이터를 잃지 않도록 이전 폴더를 계속 씁니다. 설치 폴더 이름도 영문입니다: `productName`이 `StewardLedger`라 기본 설치 위치는 `%LOCALAPPDATA%\Programs\StewardLedger`, 설치 파일은 `StewardLedger Setup 1.1.0.exe`이며 데이터와는 별개입니다(바탕화면·시작 메뉴 바로가기 이름 `청지기 장부`와 창 제목은 표시용이라 한글 그대로). 이미 한글 폴더(`청지기장부`)에 설치된 PC에 새 설치 파일을 실행하면 설치 프로그램이 이전 설치 위치를 그대로 재사용할 수 있으므로, 영문 폴더로 옮기려면 기존 프로그램을 먼저 제거(데이터는 `deleteAppDataOnUninstall: false`로 보존)한 뒤 설치합니다. 테스트는 `dataPaths.test.ts`.
 * **화면 멈춤 대응:** `render-process-gone`(비정상 종료)이면 창을 다시 불러오고(1분에 3번 넘으면 안내 후 중단), `unresponsive`이면 [기다리기 / 다시 불러오기]를 묻습니다. 데이터는 IndexedDB에 있어 다시 불러와도 이어서 쓸 수 있습니다. React 화면 오류는 `ErrorBoundary`가 화면 단위로 잡아 앱 전체가 하얗게 되지 않고 메뉴를 계속 쓸 수 있습니다(메뉴를 옮기면 새로 시작).
 * **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
 * **자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보내 백업 문자열을 받아 `fs`로 기록합니다(임시 파일에 쓴 뒤 이름을 바꿔 전원이 꺼져도 잘린 백업 파일이 남지 않음)**끝날 때까지 기다린 뒤 종료**합니다(상한 5분). 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄우고, 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다). 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
@@ -322,7 +322,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 ## 14. 저장소 버전
 
-`db.ts`는 버전 1 하나만 선언합니다. 개발 단계라 이전 형식에서 옮기는 업그레이드는 없습니다. 저장 구조를 바꿀 때는 `version(n)`을 추가하고 `upgrade`로 옮기세요(Dexie는 기본키를 직접 바꾸지 못해 테이블을 지웠다가 다시 만들어야 합니다). 한 번 연 데이터는 이전 버전의 앱으로 다시 열 수 없습니다. 시작할 때 저장소를 열지 못하면 빈 화면 대신 한글 오류 안내를 보여 줍니다(`openStorage`, `StorageError`).
+`db.ts`는 버전 1(`kv`·`donations`)과 버전 2(`audits` 테이블 추가, §6.2의 이력 옮기기)를 선언합니다. 예전 localForage 형식에서 옮기는 코드는 없습니다. 저장 구조를 바꿀 때는 `version(n)`을 추가하고 `upgrade`로 옮기세요(Dexie는 기본키를 직접 바꾸지 못해 테이블을 지웠다가 다시 만들어야 합니다). 한 번 연 데이터는 이전 버전의 앱으로 다시 열 수 없습니다. 시작할 때 저장소를 열지 못하면 빈 화면 대신 한글 오류 안내를 보여 줍니다(`openStorage`, `StorageError`).
 
 ## 15. 성능 측정과 설계 근거
 
@@ -341,7 +341,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 ## 16. 테스트
 
-`npm test` (Vitest, 25개 파일, 147건). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
+`npm test` (Vitest, 37개 파일, 218건 — 2026-11-20 기준). 저장소는 `fake-indexeddb`, 화면 상태는 `jsdom` + `@testing-library/react`.
 
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
