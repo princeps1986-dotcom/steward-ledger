@@ -62,9 +62,8 @@ describe('restoreFromFile', () => {
     const file = await makeBackup();
     const scan = await scanBackupFile(file);
     if (!scan.ok) throw new Error(scan.error);
-    // 처음 읽기(복원할 id 모으기)는 성공하고, 본문을 쓰는 두 번째 읽기에서 멈춥니다.
-    let reads = 0;
-    const flaky = { stream: () => (reads++ === 0 ? file.stream() : new ReadableStream({ start: (c) => c.error(new Error('읽기 실패')) })) };
+    // 시작 트랜잭션('복원 중' 표시)은 커밋되고, 본문을 쓰려고 파일을 읽다가 멈춥니다.
+    const flaky = { stream: () => new ReadableStream({ start: (c) => c.error(new Error('읽기 실패')) }) };
     await expect(restoreFromFile(flaky as unknown as Blob, scan, ['2026'])).rejects.toThrow('읽기 실패');
     expect(await interruptedRestore()).toMatchObject({ years: ['2026'] });
   });

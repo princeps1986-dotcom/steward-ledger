@@ -78,7 +78,13 @@ export function SettingsPage() {
         </h3>
         <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{s.backupHelp}</p>
         <div className="flex gap-2">
-          <button className="btn-primary" onClick={s.openBackup} disabled={s.busy || s.backupBlocked}>
+          {/* 백업은 연도를 골라서 하므로 헌금 내역이 있는 연도가 없으면 누를 수 없습니다. */}
+          <button
+            className="btn-primary"
+            onClick={s.openBackup}
+            disabled={s.busy || s.backupBlocked || s.backupYearOptions.length === 0}
+            title={s.backupYearOptions.length === 0 ? '헌금 내역이 있어야 백업할 수 있습니다.' : undefined}
+          >
             백업 파일 저장
           </button>
           <label className={`btn ${s.backupBlocked ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`} aria-disabled={s.backupBlocked}>
@@ -99,7 +105,7 @@ export function SettingsPage() {
               취소
             </button>
             <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear}>
-              {s.busy ? '저장하는 중…' : `${s.backupYear}년 백업 파일 저장`}
+              {s.busy ? `저장하는 중…${s.backupProgress ? ` (${s.backupProgress.done}/${s.backupProgress.total}달)` : ''}` : `${s.backupYear}년 백업 파일 저장`}
             </button>
           </>
         }

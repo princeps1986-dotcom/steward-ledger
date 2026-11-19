@@ -182,8 +182,14 @@ export function transact<R>(
         const { writes, result } = await build(getItem);
         const all = [...writes];
         // '마지막 백업 이후 변경' 표시는 아직 꺼져 있을 때만 씁니다(저장마다 같은 값을 다시 쓰지 않음).
-        if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key)) && (await getItem<boolean>(KEYS.dirty)) !== true) {
-          all.push({ key: KEYS.dirty, value: true });
+        if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) {
+          if ((await getItem<boolean>(KEYS.dirty)) !== true) all.push({ key: KEYS.dirty, value: true });
+          // 마지막 전체 백업 이후 바뀐 연도(주기 백업이 그 연도만 담음). 새 연도가 생길 때만 씁니다.
+          const touched = new Set(writes.flatMap((w) => DONATION_KEY_RE.exec(w.key)?.[1].slice(0, 4) ?? AUDIT_KEY_RE.exec(w.key)?.[1] ?? []));
+          if (touched.size) {
+            const cur = (await getItem<string[]>(KEYS.dirtyYears)) ?? [];
+            if ([...touched].some((y) => !cur.includes(y))) all.push({ key: KEYS.dirtyYears, value: [...new Set([...cur, ...touched])].sort() });
+          }
         }
         if (all.length > 0) await applyWrites(all);
         return { writes, result, keys: all.map((w) => w.key).filter((k) => k !== CLEAR_DONATIONS_KEY), moved: movesAcrossMonths(writes) };
@@ -240,8 +246,25 @@ export async function readMonth(ym: string): Promise<Donation[]> {
 /** 기본키([날짜, id])로 한 건 읽기(없으면 null) */
 export const readRow = async (date: string, id: string): Promise<Donation | null> => (await db.donations.get([date, id])) ?? null;
 
-/** id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 전체를 훑으므로 드문 경우에만 쓰세요. */
-export const findDonationById = async (id: string): Promise<Donation | null> => (await db.donations.filter((d) => d.id === id).first()) ?? null;
+/**
+ * id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 기본키([날짜, id])만 묶음으로 훑어(내역 본문은 읽지 않음) 찾으면 그 한 건만 읽습니다.
+ * 데이터가 많으면 여전히 전체 키를 훑을 수 있으니 드문 경우에만 쓰세요.
+ */
+export async function findDonationById(id: string): Promise<Donation | null> {
+  const CHUNK = 50_000;
+  for (let after: [string, string] | null = null; ; ) {
+    const coll = after ? db.donations.where('[date+id]').above(after) : db.donations.toCollection();
+    const keys = (await coll.limit(CHUNK).primaryKeys()) as unknown as [string, string][];
+    const hit = keys.find((k) => k[1] === id);
+    if (hit) return (await db.donations.get(hit)) ?? null;
+    if (keys.length < CHUNK) return null;
+    after = keys[keys.length - 1];
+  }
+}
+
+/** 성도들의 헌금 전체(모든 연도)를 memberId 색인으로 읽습니다(전체를 훑지 않음). 기간은 부르는 쪽에서 거릅니다. */
+export const readMemberDonations = async (memberIds: readonly string[]): Promise<Donation[]> =>
+  memberIds.length ? db.donations.where('memberId').anyOf([...memberIds]).toArray() : [];
 
 /**
  * 연도 복원용: ids 중 years 밖(다른 연도)에 남아 있는 행을 지우는 쓰기 목록. 백업 뒤 날짜를 다른 연도로 옮긴 내역이
@@ -301,8 +324,22 @@ export async function isDirtySinceBackup(): Promise<boolean> {
   return (await getItem<boolean>(KEYS.dirty)) === true;
 }
 
-export async function clearDirty(): Promise<void> {
-  await serialize(() => db.kv.put(false, KEYS.dirty).then(() => undefined));
+/** 마지막 전체 백업 이후 헌금·이력이 바뀐 연도(오름차순). 비어 있으면 알 수 없거나 연도 변경이 없는 것입니다. */
+export async function dirtyYearsSinceFullBackup(): Promise<string[]> {
+  return (await getItem<string[]>(KEYS.dirtyYears)) ?? [];
+}
+
+/**
+ * '마지막 백업 이후 변경' 표시를 내립니다. full이면(모든 연도를 담은 백업) 바뀐 연도 목록도 지웁니다.
+ * 일부 연도만 담는 주기 백업은 목록을 남겨, 다음 주기 백업도 마지막 전체 백업 이후 바뀐 연도를 모두 담게 합니다.
+ */
+export async function clearDirty(full = true): Promise<void> {
+  await serialize(() =>
+    db.transaction('rw', db.kv, async () => {
+      await db.kv.put(false, KEYS.dirty);
+      if (full) await db.kv.delete(KEYS.dirtyYears);
+    }),
+  );
 }
 
 /** 백업에 실패했을 때 '마지막 백업 이후 변경됨' 표시를 되돌립니다. */

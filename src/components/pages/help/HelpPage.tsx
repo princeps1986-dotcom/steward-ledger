@@ -38,6 +38,22 @@ function Line({ text }: { text: string }) {
 export function HelpPage() {
   const h = useHelpPage();
   return (
+    <div className="space-y-4">
+    <div className="card flex flex-wrap items-center gap-3">
+      <input
+        type="search"
+        className="input min-w-0 flex-1"
+        placeholder="설명서 검색 (예: 백업, 복원, 되돌리기)"
+        aria-label="설명서 검색"
+        value={h.query}
+        onChange={(e) => h.setQuery(e.target.value)}
+      />
+      {h.searching && (
+        <span className="text-sm text-gray-600" role="status">
+          {h.resultCount > 0 ? `검색 결과 ${h.resultCount}건` : '검색 결과가 없습니다. 다른 낱말로 찾아 보세요.'}
+        </span>
+      )}
+    </div>
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
       <nav className="card h-fit space-y-1 lg:sticky lg:top-0" aria-label="설명서 목차">
         <h2 className="px-3 pb-1 text-xs font-semibold text-gray-500">목차</h2>
@@ -85,6 +101,7 @@ export function HelpPage() {
           </section>
         ))}
       </div>
+    </div>
     </div>
   );
 }

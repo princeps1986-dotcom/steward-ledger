@@ -1,6 +1,6 @@
 import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
-import { withRestoring } from './backupBusy';
+import { setRestoreProgress, withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
 import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, type Write } from '../storage/storageService';
@@ -29,19 +29,23 @@ export async function* readFileLines(file: ReadableBackup): AsyncGenerator<strin
   let stream: ReadableStream<Uint8Array> = file.stream() as ReadableStream<Uint8Array>;
   if (/\.gz$/i.test(file.name ?? '')) stream = stream.pipeThrough(new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>);
   const reader = stream.pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>).getReader();
-  let rest = '';
+  // 줄바꿈은 새로 받은 조각에서만 찾고, 줄의 조각들은 모아 두었다가 한 번에 합칩니다
+  // (한 줄이 한 달치라 수 MB여서, 받을 때마다 이어 붙인 전체에서 찾으면 압축 파일처럼 조각이 작을 때 크게 느려짐).
+  let parts: string[] = [];
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      rest += value;
-      let nl: number;
-      while ((nl = rest.indexOf('\n')) >= 0) {
-        yield rest.slice(0, nl + 1);
-        rest = rest.slice(nl + 1);
+      let start = 0;
+      for (let nl = value.indexOf('\n'); nl >= 0; nl = value.indexOf('\n', start)) {
+        parts.push(value.slice(start, nl + 1));
+        yield parts.join('');
+        parts = [];
+        start = nl + 1;
       }
+      if (start < value.length) parts.push(value.slice(start));
     }
-    if (rest) yield rest;
+    if (parts.length) yield parts.join('');
   } finally {
     await reader.cancel().catch(() => undefined); // 중간에 멈춰도 파일 읽기를 정리합니다.
   }
@@ -60,6 +64,8 @@ export interface BackupScan {
   offeringTypes: OfferingType[];
   /** 연도 → 헌금 건수(이력만 있는 연도는 0) */
   yearCounts: Record<string, number>;
+  /** 연도 → 헌금이 있는 달 수(복원 진행 표시용) */
+  monthCounts: Record<string, number>;
 }
 
 export type ScanResult = ({ ok: true } & BackupScan) | { ok: false; error: string };
@@ -74,10 +80,11 @@ const parse = (line: string): Record<string, unknown> | null => {
   }
 };
 
-export async function scanBackupFile(file: ReadableBackup): Promise<ScanResult> {
+/** hashChecked: 체크섬을 이미 확인했으면(데스크톱 main) 다시 계산하지 않고 형식만 검사합니다. */
+export async function scanBackupFile(file: ReadableBackup, opts: { hashChecked?: boolean } = {}): Promise<ScanResult> {
   const hash = new Sha256();
   const enc = new TextEncoder();
-  const scan: BackupScan = { members: [], offeringTypes: [], yearCounts: {} };
+  const scan: BackupScan = { members: [], offeringTypes: [], yearCounts: {}, monthCounts: {} };
   let first = true;
   let ended = false;
   for await (const line of readFileLines(file)) {
@@ -86,11 +93,11 @@ export async function scanBackupFile(file: ReadableBackup): Promise<ScanResult> 
     const o = parse(line);
     if (!o) return bad('JSON 파일을 읽을 수 없습니다.');
     if (o.t === 'end') {
-      if (hash.digestHex() !== o.sha256) return bad('무결성 검증 실패: 파일이 손상되었거나 변조되었습니다.');
+      if (!opts.hashChecked && hash.digestHex() !== o.sha256) return bad('무결성 검증 실패: 파일이 손상되었거나 변조되었습니다.');
       ended = true;
       continue;
     }
-    hash.update(enc.encode(line));
+    if (!opts.hashChecked) hash.update(enc.encode(line));
     if (first) {
       first = false;
       if (typeof o.ndjson !== 'number' || o.ndjson > NDJSON_VERSION) return bad('이 앱이 읽을 수 없는 백업 형식입니다. 앱을 업데이트하세요.');
@@ -107,6 +114,7 @@ export async function scanBackupFile(file: ReadableBackup): Promise<ScanResult> 
       if (typeof ym !== 'string' || !MONTH_RE.test(ym) || !Array.isArray(o.data) || !o.data.every(isDonation)) return bad(`${String(ym)} 헌금 내역 형식이 올바르지 않습니다.`);
       if (o.data.some((d: Donation) => d.date.slice(0, 7) !== ym)) return bad(`${ym} 월에 다른 달 내역이 섞여 있습니다.`);
       scan.yearCounts[ym.slice(0, 4)] = (scan.yearCounts[ym.slice(0, 4)] ?? 0) + o.data.length;
+      scan.monthCounts[ym.slice(0, 4)] = (scan.monthCounts[ym.slice(0, 4)] ?? 0) + 1;
     } else if (o.t === 'audit') {
       const y = o.year;
       if (typeof y !== 'string' || !/^\d{4}$/.test(y) || !Array.isArray(o.data) || !o.data.every(isAuditLike)) return bad(`${String(y)}년 감사 로그 형식이 올바르지 않습니다.`);
@@ -144,18 +152,17 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
-  // 복원할 연도의 헌금 id(한 해치 id만 메모리에 둠): 다른 연도로 옮겨진 같은 내역을 지우는 데 씁니다.
+  // 복원할 달 수(진행 표시용)는 검사(scanBackupFile) 때 센 값을 써서 파일을 따로 한 번 더 읽지 않습니다.
+  const total = years.reduce((n, y) => n + (scan.monthCounts[y] ?? 0), 0);
+  // 복원한 연도의 헌금 id(한 해치 id만 메모리에 둠): 본문을 저장하며 모았다가, 마지막에 다른 연도로 옮겨진 같은 내역을 지웁니다.
   const ids = new Set<string>();
-  for await (const line of readFileLines(file)) {
-    const o = parse(line);
-    if (o?.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) for (const d of o.data as Donation[]) ids.add(d.id);
-  }
+  let done = 0;
+  setRestoreProgress({ done, total });
   // 시작: 표시를 남기고, 선택한 연도의 기존 헌금·이력을 지우며, 백업에만 있는 성도·종류를 추가합니다(한 트랜잭션).
   await transact(async (read) => {
     const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: new Date().toISOString(), years: [...years] } satisfies RestoreMarker }];
     for (const ym of await listDonationMonths()) if (want.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
     for (const k of await listAuditKeys()) if (want.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
-    writes.push(...(await strayRowWrites(ids, want)));
     const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
     const curTypes = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
     if (plan.addMembers.length) writes.push({ key: KEYS.members, value: [...curMembers, ...plan.addMembers] });
@@ -167,13 +174,16 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     const o = parse(line);
     if (!o) continue;
     if (o.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) {
+      for (const d of o.data as Donation[]) ids.add(d.id);
       const write = monthWrite(o.ym, remapDonations(o.data as Donation[], plan));
       await transact(async () => ({ writes: [write], result: undefined }));
+      setRestoreProgress({ done: ++done, total });
     } else if (o.t === 'audit' && typeof o.year === 'string' && want.has(o.year)) {
       const mapped = remapAudits(fillReason(o.data as AuditLog[]), plan);
       const key = auditKey(o.year);
       if (mapped.length) await transact(async () => ({ writes: [{ key, value: mapped }], result: undefined }));
     }
   }
-  await transact(async () => ({ writes: [{ key: KEYS.restoreMarker, value: null }], result: undefined }));
+  // 끝: 다른 연도에 남은 같은 내역을 지우고 '복원 중' 표시를 내립니다(한 트랜잭션). 중간에 꺼지면 표시가 남아 다시 복원하게 됩니다.
+  await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }));
 }

@@ -343,6 +343,16 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   ipcMain.handle('backup:default-dir', () => defaultBackupDir());
+  // 복원할 백업 파일의 체크섬 확인(내장 SHA-256이라 화면 쪽 계산보다 훨씬 빠름). ''=통과, 문구=실패, null=확인하지 않음
+  ipcMain.handle('backup:verify-file', async (_event, file) => {
+    if (typeof file !== 'string' || !/\.(json|gz)$/i.test(file)) return null;
+    try {
+      await verifyBackupFile(file);
+      return '';
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  });
   ipcMain.handle('backup:select-dir', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const res = await dialog.showOpenDialog(win, { title: '자동 백업 폴더 선택', properties: ['openDirectory', 'createDirectory'] });

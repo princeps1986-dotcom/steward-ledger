@@ -35,14 +35,31 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           </button>
         </div>
         {r.mode === 'FAMILY' ? (
-          <span className="pb-2 text-xs text-gray-500">집계 기준: {f.basis === 'CURRENT' ? '현재 세대' : '납부 당시 세대'} (상단 토글에서 변경)</span>
+          <div>
+            <span className="label">세대 집계 기준</span>
+            <div className="flex overflow-hidden rounded border border-gray-300">
+              <button className={`px-3 py-1.5 text-sm ${f.basis === 'CURRENT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'CURRENT'} onClick={() => f.setBasis('CURRENT')}>
+                현재 세대 기준
+              </button>
+              <button className={`px-3 py-1.5 text-sm ${f.basis === 'SNAPSHOT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'SNAPSHOT'} onClick={() => f.setBasis('SNAPSHOT')}>
+                납부 당시 세대 기준
+              </button>
+            </div>
+          </div>
         ) : null}
       </div>
 
       {r.hasSelection ? (
         <>
-          <div className="text-sm">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <b>{r.selectedLabel}</b> · {r.mode === 'PERSON' ? '개인' : '세대 합산'} · {f.label}
+            {r.mode === 'FAMILY' ? (
+              // 테마 색 변수가 정의된 blue-100/400/600/700만 써서 네 테마(어두운 테마 포함) 모두에서 글씨가 읽히게 합니다.
+              <span className="rounded border border-l-4 border-blue-400 border-l-blue-600 bg-blue-100 px-3 py-1 text-base font-bold text-blue-700">
+                <span className="mr-1.5 text-xs font-semibold">세대주</span>
+                {r.headLabel}
+              </span>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {r.byType.map((t) => (
@@ -85,7 +102,25 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
                 </div>
               ))}
             </div>
-            {r.rows.length === 0 ? <p className="px-3 py-4 text-center text-sm text-gray-500">해당 기간 내역이 없습니다.</p> : null}
+            {r.loading ? (
+              <>
+                {/* 읽는 동안 표 자리를 비우지 않고 흐린 빈 줄을 보여 줍니다. */}
+                {[0, 1, 2].map((i) => (
+                  <div key={i} aria-hidden="true" className={`${GRID} border-b border-gray-100 px-2`} style={{ height: ROW_HEIGHT }}>
+                    {[0, 1, 2, 3, 4, 5].map((c) => (
+                      <span key={c} className="mr-3 h-3 rounded bg-gray-100" />
+                    ))}
+                  </div>
+                ))}
+                {r.slow ? (
+                  <p role="status" className="px-3 py-4 text-center text-sm text-gray-400">
+                    내역을 불러오고 있습니다…
+                  </p>
+                ) : null}
+              </>
+            ) : r.rows.length === 0 ? (
+              <p className="px-3 py-4 text-center text-sm text-gray-500">해당 기간 내역이 없습니다.</p>
+            ) : null}
           </div>
           <Pager paging={paging} />
         </>

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { DonationProvider } from '../contexts/DonationContext';
+import { DonationProvider, useDonationActions } from '../contexts/DonationContext';
 import { REPORT_DELAY_MS, useReportFilters } from './useReports';
 
 const wrapper = ({ children }: { children: ReactNode }) => <DonationProvider>{children}</DonationProvider>;
@@ -41,5 +41,25 @@ describe('useReportFilters 주별/일별 갱신', () => {
     expect(result.current.pending).toBe(true);
     await wait(REPORT_DELAY_MS + 50);
     expect(result.current.week).toEqual({ start: '2026-11-18', end: '2026-11-18' });
+  });
+});
+
+describe('useReportFilters 분기·연도 요약', () => {
+  it('연도별은 내역을 올리지 않고 달별 합계만 구하며, 저장하면 바뀐 달만 다시 합산합니다', async () => {
+    const { transact, monthWrite, rowWrite } = await import('../services/storage/storageService');
+    const row = (id: string, date: string, amount: number) => ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount, createdAt: id, updatedAt: '' });
+    await transact(async () => ({ writes: [monthWrite('2024-03', [row('a', '2024-03-03', 1000) as never])], result: 0 }));
+    const { result } = renderHook(() => ({ f: useReportFilters(), actions: useDonationActions() }), { wrapper });
+    act(() => {
+      result.current.f.setPeriodType('YEAR');
+      result.current.f.setYear('2024');
+    });
+    await wait(REPORT_DELAY_MS + 50);
+    await waitFor(() => expect(result.current.f.pending).toBe(false));
+    expect(result.current.f.donations).toHaveLength(0); // 메모리에 올리지 않음
+    expect(result.current.f.monthSums?.get('2024-03')?.get('t')).toEqual({ amount: 1000, anonymous: 1000, count: 1 });
+    await transact(async () => ({ writes: [rowWrite('2024-03', { puts: [row('b', '2024-03-10', 500) as never], deletes: [] })], result: 0 }));
+    await act(() => result.current.actions.reloadAll());
+    await waitFor(() => expect(result.current.f.monthSums?.get('2024-03')?.get('t')?.amount).toBe(1500));
   });
 });

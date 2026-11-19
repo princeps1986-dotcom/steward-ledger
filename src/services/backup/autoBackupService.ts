@@ -2,7 +2,7 @@ import type { AppSettings } from '../../contexts/types';
 import { isDemoBusy } from '../demo/demoState';
 import { isBackupBusy } from './backupBusy';
 import { desktop, type AutoBackupPayload } from '../desktopBridge';
-import { clearDirty, isDirtySinceBackup, markDirty } from '../storage/storageService';
+import { clearDirty, dirtyYearsSinceFullBackup, isDirtySinceBackup, markDirty } from '../storage/storageService';
 import { backupLines, desktopSink, streamBackup } from './backupService';
 
 /** 주기 백업이 진행 중인지(종료 직전에 겹치면 종료 때 백업이 '변경 없음'으로 건너뛰지 않도록) */
@@ -29,7 +29,8 @@ export const PERIODIC_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 export const BACKUP_CANCELLED_TEXT = '백업이 취소되었거나 시작되지 않았습니다';
 
 /**
- * 주기 백업(autosave_*, 최근 3개 보관): 변경이 있을 때만 데이터를 달마다 나누어 읽으며 파일로 저장하고(메모리는 한 달치, 저장을 막지 않음)
+ * 주기 백업(autosave_*, 최근 3개 보관): 변경이 있을 때만, 마지막 전체 백업(종료·직접 백업) 이후 바뀐 연도만 달마다 나누어 읽으며 파일로 저장하고
+ * (메모리는 한 달치, 저장을 막지 않음. 바뀐 연도를 모르면 전체) 종료 때 백업은 항상 전체이므로 그 파일과 최신 주기 백업으로 모두 되살릴 수 있습니다.
  * main이 다시 읽어 검증한 경로를 돌려줍니다. 변경 표시는 읽기 전에 먼저 내리므로 백업하는 동안 생긴 변경은 표시가 다시 올라가 다음 백업에 담깁니다.
  * 실패하면 표시를 되돌립니다. 반환: 저장된 파일 경로, 할 일이 없으면 null. 실패하면 오류를 던집니다.
  */
@@ -39,9 +40,10 @@ export async function runPeriodicBackup(settings: AppSettings): Promise<string |
   if (!(await isDirtySinceBackup())) return null;
   periodicRunning = true;
   try {
-    await clearDirty();
+    const years = await dirtyYearsSinceFullBackup();
+    await clearDirty(years.length === 0); // 일부 연도만 담으면 바뀐 연도 목록은 남겨 둡니다(다음 주기 백업도 담도록).
     const dir = settings.autoBackupDir || (await api.getDefaultBackupDir());
-    return await streamBackup(desktopSink(api, { kind: 'periodic', dir }));
+    return await streamBackup(desktopSink(api, { kind: 'periodic', dir }), years.length ? { years } : {});
   } catch (e) {
     await markDirty();
     // 다른 백업이 끼어들어 취소된 것은 실패가 아닙니다(변경 표시를 되돌렸으니 다음 주기에 다시 백업).

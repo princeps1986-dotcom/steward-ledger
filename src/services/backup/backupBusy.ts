@@ -6,6 +6,8 @@ import { useSyncExternalStore } from 'react';
  */
 let backups = 0;
 let restores = 0;
+/** 복원 진행(저장한 달 / 전체 달). 진행을 셀 수 없는 복원이면 null */
+let restoreProgress: { done: number; total: number } | null = null;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
@@ -20,7 +22,10 @@ async function track<T>(kind: 'backups' | 'restores', fn: () => Promise<T>): Pro
     return await fn();
   } finally {
     if (kind === 'backups') backups--;
-    else restores--;
+    else {
+      restores--;
+      if (restores === 0) restoreProgress = null;
+    }
     notify();
   }
 }
@@ -37,3 +42,9 @@ const subscribe = (cb: () => void) => {
   return () => listeners.delete(cb);
 };
 export const useRestoring = (): boolean => useSyncExternalStore(subscribe, isRestoring);
+
+export function setRestoreProgress(p: { done: number; total: number } | null): void {
+  restoreProgress = p;
+  notify();
+}
+export const useRestoreProgress = (): { done: number; total: number } | null => useSyncExternalStore(subscribe, () => restoreProgress);

@@ -1,5 +1,5 @@
 // contextBridge로 렌더러에 최소 API만 노출합니다 (src/services/desktopBridge.ts의 DesktopApi).
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
   getDefaultBackupDir: () => ipcRenderer.invoke('backup:default-dir'),
@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('desktop', {
   backupRestart: (id) => ipcRenderer.invoke('backup:restart', id),
   backupAbort: (id) => ipcRenderer.invoke('backup:abort', id),
   backupEnd: (id) => ipcRenderer.invoke('backup:end', id),
+  // 고른 파일의 경로를 main에 넘겨 체크섬을 확인합니다(경로를 모르는 파일이면 null: 화면 쪽에서 확인).
+  verifyBackupFile: (file) => {
+    const path = webUtils.getPathForFile(file);
+    return path ? ipcRenderer.invoke('backup:verify-file', path) : Promise.resolve(null);
+  },
   skipBackup: () => ipcRenderer.send('backup:skip'),
   onBackupCancelled: (handler) => {
     const listener = () => handler();

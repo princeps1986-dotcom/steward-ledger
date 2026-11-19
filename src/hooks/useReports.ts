@@ -7,11 +7,13 @@ import type { AuditLog, Donation } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
-import { readMonth } from '../services/storage/storageService';
+import { readMemberDonations, readMonth } from '../services/storage/storageService';
+import { sumMonth, type MonthSums } from '../services/domain/periodSummary';
 import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
 import { formatDateTime, isValidDateString, lastSunday, monthOf, seoulNow, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
 import { buildWeeklyMatrix } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
+import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
 import { desktop, type SavedFileInfo } from '../services/desktopBridge';
 import { compareFixed, compareKo } from '../services/domain/compare';
@@ -35,6 +37,51 @@ function useDebouncedValue<T>(value: T, delay: number): T {
 
 /** 보고서 공통 필터: 연도 + 기간(연/분기/월/주) + 세대 집계 기준 */
 const NO_MONTHS: string[] = [];
+
+/** 달별 변경 횟수와 epoch로 만든 달의 버전 문자열(달이 바뀌었는지 비교용) */
+function useMonthVersionKey(yms: readonly string[]): string {
+  const versions = useMonthVersions();
+  const epoch = useDonationEpoch();
+  return yms.map((ym) => `${versions[ym] ?? 0}:${epoch}`).join(',');
+}
+
+/**
+ * 달마다 헌금 종류별 합계만 구합니다(분기·연도 요약용). 내역은 한 달씩 읽어 합계로 줄인 뒤 버리므로 메모리에 쌓이지 않고,
+ * 구한 합계는 달의 버전과 함께 기억해 두어 연도를 바꿨다 돌아오거나 저장한 뒤에도 바뀐 달만 다시 읽습니다.
+ * yms 전체를 다 구한 뒤에 한 번에 바뀌며, 다른 달 목록을 구하는 동안은 sums가 null(loading)입니다.
+ */
+function useMonthSums(yms: readonly string[]): { sums: ReadonlyMap<string, MonthSums> | null; loading: boolean } {
+  const key = yms.join(',');
+  const versionKey = useMonthVersionKey(yms);
+  const cache = useRef(new Map<string, { version: string; sums: MonthSums }>());
+  const [result, setResult] = useState<{ key: string; sums: ReadonlyMap<string, MonthSums> } | null>(null);
+  useEffect(() => {
+    if (!key) return;
+    let stop = false;
+    const list = key.split(',');
+    const vs = versionKey.split(',');
+    void (async () => {
+      const out = new Map<string, MonthSums>();
+      for (const [i, ym] of list.entries()) {
+        const hit = cache.current.get(ym);
+        if (hit?.version === vs[i]) {
+          out.set(ym, hit.sums);
+          continue;
+        }
+        const sums = sumMonth(await readMonth(ym));
+        if (stop) return;
+        cache.current.set(ym, { version: vs[i], sums });
+        out.set(ym, sums);
+      }
+      if (!stop) setResult({ key, sums: out });
+    })().catch(() => undefined); // 읽기 실패: 이전 결과를 그대로 두고 다음 변경 때 다시 시도합니다.
+    return () => {
+      stop = true;
+    };
+  }, [key, versionKey]);
+  const ready = !!key && result?.key === key;
+  return { sums: ready ? result!.sums : null, loading: !!key && !ready };
+}
 
 /** loadData가 false이면 이 화면은 보고서 기간의 헌금을 메모리에 올리지 않습니다(전체 입력 내역 탭은 달 단위로 직접 읽음). */
 export function useReportFilters(loadData = true) {
@@ -74,7 +121,12 @@ export function useReportFilters(loadData = true) {
     () => (isRange ? [...new Set([week.start.slice(0, 7), week.end.slice(0, 7)])] : months.map((m) => `${year}-${String(m).padStart(2, '0')}`)),
     [isRange, week, months, year],
   );
-  const source = useDonationMonths(loadData ? neededMonths : NO_MONTHS);
+  // 분기·연도 요약은 내역을 메모리에 올리지 않고 달마다 합계만 구합니다(연 수십만 건에서도 메모리가 작음).
+  // 개인별 탭은 색인으로 직접 읽으므로 이 기간의 내역이 필요 없습니다.
+  // 합계는 전체 입력 내역 탭(loadData=false)에서도 구해 그 탭의 건수·합계를 바로 보여 줍니다(내역은 메모리에 올리지 않음).
+  const summaryMode = !isRange && periodType !== 'MONTH';
+  const source = useDonationMonths(loadData && !summaryMode ? neededMonths : NO_MONTHS);
+  const monthSums = useMonthSums(summaryMode ? neededMonths : NO_MONTHS);
   const listMonths = useMemo(() => [...neededMonths].sort().reverse(), [neededMonths]); // 전체 입력 내역 탭이 직접 읽는 달(최신 달부터)
 
   const yearOptions = useMemo(() => [...new Set([...years, currentYear])].sort().reverse(), [years, currentYear]);
@@ -119,7 +171,7 @@ export function useReportFilters(loadData = true) {
     periodValue,
     // 선택 칸에 보이는 값과 변경 함수(적용은 잠시 뒤). pending이면 아직 이전 선택의 보고서가 보이는 중입니다.
     sel: { year: selYear, periodType: selPeriodType, periodValue: selPeriodValue, isWeek: selPeriodType === 'WEEK', isDay: selPeriodType === 'DAY', isRange: selPeriodType === 'WEEK' || selPeriodType === 'DAY' },
-    pending,
+    pending: pending || monthSums.loading,
     setYear,
     yearOptions,
     setPeriodType,
@@ -127,6 +179,8 @@ export function useReportFilters(loadData = true) {
     periodValueOptions,
     months,
     donations,
+    /** 분기·연도: 달('YYYY-MM')별 헌금 종류 합계(다 구하기 전에는 null). 그 외 기간은 null이고 donations를 씁니다. */
+    monthSums: monthSums.sums,
     listMonths,
     listRange: isRange ? week : null,
     basis,
@@ -166,34 +220,40 @@ const typesWithout = <T extends { id: string }>(types: readonly T[], hidden: Rea
 export function useTypeToggleOptions(f: ReportFilters): { id: string; name: string; isActive: boolean }[] {
   const types = useOfferingTypes();
   return useMemo(() => {
-    const used = new Set(f.donations.map((d) => d.offeringTypeId)); // f.donations는 주별이면 이미 그 주로 걸러져 있음
+    // f.donations는 주별이면 이미 그 주로 걸러져 있고, 분기·연도는 달별 합계에서 씁니다.
+    const used = new Set(f.monthSums ? [...f.monthSums.values()].flatMap((m) => [...m.keys()]) : f.donations.map((d) => d.offeringTypeId));
     return types
       .filter((t) => t.isActive || used.has(t.id))
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((t) => ({ id: t.id, name: t.name, isActive: t.isActive }));
-  }, [types, f.donations]);
+  }, [types, f.donations, f.monthSums]);
 }
 
-/** 종합 보고서: 헌금 종류 × 월 매트릭스 */
+/** 종합 보고서(분기·연도): 헌금 종류 × 월 매트릭스. 달별 합계(f.monthSums)에서 숨긴 종류를 빼고 더합니다. */
 export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
   const types = useOfferingTypes();
   return useMemo(() => {
-    const donations = withoutTypes(f.donations, hidden);
-    const used = new Set(donations.map((d) => d.offeringTypeId));
-    const list = types.filter((t) => !hidden.has(t.id) && (t.isActive || used.has(t.id))).sort((a, b) => a.sortOrder - b.sortOrder);
+    const used = new Set<string>();
     const cell = new Map<string, number>();
     const byType = new Map<string, number>();
     const byMonth = new Map<number, number>();
     let total = 0;
     let anonymousTotal = 0;
-    for (const d of donations) {
-      if (d.memberId === null) anonymousTotal += d.amount;
-      const m = monthOf(d.date);
-      cell.set(`${d.offeringTypeId}|${m}`, (cell.get(`${d.offeringTypeId}|${m}`) ?? 0) + d.amount);
-      byType.set(d.offeringTypeId, (byType.get(d.offeringTypeId) ?? 0) + d.amount);
-      byMonth.set(m, (byMonth.get(m) ?? 0) + d.amount);
-      total += d.amount;
+    let count = 0;
+    for (const [ym, sums] of f.monthSums ?? []) {
+      const m = monthOf(`${ym}-01`);
+      for (const [t, s] of sums) {
+        if (hidden.has(t)) continue;
+        used.add(t);
+        cell.set(`${t}|${m}`, (cell.get(`${t}|${m}`) ?? 0) + s.amount);
+        byType.set(t, (byType.get(t) ?? 0) + s.amount);
+        byMonth.set(m, (byMonth.get(m) ?? 0) + s.amount);
+        total += s.amount;
+        anonymousTotal += s.anonymous;
+        count += s.count;
+      }
     }
+    const list = types.filter((t) => !hidden.has(t.id) && (t.isActive || used.has(t.id))).sort((a, b) => a.sortOrder - b.sortOrder);
     return {
       months: f.months,
       rows: list.map((t) => ({
@@ -204,10 +264,10 @@ export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> =
       })),
       monthTotals: f.months.map((m) => byMonth.get(m) ?? 0),
       total,
-      count: donations.length,
+      count,
       anonymousTotal,
     };
-  }, [types, f.donations, f.months, hidden]);
+  }, [types, f.monthSums, f.months, hidden]);
 }
 
 /** 주별 보고서(종합 보고서의 기간 '주별'): 선택 주(일~토)를 헌금 종류 × 성도명 교차표로 집계 */
@@ -236,7 +296,7 @@ export function useDonationListReport(f: ReportFilters) {
   const [, setTick] = useState(0);
   const [done, setDone] = useState(false);
   // 입력 칸은 바로 반영하고, 달들을 다시 거르는 계산은 입력이 잠시 멈춘 뒤에 합니다.
-  const appliedQuery = useDebouncedValue(query, 150);
+  const appliedQuery = useDebouncedValue(query, 350);
   const pager = useMemo(() => new ListPager(readMonth, undefined, () => setTick((t) => t + 1)), []);
   const { listMonths, listRange } = f;
   const versionKey = listMonths.map((ym) => `${versions[ym] ?? 0}:${epoch}`).join(',');
@@ -264,6 +324,19 @@ export function useDonationListReport(f: ReportFilters) {
       tag: d ? tagOf(d.memberId) : null,
     };
   };
+  // 분기·연도에서 검색어가 없으면 종합 보고서가 구한 달별 합계로 건수·합계를 바로 보여 줍니다(달을 읽는 동안 숫자가 올라가지 않게).
+  const sums = appliedQuery.replace(/\s/g, '') === '' ? f.monthSums : null;
+  if (sums) {
+    let count = 0;
+    let total = 0;
+    for (const m of sums.values()) {
+      for (const s of m.values()) {
+        count += s.count;
+        total += s.amount;
+      }
+    }
+    return { query, setQuery, count, total, rowAt, loading: false };
+  }
   return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done };
 }
 
@@ -279,17 +352,53 @@ export function usePersonalReport(f: ReportFilters) {
   // 비활성 성도도 과거 내역 조회를 위해 선택 대상에 포함(검색은 선택 칸이 함)
   const options = useMemo(() => [...members].sort((a, b) => compareKo(a.name, b.name)).map((m): PickerOption => ({ id: m.id, label: memberLabel(m), member: m })), [members]);
 
-  const rows = useMemo(() => {
-    if (!selected) return [];
-    let list: Donation[];
-    if (mode === 'PERSON') list = f.donations.filter((d) => d.memberId === selected.id);
-    else {
-      const key = familyKeyOfMember(selected);
-      list = f.donations.filter((d) => familyKeyOf(d, f.basis, memberById) === key);
-    }
-    return [...list].sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt));
-  }, [selected, mode, f.donations, f.basis, memberById]);
+  // 보고서 기간의 내역을 메모리에 올리지 않고 직접 읽습니다. 개인·현재 세대는 memberId 색인으로 그 성도들의 내역만 읽고,
+  // 납부 당시 세대는 색인이 없어 기간의 달을 하나씩 읽으며 거릅니다(메모리에는 한 달치만).
+  const { listMonths, listRange, basis } = f;
+  const versionKey = useMonthVersionKey(listMonths);
+  const memberIds = useMemo(() => {
+    if (!selected) return null;
+    if (mode === 'PERSON') return [selected.id];
+    if (basis === 'SNAPSHOT') return null;
+    const key = familyKeyOfMember(selected);
+    return members.filter((m) => familyKeyOfMember(m) === key).map((m) => m.id);
+  }, [selected, mode, basis, members]);
+  // 선택·기간·대상 성도가 같으면 같은 조회입니다(이 값과 versionKey가 바뀔 때만 다시 읽음).
+  const queryKey = selected ? [selected.id, mode, basis, listMonths.join(','), listRange?.start ?? '', listRange?.end ?? '', memberIds?.join(',') ?? ''].join('|') : '';
+  const [found, setFound] = useState<{ key: string; list: Donation[] } | null>(null);
+  const latest = useRef({ selected, memberIds, listMonths, listRange, memberById });
+  latest.current = { selected, memberIds, listMonths, listRange, memberById };
+  useEffect(() => {
+    const { selected: who, memberIds: ids, listMonths: yms, listRange: range, memberById: byId } = latest.current;
+    if (!who) return;
+    let stop = false;
+    const months = new Set(yms);
+    const inPeriod = (d: Donation) => months.has(d.date.slice(0, 7)) && (!range || (d.date >= range.start && d.date <= range.end));
+    const load = async (): Promise<Donation[]> => {
+      if (ids) return (await readMemberDonations(ids)).filter(inPeriod);
+      const key = familyKeyOfMember(who);
+      const out: Donation[] = [];
+      for (const ym of yms) {
+        if (stop) break;
+        for (const d of await readMonth(ym)) if (inPeriod(d) && familyKeyOf(d, 'SNAPSHOT', byId) === key) out.push(d);
+      }
+      return out;
+    };
+    void load()
+      .then((list) => {
+        if (!stop) setFound({ key: queryKey, list: list.sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt)) });
+      })
+      .catch(() => undefined); // 읽기 실패: 이전 결과를 두고 다음 변경 때 다시 시도합니다.
+    return () => {
+      stop = true;
+    };
+  }, [queryKey, versionKey]);
+  const rows = useMemo(() => (found && found.key === queryKey ? found.list : []), [found, queryKey]);
+  const loading = !!selected && found?.key !== queryKey;
+  // 0.3초 안에 끝나는 조회는 '불러오는 중' 문구를 띄우지 않습니다(깜빡임 방지).
+  const slow = useDebouncedValue(loading, 300);
 
+  const head = selected?.familyGroupId ? currentHeadOf(members, selected.familyGroupId) : undefined;
   const byType = useMemo(() => {
     const map = new Map<string, number>();
     for (const d of rows) map.set(d.offeringTypeId, (map.get(d.offeringTypeId) ?? 0) + d.amount);
@@ -301,9 +410,20 @@ export function usePersonalReport(f: ReportFilters) {
   return {
     options,
     selectedId,
-    select: (id: string) => setSelectedId(id || null),
+    select: (id: string) => {
+      setSelectedId(id || null);
+      // 선택을 풀면 조회 방식·세대 집계 기준도 처음 상태(개인 기준·현재 세대)로 되돌립니다.
+      if (!id) {
+        setMode('PERSON');
+        f.setBasis('CURRENT');
+      }
+    },
     selectedLabel: selected ? memberLabel(selected) : '',
+    /** 세대 합산 조회에서 보여 줄 현재 세대주(세대에 연결되지 않은 성도는 안내 문구) */
+    headLabel: !selected ? '' : !selected.familyGroupId ? '세대 미연결(본인만)' : head ? memberLabel(head) : '(세대주 없음)',
     hasSelection: !!selected,
+    loading,
+    slow,
     mode,
     setMode,
     rows: rows.map((d) => ({
@@ -400,14 +520,14 @@ export function useReportExport(f: ReportFilters) {
     if (saved) await desktop()?.showInFolder(saved.path);
   }, [saved]);
 
-  // 주별은 세대 집계 기준과 무관하므로 파일명에 넣지 않습니다.
+  // 종합 보고서는 세대 집계 기준과 무관하므로 파일명에 넣지 않습니다(기준은 개인별·세대별 탭 세대 합산에서만 씁니다).
   const fileName = f.isDay
     ? `일별헌금보고서_${f.week.start}.pdf`
     : f.isWeek
     ? `주별헌금보고서_${f.week.start}_${f.week.end}.pdf`
     : f.personKind === 'MONTH'
       ? `월별헌금보고서_${f.year}-${String(f.periodValue).padStart(2, '0')}.pdf`
-      : `헌금결산_${f.label}_${f.basis === 'CURRENT' ? '현재세대' : '납부당시세대'}.pdf`;
+      : `헌금결산_${f.label}.pdf`;
 
   // 데스크톱 앱은 PDF 파일로 바로 저장하고, 웹 브라우저는 인쇄 창을 열어 '대상: PDF로 저장'을 선택하게 합니다.
   const savePdf = useCallback(async () => {

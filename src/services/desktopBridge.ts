@@ -48,6 +48,8 @@ export interface DesktopApi {
   backupRestart(id: number): Promise<number>;
   backupAbort(id: number): Promise<boolean>;
   backupEnd(id: number): Promise<string>;
+  /** 복원할 백업 파일의 체크섬을 main이 확인합니다. ''=통과, 문구=실패 사유, null=확인하지 않음(경로를 모르는 파일 등) */
+  verifyBackupFile?(file: File): Promise<string | null>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */

@@ -6,7 +6,7 @@ import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
 import { desktop, type BackupSessionSpec, type DesktopApi } from '../desktopBridge';
-import { downloadText } from '../downloadBridge';
+import { downloadBlob } from '../downloadBridge';
 import {
   AUDIT_KEY_RE,
   KEYS,
@@ -31,6 +31,7 @@ import {
 } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { NDJSON_VERSION, sha256Hex } from './validation';
+import { Sha256 } from './sha256';
 
 /**
  * 전역 로컬 데이터베이스를 백업 payload로 마샬링합니다.
@@ -171,33 +172,63 @@ async function saveEmergencyBackupNow(prefix: string): Promise<string> {
     return saved;
   }
   const name = backupFileName(prefix);
-  downloadText(await createBackupJson(), name);
+  downloadBlob(await createBackupBlob(), name);
   return name;
 }
 
+/**
+ * 웹 브라우저용 백업 파일(줄 단위 JSON). 달마다 만든 줄을 작은 Blob으로 이어 붙여 큰 문자열 하나를 만들지 않고,
+ * 체크섬은 데스크톱 앱과 같은 끝 줄({"t":"end","sha256"})로 붙입니다. 읽는 도중의 저장은 막지 않습니다(데스크톱 주기 백업과 같은 기준).
+ */
+export async function createBackupBlob(years?: readonly string[]): Promise<Blob> {
+  for (let attempt = 1; ; attempt++) {
+    const seq = structuralCommitCount();
+    const hash = new Sha256();
+    const enc = new TextEncoder();
+    const parts: Blob[] = [];
+    for await (const line of backupLines({ years })) {
+      hash.update(enc.encode(line));
+      parts.push(new Blob([line]));
+    }
+    if (structuralCommitCount() === seq) {
+      parts.push(new Blob([ndjsonLine({ t: 'end', sha256: hash.digestHex() })]));
+      return new Blob(parts, { type: 'application/x-ndjson' });
+    }
+    if (attempt >= 3) throw new Error('백업하는 동안 내역이 다른 달로 옮겨지는 변경이 계속되어 백업하지 못했습니다. 잠시 뒤 다시 시도하세요.');
+  }
+}
+
 /** 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
-export const saveBackupFile = (prefix: string, years?: readonly string[]): Promise<string> => withBackupBusy(() => saveBackupFileNow(prefix, years));
-async function saveBackupFileNow(prefix: string, years?: readonly string[]): Promise<string> {
+/** onProgress(저장한 달, 전체 달): 데스크톱 앱에서 달마다 부릅니다(웹 브라우저는 한 번에 만들어 부르지 않음). */
+export type BackupProgress = (done: number, total: number) => void;
+
+export const saveBackupFile = (prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> =>
+  withBackupBusy(() => saveBackupFileNow(prefix, years, onProgress));
+async function saveBackupFileNow(prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> {
   await assertNoDemo();
   // 전체가 담기는 백업이면 변경 표시를 읽기 전에 내립니다: 백업하는 동안 생긴 변경은 표시가 다시 올라가 다음 자동 백업에 담깁니다.
   const full = !years || (years.length === 1 && (await isCompleteYearBackup(years[0])));
   const wasDirty = full && (await isDirtySinceBackup());
   if (wasDirty) await clearDirty();
   try {
-    return await saveBackupFileTo(prefix, years);
+    return await saveBackupFileTo(prefix, years, onProgress);
   } catch (e) {
     if (wasDirty) await markDirty();
     throw e;
   }
 }
-async function saveBackupFileTo(prefix: string, years?: readonly string[]): Promise<string> {
+async function saveBackupFileTo(prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> {
   const api = desktop();
   if (!api) {
     const name = backupFileName(prefix, years);
-    downloadText(await createBackupJson(years), name);
+    downloadBlob(await createBackupBlob(years), name);
     return name;
   }
-  const saved = await streamBackup(desktopSink(api, { kind: 'manual', name: `${backupFileName(prefix, years)}.gz` }), { years });
+  // 진행은 그 달의 순번으로 알립니다(백업을 처음부터 다시 써도 숫자가 맞음).
+  const want = years ? new Set(years) : null;
+  const months = onProgress ? (await listDonationMonths()).filter((m) => !want || want.has(m.slice(0, 4))) : [];
+  const onMonthRead = onProgress ? async (ym: string) => onProgress(months.indexOf(ym) + 1, months.length) : undefined;
+  const saved = await streamBackup(desktopSink(api, { kind: 'manual', name: `${backupFileName(prefix, years)}.gz` }), { years, onMonthRead });
   if (!saved) throw new Error('저장을 취소했습니다.');
   return saved;
 }

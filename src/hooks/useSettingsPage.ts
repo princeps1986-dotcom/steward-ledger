@@ -30,6 +30,7 @@ interface RestoreCandidate {
   yearRows: { year: string; count: number }[];
 }
 
+const CHECKING_FILE = { kind: 'info' as const, text: '백업 파일을 확인하고 있습니다… 파일이 크면 수십 초 걸릴 수 있습니다.' };
 const RESET_WAIT_SECONDS = 10;
 
 /** 성도·헌금 종류 합치기 결과 안내문(다른 PC의 백업이면 같은 성도·종류를 현재 데이터와 대응시킴) */
@@ -69,6 +70,7 @@ export function useSettingsPage() {
   const backupYear = years.includes(backupYearPick) ? backupYearPick : (years[years.length - 1] ?? '');
   const restoreYear = restore?.yearRows.some((r) => r.year === restoreYearPick) ? restoreYearPick : (restore?.yearRows[restore.yearRows.length - 1]?.year ?? '');
   const [busy, setBusy] = useState(false);
+  const [backupProgress, setBackupProgress] = useState<{ done: number; total: number } | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
@@ -124,7 +126,7 @@ export function useSettingsPage() {
     setBusy(true);
     try {
       const all = await isCompleteYearBackup(backupYear); // 다른 연도의 헌금·이력이 없을 때만 전체 백업으로 취급
-      const name = await saveBackupFile('backup', [backupYear]);
+      const name = await saveBackupFile('backup', [backupYear], (done, total) => setBackupProgress({ done, total }));
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
       setBackupOpen(false);
@@ -133,6 +135,7 @@ export function useSettingsPage() {
       setMessage({ kind: 'error', text: `백업 실패: ${(err as Error).message}` });
     } finally {
       setBusy(false);
+      setBackupProgress(null);
     }
   }, [markBackupDone, years, backupYear, backupBlocked]);
 
@@ -145,12 +148,17 @@ export function useSettingsPage() {
     e.target.value = '';
     if (!file || backupBlocked) return;
     setRestoreYearPick('');
+    setMessage(CHECKING_FILE); // 큰 파일은 검사(체크섬·형식)에 수십 초가 걸리므로 멈춘 것으로 보이지 않게 알립니다.
     if (await isNdjsonFile(file)) {
       // 줄 단위 백업: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음).
       setBusy(true);
       try {
-        const scan = await scanBackupFile(file);
+        // 데스크톱 앱은 체크섬을 main의 내장 기능으로 먼저 확인합니다(큰 파일에서 화면 쪽 계산보다 훨씬 빠름).
+        const checked = (await desktop()?.verifyBackupFile?.(file)) ?? null;
+        if (checked) return setMessage({ kind: 'error', text: `복원 불가: ${checked}` });
+        const scan = await scanBackupFile(file, { hashChecked: checked === '' });
         if (!scan.ok) return setMessage({ kind: 'error', text: `복원 불가: ${scan.error}` });
+        setMessage(null);
         const years = Object.keys(scan.yearCounts).sort();
         setRestore({
           mergeNotice: mergeNoticeOf(await planFor(scan)),
@@ -174,6 +182,7 @@ export function useSettingsPage() {
     const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
     // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
     const plan = await previewMerge(p);
+    setMessage(null);
     setRestore({
       mergeNotice: mergeNoticeOf(plan),
       envelope: res.envelope,
@@ -335,6 +344,7 @@ export function useSettingsPage() {
     cancelReset: () => setResetOpen(false),
     confirmReset,
     busy,
+    backupProgress,
     message,
   };
 }

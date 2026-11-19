@@ -98,20 +98,6 @@ export function ReportsPage() {
             </button>
           </>
         ) : null}
-        {/* 세대 집계 기준은 분기·연도 요약과 개인별·세대별 탭에만 쓰이므로 주별·월별 종합 보고서에서는 숨깁니다. */}
-        {!(f.personKind !== null && tab === 'SUMMARY') ? (
-          <div>
-            <span className="label">세대 집계 기준</span>
-            <div className="flex overflow-hidden rounded border border-gray-300">
-              <button className={`px-3 py-1.5 text-sm ${f.basis === 'CURRENT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'CURRENT'} onClick={() => f.setBasis('CURRENT')}>
-                현재 세대 기준
-              </button>
-              <button className={`px-3 py-1.5 text-sm ${f.basis === 'SNAPSHOT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'SNAPSHOT'} onClick={() => f.setBasis('SNAPSHOT')}>
-                납부 당시 세대 기준
-              </button>
-            </div>
-          </div>
-        ) : null}
         <div className="flex-1" />
         {/* 인쇄·PDF 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
         {tab === 'SUMMARY' ? (
