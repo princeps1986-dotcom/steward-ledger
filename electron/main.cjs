@@ -346,11 +346,15 @@ if (!app.requestSingleInstanceLock()) {
   // 복원할 백업 파일의 체크섬 확인(내장 SHA-256이라 화면 쪽 계산보다 훨씬 빠름). ''=통과, 문구=실패, null=확인하지 않음
   ipcMain.handle('backup:verify-file', async (_event, file) => {
     if (typeof file !== 'string' || !/\.(json|gz)$/i.test(file)) return null;
+    // UNC(\\서버\공유)·장치 경로(\\?\, \\.\)는 읽지 않는다(원격 인증 정보가 나가는 것을 막음)
+    if (/^(\\\\|\/\/)/.test(file)) return null;
     try {
       await verifyBackupFile(file);
       return '';
     } catch (err) {
-      return err instanceof Error ? err.message : String(err);
+      // 검증 실패 문구만 그대로 보내고, 파일 시스템 오류(경로가 섞인 메시지)는 고정 문구로 바꾼다
+      const msg = err instanceof Error ? err.message : '';
+      return msg.startsWith('백업 파일 검증 실패') ? msg : '백업 파일을 읽을 수 없습니다.';
     }
   });
   ipcMain.handle('backup:select-dir', async (event) => {
