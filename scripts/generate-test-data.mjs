@@ -26,7 +26,7 @@ const { members, offeringTypes, auditLogsByYear } = payload;
 
 // ── 백업 파일(체크섬 포함) 기록 ─────────────────────────
 const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
-const envelope = { appVersion: '1.1.0', schemaVersion: 2, exportedAt: new Date().toISOString(), checksum, payload };
+const envelope = { appVersion: '1.0.0', schemaVersion: 2, exportedAt: new Date().toISOString(), checksum, payload };
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(envelope), 'utf8');
 
