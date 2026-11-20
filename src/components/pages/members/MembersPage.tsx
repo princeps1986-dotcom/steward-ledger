@@ -19,12 +19,18 @@ const COLUMNS: { key: MemberSortKey; label: string }[] = [
   { key: 'family', label: '세대' },
 ];
 
-/** 정렬 가능한 열임을 항상 보여 주는 표시: 현재 기준 열은 ▲/▼(진하게), 나머지는 ↕(연하게) */
-function SortMark({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
+/** 누르면 정렬하는 머리글. 정렬 가능한 열임을 항상 보여 줍니다: 현재 기준 열은 ▲/▼(진하게), 나머지는 ↕(연하게) */
+function SortTh({ sortKey, label, className, sort, onSort }: { sortKey: MemberSortKey; label: string; className: string; sort: { key: MemberSortKey; dir: 'asc' | 'desc' }; onSort(key: MemberSortKey): void }) {
+  const active = sort.key === sortKey;
   return (
-    <span aria-hidden="true" className={`ml-1 text-[10px] ${active ? 'text-blue-600' : 'text-gray-300'}`}>
-      {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
-    </span>
+    <th className={className} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className="font-semibold hover:text-blue-700" onClick={() => onSort(sortKey)} title="누르면 이 열 기준으로 정렬합니다">
+        {label}
+        <span aria-hidden="true" className={`ml-1 text-[10px] ${active ? 'text-blue-600' : 'text-gray-300'}`}>
+          {active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+        </span>
+      </button>
+    </th>
   );
 }
 
@@ -59,21 +65,11 @@ export function MembersPage() {
             <tr>
               <th className="th w-12 text-center">No</th>
               {COLUMNS.map((c) => (
-                <th key={c.key} className={c.key === 'phoneLast4' ? 'th text-center' : c.key === 'name' ? 'th !left-0 !z-20' : 'th'} aria-sort={p.sort.key === c.key ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                  <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort(c.key)} title="누르면 이 열 기준으로 정렬합니다">
-                    {c.label}
-                    <SortMark active={p.sort.key === c.key} dir={p.sort.dir} />
-                  </button>
-                </th>
+                <SortTh key={c.key} sortKey={c.key} label={c.label} className={c.key === 'phoneLast4' ? 'th text-center' : c.key === 'name' ? 'th !left-0 !z-20' : 'th'} sort={p.sort} onSort={p.toggleSort} />
               ))}
               <th className="th text-center">세대주</th>
               <th className="th">등록일</th>
-              <th className="th" aria-sort={p.sort.key === 'state' ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort('state')} title="누르면 이 열 기준으로 정렬합니다">
-                  상태
-                  <SortMark active={p.sort.key === 'state'} dir={p.sort.dir} />
-                </button>
-              </th>
+              <SortTh sortKey="state" label="상태" className="th" sort={p.sort} onSort={p.toggleSort} />
               <th className="th text-right">관리</th>
             </tr>
           </thead>

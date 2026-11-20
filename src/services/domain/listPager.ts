@@ -1,14 +1,14 @@
 import type { Donation } from '../../contexts/types';
 import { filterByDonor, sortForList } from './donationList';
 
-export interface ListCriteria {
+interface ListCriteria {
   query: string;
   /** 주별처럼 달의 일부만 볼 때의 날짜 범위(양 끝 포함). 없으면 달 전체 */
   range: { start: string; end: string } | null;
 }
 
 /** 한 달의 조건에 맞는 내역 요약. rows는 최신순이며, 메모리 예산을 넘으면 건수·합계만 남기고 null */
-export interface ListSlice {
+interface ListSlice {
   version: string;
   count: number;
   total: number;

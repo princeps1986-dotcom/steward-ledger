@@ -55,7 +55,7 @@ async function parseNdjson(text: string): Promise<{ appVersion?: string; exporte
 /** payload의 JSON 직렬화 문자열에 대한 SHA-256 */
 export const computeChecksum = (payload: unknown): Promise<string> => sha256Hex(JSON.stringify(payload));
 
-export type BackupParseResult =
+type BackupParseResult =
   | { ok: true; envelope: BackupEnvelope; migratedFrom: number | null }
   | { ok: false; error: string };
 

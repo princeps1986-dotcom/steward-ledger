@@ -494,10 +494,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     return Buffer.concat(parts);
   });
-  ipcMain.handle('backup:close-reader', (_event, id) => {
+  ipcMain.handle('backup:close-reader', (event, id) => {
     const r = readers.get(id);
+    if (!r || r.sender !== event.sender) return true;
     readers.delete(id);
-    if (r) r.stream.destroy();
+    r.stream.destroy();
     return true;
   });
   ipcMain.handle('backup:select-dir', async (event) => {
@@ -603,7 +604,12 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler(() => false);
     protocol.handle('app', async (request) => {
       const { pathname } = new URL(request.url);
-      const rel = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
+      let rel;
+      try {
+        rel = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
+      } catch {
+        return new Response('Bad Request', { status: 400 });
+      }
       const file = path.normalize(path.join(DIST, rel));
       if (!file.startsWith(DIST + path.sep)) return new Response('Forbidden', { status: 403 });
       const res = await net.fetch(pathToFileURL(file).toString());

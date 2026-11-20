@@ -116,7 +116,7 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
   return <OfferingCtx.Provider value={value}>{children}</OfferingCtx.Provider>;
 }
 
-export function useOfferingSelector<T>(selector: (s: OfferingState) => T): T {
+function useOfferingSelector<T>(selector: (s: OfferingState) => T): T {
   return useContextSelector(OfferingCtx, (s) => {
     if (!s) throw new Error('OfferingTypeProvider가 필요합니다.');
     return selector(s);

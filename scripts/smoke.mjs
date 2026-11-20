@@ -61,7 +61,7 @@ try {
   check('보안: 최소 API만 노출', (await ev('typeof window.desktop?.backupBegin')) === 'function');
   const csp = await ev('fetch(location.href).then(r => r.headers.get("content-security-policy"))');
   check('보안: CSP 헤더가 있음', typeof csp === 'string' && csp.includes("default-src 'self'"));
-  const perm = await ev('new Promise((res) => navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code)))');
+  const perm = await ev('new Promise((res) => navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code), { timeout: 5000 }))');
   check('보안: 위치 권한 요청이 거부됨', perm === '거부', perm);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);

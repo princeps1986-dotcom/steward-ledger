@@ -1,6 +1,6 @@
 // Electron preload(contextBridge)가 노출하는 최소 API. 일반 브라우저(개발용)에서는 undefined입니다.
 
-export interface AutoBackupStatus {
+interface AutoBackupStatus {
   ok: boolean;
   at: string;
   file?: string;
@@ -12,7 +12,7 @@ export interface AutoBackupPayload {
   file: string;
 }
 
-/** close = 종료 때 · periodic = 앱을 쓰는 동안 · emergency = 복원·초기화 직전(name 필요) · manual = 저장 위치를 고름(name 필요) */
+/** close = 종료 때 · periodic = 앱을 쓰는 동안 · emergency = 초기화 직전(name 필요) · manual = 저장 위치를 고름(name 필요) */
 export interface BackupSessionSpec {
   kind: 'close' | 'periodic' | 'emergency' | 'manual';
   /** close·periodic에서 사용자가 선택한 폴더(설정값). main이 허용한 폴더가 아니면 무시됩니다. */
@@ -24,7 +24,7 @@ export interface BackupSessionSpec {
 }
 
 /** 백업 파일 종류: plain(예전 일반 파일) · pc(이 PC의 자동 백업) · password(암호가 필요한 직접 백업). error면 열 수 없음 */
-export interface BackupFileInfo {
+interface BackupFileInfo {
   kind?: 'plain' | 'pc' | 'password';
   error?: string;
 }

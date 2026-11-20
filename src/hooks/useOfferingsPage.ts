@@ -21,7 +21,7 @@ const emptyForm = (nextOrder: number): FormState => ({
 });
 
 /** 금액은 '/'로 구분합니다. 쉼표는 천 단위 표기로 간주해 제거합니다. "10,000 / 50000" → [10000, 50000] */
-export function parseQuickAmounts(text: string): number[] | string {
+function parseQuickAmounts(text: string): number[] | string {
   const parts = text.split('/').map((p) => p.replace(/[,\s]/g, '')).filter(Boolean);
   const nums: number[] = [];
   for (const p of parts) {

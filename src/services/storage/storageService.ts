@@ -52,7 +52,7 @@ export async function wipeDonationsWrites(): Promise<Write[]> {
 /** 그 달의 행만 바꿉니다(저장·수정·삭제). */
 export const rowWrite = (ym: string, ops: RowOps): Write => ({ key: donationKey(ym), value: null, rowOps: ops });
 
-export type Reader = <T>(key: string) => Promise<T | null>;
+type Reader = <T>(key: string) => Promise<T | null>;
 
 const stripRow = ({ year: _y, seq: _s, ...log }: AuditRow): AuditLog => log;
 

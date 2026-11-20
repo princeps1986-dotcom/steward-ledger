@@ -10,7 +10,7 @@ import { shiftWeek } from '../services/domain/calendar';
 import { isValidDateString, lastSunday, withWeekday } from '../services/domain/dates';
 import { memberLabel, searchMembers } from '../services/domain/search';
 
-export interface DuplicateItem {
+interface DuplicateItem {
   typeName: string;
   newAmount: number;
   existing: Donation;
@@ -488,7 +488,7 @@ export function useDonationInput() {
   };
 }
 
-export type DonationInputController = ReturnType<typeof useDonationInput>;
+type DonationInputController = ReturnType<typeof useDonationInput>;
 export type MemberSearchController = DonationInputController['search'];
 export type QuickRegisterController = DonationInputController['quickRegister'];
 export type LargeAmountController = DonationInputController['largeAmount'];

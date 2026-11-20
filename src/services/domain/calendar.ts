@@ -3,7 +3,7 @@ import { addDays, addWeeks, endOfMonth, endOfWeek, format, parseISO, startOfWeek
 /** 요일 머리글 (일요일 시작) */
 export const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'] as const;
 
-export interface CalendarCell {
+interface CalendarCell {
   /** YYYY-MM-DD */
   date: string;
   day: number;

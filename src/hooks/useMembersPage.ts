@@ -5,7 +5,7 @@ import { canDeactivate, currentHeadOf, EMPTY_MEMBER_DRAFT, linkedHeadIdOf, regis
 import { memberComparator, type MemberSortKey, type SortDir } from '../services/domain/memberSort';
 import { matchMember } from '../services/domain/search';
 
-export interface MemberRow {
+interface MemberRow {
   member: Member;
   familyLabel: string;
   stateLabel: string;

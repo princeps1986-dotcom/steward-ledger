@@ -3,7 +3,7 @@ import { nowIso } from '../domain/ids';
 import { applyMemberSave, EMPTY_MEMBER_DRAFT } from '../domain/memberRules';
 import { normalizePosition } from '../domain/positions';
 
-export interface ImportRow {
+interface ImportRow {
   rowNo: number;
   name: string;
   position: string;
@@ -12,7 +12,7 @@ export interface ImportRow {
   headName: string;
 }
 
-export type ImportStatus = 'OK' | 'WARN' | 'ERROR' | 'DUPLICATE';
+type ImportStatus = 'OK' | 'WARN' | 'ERROR' | 'DUPLICATE';
 
 export interface PreviewRow extends ImportRow {
   status: ImportStatus;
@@ -37,7 +37,7 @@ const HEADER_ALIASES: Record<keyof Omit<ImportRow, 'rowNo'>, string[]> = {
   headName: ['세대주이름', '세대주 이름', '세대주'],
 };
 
-export const TEMPLATE_HEADERS = ['이름', '직분', '연락처뒷4자리', '세대주여부', '세대주이름'];
+const TEMPLATE_HEADERS = ['이름', '직분', '연락처뒷4자리', '세대주여부', '세대주이름'];
 
 export function templateCsv(): string {
   const rows = [TEMPLATE_HEADERS, ['김철수', '집사', '1234', 'Y', ''], ['이영희', '권사', '5678', 'N', '김철수']];

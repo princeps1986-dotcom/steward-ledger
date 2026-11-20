@@ -16,7 +16,7 @@ export async function hasDemoData(): Promise<boolean> {
 }
 
 /** 시연 중에 백업·복원을 막을 때의 안내 문구 */
-export const DEMO_BLOCK_MESSAGE = '시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다.\n먼저 [시연 데이터 제거]를 누르세요.';
+const DEMO_BLOCK_MESSAGE = '시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다.\n먼저 [시연 데이터 제거]를 누르세요.';
 
 /** 시연 데이터가 있거나 만드는 중인지(저장소에서 직접 확인하므로 앱 시작 직후에도 정확) */
 export async function isDemoBusy(): Promise<boolean> {
@@ -33,7 +33,7 @@ let active = false;
 const listeners = new Set<() => void>();
 
 /** 시연 데이터를 뒤에서 이어 만드는 중이면 진행(끝낸 달/전체 달), 아니면 null */
-export interface DemoCreating {
+interface DemoCreating {
   done: number;
   total: number;
 }

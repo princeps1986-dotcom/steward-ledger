@@ -1,4 +1,4 @@
-export type AmountParse =
+type AmountParse =
   | { kind: 'empty' }
   | { kind: 'ok'; value: number }
   | { kind: 'invalid'; reason: string };

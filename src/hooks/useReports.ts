@@ -217,7 +217,7 @@ export type ReportFilters = ReturnType<typeof useReportFilters>;
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
 /** 보고서에서 숨기기로 한 헌금 종류의 내역을 뺍니다(화면·인쇄·PDF 저장 공통). */
-export function withoutTypes<T extends { offeringTypeId: string }>(donations: readonly T[], hidden: ReadonlySet<string>): readonly T[] {
+function withoutTypes<T extends { offeringTypeId: string }>(donations: readonly T[], hidden: ReadonlySet<string>): readonly T[] {
   return hidden.size === 0 ? donations : donations.filter((d) => !hidden.has(d.offeringTypeId));
 }
 
@@ -576,7 +576,8 @@ export function useReportExport(f: ReportFilters) {
     // 인쇄 중에만 전체 행을 그리는 화면이 있어, 인쇄와 같은 상태가 되도록 이벤트를 직접 보냅니다.
     window.dispatchEvent(new Event('beforeprint'));
     try {
-      if (await d.savePdf(fileName)) say('PDF를 저장하는 중입니다…');
+      // 저장이 끝나면 main이 응답보다 먼저 download:done을 보내 완료 문구·[파일 열기]를 띄우므로 여기서 문구를 바꾸지 않습니다.
+      await d.savePdf(fileName);
     } catch (err) {
       say(`PDF 저장 실패: ${(err as Error).message}`);
     } finally {

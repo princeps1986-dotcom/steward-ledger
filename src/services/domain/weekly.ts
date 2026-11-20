@@ -2,12 +2,12 @@ import type { Donation, OfferingType } from '../../contexts/types';
 import { weekdayLabelOf, type WeekRange } from './calendar';
 import { compareKo, compareKoNumeric } from './compare';
 
-export interface WeeklyColumn {
+interface WeeklyColumn {
   id: string;
   name: string;
 }
 
-export interface WeeklyRow {
+interface WeeklyRow {
   /** 성도 ID 또는 무명/방문자 표기명 기반 키 */
   key: string;
   name: string;
@@ -17,7 +17,7 @@ export interface WeeklyRow {
   total: number;
 }
 
-export interface WeeklyMatrix {
+interface WeeklyMatrix {
   columns: WeeklyColumn[];
   rows: WeeklyRow[];
   columnTotals: number[];

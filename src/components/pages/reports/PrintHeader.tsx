@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { formatPrintStamp, seoulNow } from '../../../services/domain/dates';
 
-export interface PrintStat {
+interface PrintStat {
   label: string;
   value: string;
 }

@@ -36,7 +36,7 @@ export function buildDonation(draft: DonationDraft, id = newId(), now = nowIso()
   };
 }
 
-export function joinMemo(a?: string, b?: string): string | undefined {
+function joinMemo(a?: string, b?: string): string | undefined {
   const parts = [a?.trim(), b?.trim()].filter((s): s is string => !!s);
   return parts.length ? parts.join(' / ') : undefined;
 }
@@ -66,7 +66,7 @@ export const REASON_MERGE = '동일 내역 복수 헌금 합산';
 export const REASON_UNDO = '입력 직후 되돌리기';
 
 /** 수정·삭제 사유에 들어가야 하는 한글 글자 수(공백·숫자·영문은 세지 않음) */
-export const MIN_REASON_HANGUL = 4;
+const MIN_REASON_HANGUL = 4;
 
 /** 사유 검사: 양 옆 공백을 뺀 글자가 비어 있지 않고 한글이 4글자 이상이어야 합니다. 통과하면 null, 아니면 안내 문구. */
 export function validateReason(raw: string): string | null {

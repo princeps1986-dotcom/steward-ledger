@@ -1,6 +1,6 @@
 import type { Donation } from '../../contexts/types';
 
-export const ANONYMOUS_PREFIX = '무명';
+const ANONYMOUS_PREFIX = '무명';
 const ANON_RE = /^무명(\d+)$/;
 
 /**

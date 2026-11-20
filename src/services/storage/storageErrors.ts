@@ -4,7 +4,7 @@
  * 업무 규칙 오류(예: "수정할 내역을 찾을 수 없습니다")는 손대지 않고 그대로 돌려줍니다. 원래 오류는 cause에 남습니다.
  */
 
-export type StorageErrorKind = 'QUOTA' | 'VERSION' | 'UNAVAILABLE';
+type StorageErrorKind = 'QUOTA' | 'VERSION' | 'UNAVAILABLE';
 
 export class StorageError extends Error {
   readonly kind: StorageErrorKind;

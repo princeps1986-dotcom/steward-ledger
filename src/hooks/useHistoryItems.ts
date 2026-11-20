@@ -3,7 +3,7 @@ import { useDonationMonthsRecord, useSaveHistory } from '../contexts/DonationCon
 import { useOfferingTypeById } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 
-export interface HistoryLine {
+interface HistoryLine {
   key: string;
   typeName: string;
   amount: number;
@@ -12,7 +12,7 @@ export interface HistoryLine {
   donation: Donation | null;
 }
 
-export interface HistoryItem {
+interface HistoryItem {
   batchId: string;
   donorDisplayName: string;
   savedAt: string;

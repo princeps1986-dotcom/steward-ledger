@@ -25,7 +25,7 @@ export const EMPTY_MEMBER_DRAFT: MemberDraft = {
 
 export type MemberSaveResult = { ok: true; members: Member[]; saved: Member } | { ok: false; error: string };
 
-export function validateDraft(d: MemberDraft): string | null {
+function validateDraft(d: MemberDraft): string | null {
   if (!d.name.trim()) return '이름을 입력하세요.';
   if (d.phoneLast4 && !/^\d{4}$/.test(d.phoneLast4)) return '연락처 뒷자리는 숫자 4자리입니다.';
   if (d.registeredAt && !isValidDateString(d.registeredAt)) return '등록일이 올바른 날짜가 아닙니다.';

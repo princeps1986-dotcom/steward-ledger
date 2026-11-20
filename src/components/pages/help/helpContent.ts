@@ -12,7 +12,7 @@ const DATA_STORAGE_BROWSER: HelpParagraph[] = [
   { text: '모든 기록은 이 브라우저(이 기기)의 저장 공간에 보관됩니다.\n브라우저의 사이트 데이터를 지우면 기록도 함께 사라집니다.\n다른 컴퓨터로 옮기거나 보관하려면 [설정 정보]에서 백업 파일을 만든 뒤 복원하세요.', highlight: true },
 ];
 const dataStorageBody = (): HelpParagraph[] => (desktop() ? DATA_STORAGE_DESKTOP : DATA_STORAGE_BROWSER);
-export interface HelpItem {
+interface HelpItem {
   heading: string;
   /** 문단 목록. 화면에서는 문장(마침표 뒤)·①②③ 단위로 줄을 나누어 보여 줍니다. highlight 문단은 눈에 띄게 강조합니다. */
   body: HelpParagraph[];
@@ -20,7 +20,7 @@ export interface HelpItem {
 
 export type HelpParagraph = string | { text: string; highlight: true };
 
-export interface HelpSection {
+interface HelpSection {
   id: string;
   /** 상단 메뉴 이름과 동일 */
   title: string;

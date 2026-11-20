@@ -28,7 +28,7 @@ export async function buildAutoBackup(settings: AppSettings): Promise<AutoBackup
 export const PERIODIC_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 
 /** main이 다른 백업(직접·종료)이 시작되며 진행 중이던 자동 백업 세션을 취소했을 때의 오류 문구(일부) */
-export const BACKUP_CANCELLED_TEXT = '백업이 취소되었거나 시작되지 않았습니다';
+const BACKUP_CANCELLED_TEXT = '백업이 취소되었거나 시작되지 않았습니다';
 
 /**
  * 주기 백업(autosave_*, 최근 3개 보관): 변경이 있을 때만, 마지막 전체 백업(종료·직접 백업) 이후 바뀐 연도만 달마다 나누어 읽으며 파일로 저장하고

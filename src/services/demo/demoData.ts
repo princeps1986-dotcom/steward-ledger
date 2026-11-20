@@ -111,7 +111,7 @@ function buildMembers(rnd: () => number, count: number): Member[] {
   return members;
 }
 
-export interface DemoPlan {
+interface DemoPlan {
   members: Member[];
   offeringTypes: BackupPayload['offeringTypes'];
   /** 헌금이 있는 달('YYYY-MM', 오래된 순) */

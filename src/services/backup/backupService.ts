@@ -140,7 +140,7 @@ export function desktopSink(api: DesktopApi, spec: BackupSessionSpec): BackupSin
 }
 
 /** 연도를 선택해 만든 백업은 파일 이름에 연도를 넣습니다: backup_2025_…, backup_2024-2026_… */
-export function backupYearsLabel(years?: readonly string[]): string {
+function backupYearsLabel(years?: readonly string[]): string {
   if (!years || years.length === 0) return '';
   const s = [...years].sort();
   return s.length === 1 ? s[0] : `${s[0]}-${s[s.length - 1]}`;
@@ -149,7 +149,7 @@ export function backupYearsLabel(years?: readonly string[]): string {
 /** 데스크톱 앱의 백업 파일 이름(암호화한 .slbk) */
 const slbkName = (jsonName: string): string => jsonName.replace(/\.json$/, '.slbk');
 
-export const backupFileName = (prefix = 'backup', years?: readonly string[]): string => {
+const backupFileName = (prefix = 'backup', years?: readonly string[]): string => {
   const label = backupYearsLabel(years);
   return `${prefix}${label ? `_${label}` : ''}_${nowStamp()}.json`;
 };
@@ -205,7 +205,7 @@ export async function createBackupBlob(years?: readonly string[]): Promise<Blob>
 }
 
 /** onProgress(저장한 달, 전체 달): 데스크톱 앱에서 달마다 부릅니다(웹 브라우저는 한 번에 만들어 부르지 않음). */
-export type BackupProgress = (done: number, total: number) => void;
+type BackupProgress = (done: number, total: number) => void;
 
 /**
  * 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록).
@@ -266,7 +266,7 @@ export async function previewMerge(payload: BackupPayload): Promise<MergePlan> {
   return planMerge({ members, offeringTypes }, payload);
 }
 
-export type RestoreMode = 'YEARS' | 'FULL';
+type RestoreMode = 'YEARS' | 'FULL';
 
 const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Record<string, T[]> =>
   Object.fromEntries(Object.entries(by).filter(([y]) => years.has(y)));

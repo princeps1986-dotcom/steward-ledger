@@ -92,7 +92,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   return <MemberCtx.Provider value={value}>{children}</MemberCtx.Provider>;
 }
 
-export function useMemberSelector<T>(selector: (s: MemberState) => T): T {
+function useMemberSelector<T>(selector: (s: MemberState) => T): T {
   return useContextSelector(MemberCtx, (s) => {
     if (!s) throw new Error('MemberProvider가 필요합니다.');
     return selector(s);

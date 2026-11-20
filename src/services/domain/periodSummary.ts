@@ -1,6 +1,6 @@
 import type { Donation } from '../../contexts/types';
 
-export interface TypeSums {
+interface TypeSums {
   amount: number;
   /** 무명(성도 미지정) 헌금 합계 */
   anonymous: number;

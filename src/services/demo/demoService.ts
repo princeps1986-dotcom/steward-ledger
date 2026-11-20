@@ -7,7 +7,7 @@ import { buildDemoAudits, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, planDemo, type DemoS
 import { hasDemoData, refreshDemoState, setDemoCreating } from './demoState';
 
 /** 데스크톱 앱이면 앱 규격(20만 건), 브라우저면 더 작은 규격(약 13만 건)을 씁니다. */
-export const demoSpecForDevice = (): DemoSpec => (desktop() ? DEMO_SPEC_APP : DEMO_SPEC_BROWSER);
+const demoSpecForDevice = (): DemoSpec => (desktop() ? DEMO_SPEC_APP : DEMO_SPEC_BROWSER);
 
 /** 최근 이 달 수만큼 저장하면 바로 쓸 수 있다고 알립니다(나머지 과거 달은 이어서 만듭니다). */
 const READY_MONTHS = 3;

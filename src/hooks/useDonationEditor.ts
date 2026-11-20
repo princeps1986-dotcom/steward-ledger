@@ -9,7 +9,7 @@ import { validateReason } from '../services/domain/donationOps';
 import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
 
-export type EditorMode = 'EDIT' | 'DELETE';
+type EditorMode = 'EDIT' | 'DELETE';
 
 interface EditDraft {
   date: string;

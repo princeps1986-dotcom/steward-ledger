@@ -93,7 +93,7 @@ export interface BackupScan {
   monthCounts: Record<string, number>;
 }
 
-export type ScanResult = ({ ok: true } & BackupScan) | { ok: false; error: string };
+type ScanResult = ({ ok: true } & BackupScan) | { ok: false; error: string };
 
 const bad = (error: string): ScanResult => ({ ok: false, error });
 const parse = (line: string): Record<string, unknown> | null => {

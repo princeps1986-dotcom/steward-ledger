@@ -12,7 +12,7 @@ export type AuditRow = AuditLog & { year: string; seq?: number };
  *  - audits(v2): 수정/삭제 이력 한 건이 한 행. 기본키는 자동 증가 번호(기록 순서), 색인은 연도.
  *    v1은 연도별 배열(kv의 audit_logs_YYYY)이라 수정할 때마다 그 해 이력 전체를 다시 썼습니다.
  */
-export class LedgerDB extends Dexie {
+class LedgerDB extends Dexie {
   kv!: Table<unknown, string>;
   donations!: Table<Donation, [string, string]>;
   audits!: Table<AuditRow, number>;
