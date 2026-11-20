@@ -42,7 +42,7 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
                 </button>
               </div>
             </div>
-            <MemberSearchBox c={c} />
+            <MemberSearchBox s={c.search} />
           </div>
 
           <div className="space-y-2">
@@ -50,14 +50,15 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
             {c.primaryTypes.map((t) => (
               <AmountRow
                 key={t.id}
+                typeId={t.id}
                 label={t.name}
                 value={c.amounts[t.id] ?? ''}
                 quickAmounts={t.quickAmounts}
-                inputRef={c.bindField(t.id)}
-                onChange={(v) => c.onAmountChange(t.id, v)}
-                onQuick={(n) => c.onQuickAmount(t.id, n)}
-                onClear={() => c.onClearAmount(t.id)}
-                onKeyDown={c.onFieldKeyDown(t.id)}
+                bindField={c.bindField}
+                onFieldKeyDown={c.onFieldKeyDown}
+                onAmountChange={c.onAmountChange}
+                onQuickAmount={c.onQuickAmount}
+                onClearAmount={c.onClearAmount}
                 keepFocus={c.keepFocus}
               />
             ))}
@@ -114,9 +115,9 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
       <HistoryPanel canUndo={c.canUndo} onUndo={() => void c.undo()} onEdit={(d) => editor.open(d, 'EDIT')} />
       <DonationEditModal editor={editor} />
 
-      <QuickRegisterModal c={c} />
-      <LargeAmountModal c={c} />
-      <DuplicateModal c={c} />
+      <QuickRegisterModal qr={c.quickRegister} />
+      <LargeAmountModal large={c.largeAmount} />
+      <DuplicateModal dup={c.duplicate} />
     </div>
   );
 }

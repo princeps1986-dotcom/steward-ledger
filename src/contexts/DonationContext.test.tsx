@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAllData } from '../services/backup/backupService';
 import { donationKey, getItem, monthWrite, transact } from '../services/storage/storageService';
@@ -265,6 +265,42 @@ describe('DonationContext', () => {
       await result.current.s.actions.saveBatch([draft('2025-09-07')], 'MERGE');
     });
     expect(result.current.list).toBe(before);
+  });
+
+  it('useDonationMonths만 쓰는 컴포넌트는 메모리에 올라간 다른 달에 저장해도 다시 렌더되지 않는다', async () => {
+    await seed({ '2025-08': [don('a', '2025-08-03')], '2025-09': [don('b', '2025-09-07')] });
+    const saver: { s?: ReturnType<typeof useAll> } = {};
+    const Saver = () => {
+      saver.s = useAll();
+      return null;
+    };
+    const w = ({ children }: { children: ReactNode }) => (
+      <DonationProvider>
+        <Saver />
+        {children}
+      </DonationProvider>
+    );
+    // 실제로 커밋된 렌더만 셉니다(use-context-selector가 값 비교 후 버리는 렌더는 제외).
+    let commits = 0;
+    const { result } = renderHook(() => {
+      useEffect(() => {
+        commits++;
+      });
+      return useDonationMonths(['2025-08']);
+    }, { wrapper: w });
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    await act(() => saver.s!.actions.ensureMonths(['2025-09']));
+    const before = commits;
+    await act(async () => {
+      await saver.s!.actions.saveBatch([draft('2025-09-14')], 'MERGE');
+    });
+    expect(saver.s!.months['2025-09']).toHaveLength(2);
+    expect(commits).toBe(before);
+    // 같은 달에 저장하면 반영된다
+    await act(async () => {
+      await saver.s!.actions.saveBatch([draft('2025-08-10', 1000, 't2')], 'MERGE');
+    });
+    expect(result.current).toHaveLength(2);
   });
 
   it('달을 비우면 연도 목록에서 사라지고, 연도 목록은 마지막 읽기 결과를 따른다', async () => {

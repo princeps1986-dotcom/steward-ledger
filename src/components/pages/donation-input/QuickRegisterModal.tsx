@@ -1,11 +1,12 @@
-import type { DonationInputController } from '../../../hooks/useDonationInput';
+import { memo } from 'react';
+import { preventAutoFocus, type QuickRegisterController } from '../../../hooks/useDonationInput';
 import { useMemberForm } from '../../../hooks/useMemberForm';
 import { EMPTY_MEMBER_DRAFT } from '../../../services/domain/memberRules';
 import { MemberFormFields } from '../../shared/MemberFormFields';
 import { Modal } from '../../shared/Modal';
 
-function QuickRegisterForm({ c }: { c: DonationInputController }) {
-  const form = useMemberForm({ initial: { ...EMPTY_MEMBER_DRAFT, name: c.quickRegisterName }, onSaved: c.onQuickRegistered });
+function QuickRegisterForm({ qr }: { qr: QuickRegisterController }) {
+  const form = useMemberForm({ initial: { ...EMPTY_MEMBER_DRAFT, name: qr.name }, onSaved: qr.onRegistered });
   return (
     <form
       onSubmit={(e) => {
@@ -15,7 +16,7 @@ function QuickRegisterForm({ c }: { c: DonationInputController }) {
     >
       <MemberFormFields {...form} />
       <div className="mt-5 flex justify-end gap-2">
-        <button type="button" className="btn" onClick={c.closeQuickRegister}>
+        <button type="button" className="btn" onClick={qr.onClose}>
           취소
         </button>
         <button type="submit" className="btn-primary" disabled={form.saving}>
@@ -26,17 +27,17 @@ function QuickRegisterForm({ c }: { c: DonationInputController }) {
   );
 }
 
-export function QuickRegisterModal({ c }: { c: DonationInputController }) {
+export const QuickRegisterModal = memo(function QuickRegisterModal({ qr }: { qr: QuickRegisterController }) {
   return (
     <Modal
-      open={c.quickRegisterOpen}
+      open={qr.open}
       overflowVisible
-      onClose={c.closeQuickRegister}
-      onCloseAutoFocus={c.preventAutoFocus}
+      onClose={qr.onClose}
+      onCloseAutoFocus={preventAutoFocus}
       title="새 성도 즉시 등록"
       description="등록하면 바로 선택되고 금액 입력 칸으로 이동합니다."
     >
-      {c.quickRegisterOpen ? <QuickRegisterForm c={c} /> : null}
+      {qr.open ? <QuickRegisterForm qr={qr} /> : null}
     </Modal>
   );
-}
+});

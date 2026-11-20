@@ -519,7 +519,6 @@ export const useNextAnonymousName = (date: string): string =>
 export function useDonationMonths(yms: readonly string[]): Donation[] {
   const actions = useDonationActions();
   const epoch = useDonationSelector((s) => s.epoch);
-  const months = useDonationSelector((s) => s.months);
   const key = yms.join(',');
   useEffect(() => {
     const list = key ? key.split(',') : [];
@@ -527,13 +526,15 @@ export function useDonationMonths(yms: readonly string[]): Donation[] {
     void actions.ensureMonths(list);
     return unpin;
   }, [actions, key, epoch]);
-  const parts = yms.map((m) => months[m] ?? EMPTY);
+  // 셀렉터가 요청한 달 배열이 그대로면 이전 결과를 돌려주므로, 다른 달이 바뀌어도 이 컴포넌트는 다시 렌더되지 않습니다.
   const memo = useRef<{ parts: Donation[][]; value: Donation[] } | null>(null);
-  const prev = memo.current;
-  if (!prev || prev.parts.length !== parts.length || parts.some((p, i) => p !== prev.parts[i])) {
+  return useDonationSelector((s) => {
+    const parts = yms.map((m) => s.months[m] ?? EMPTY);
+    const prev = memo.current;
+    if (prev && prev.parts.length === parts.length && parts.every((p, i) => p === prev.parts[i])) return prev.value;
     memo.current = { parts, value: parts.length === 1 ? parts[0] : parts.flat() };
-  }
-  return memo.current!.value;
+    return memo.current.value;
+  });
 }
 /** 지정한 달 중 하나라도 읽기에 실패했는지(다시 읽으려면 actions.ensureMonths) */
 export const useMonthsLoadFailed = (yms: readonly string[]): boolean => useDonationSelector((s) => yms.some((ym) => s.failedMonths[ym]));

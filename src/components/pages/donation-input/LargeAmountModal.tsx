@@ -1,21 +1,22 @@
-import type { DonationInputController } from '../../../hooks/useDonationInput';
+import { memo } from 'react';
+import { preventAutoFocus, type LargeAmountController } from '../../../hooks/useDonationInput';
 import { formatWon } from '../../../services/domain/amount';
 import { Modal } from '../../shared/Modal';
 
-export function LargeAmountModal({ c }: { c: DonationInputController }) {
-  const p = c.pendingLarge;
+export const LargeAmountModal = memo(function LargeAmountModal({ large }: { large: LargeAmountController }) {
+  const p = large.pending;
   return (
     <Modal
       open={!!p}
-      onClose={c.cancelLarge}
-      onCloseAutoFocus={c.preventAutoFocus}
+      onClose={large.onCancel}
+      onCloseAutoFocus={preventAutoFocus}
       title="금액을 확인해 주세요"
       footer={
         <>
-          <button className="btn" onClick={c.cancelLarge}>
+          <button className="btn" onClick={large.onCancel}>
             다시 입력
           </button>
-          <button className="btn-primary" autoFocus onClick={() => void c.confirmLarge()}>
+          <button className="btn-primary" autoFocus onClick={() => void large.onConfirm()}>
             확인
           </button>
         </>
@@ -30,4 +31,4 @@ export function LargeAmountModal({ c }: { c: DonationInputController }) {
       </ul>
     </Modal>
   );
-}
+});

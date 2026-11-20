@@ -1,9 +1,10 @@
+import { memo } from 'react';
 import { useDailyTotals } from '../../../hooks/useDailyTotals';
 import { formatNumber, formatWon } from '../../../services/domain/amount';
 import { DateText } from '../../shared/DateText';
 
 /** 선택일 합계 대조 (입력 칸 변경에는 리렌더되지 않도록 별도 컴포넌트로 분리) */
-export function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?: number }) {
+export const DailyTotalsBar = memo(function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?: number }) {
   const t = useDailyTotals(date);
   return (
     <section className="card flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -58,4 +59,4 @@ export function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?
       </div>
     </section>
   );
-}
+});

@@ -346,15 +346,18 @@ export function useDonationInput() {
     focusField(MEMO_FIELD);
   }, [focusField]);
 
+  // requestSave는 입력값마다 바뀌므로 ref로 읽어 onFieldKeyDown을 고정합니다(금액 칸 memo가 키 입력마다 깨지지 않도록).
+  const requestSaveRef = useRef(requestSave);
+  requestSaveRef.current = requestSave;
   const onFieldKeyDown = useCallback(
     (fieldId: string) => (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key !== 'Enter' || isComposing(e) || e.ctrlKey || e.metaKey) return;
       e.preventDefault();
       const idx = fieldOrder.indexOf(fieldId);
       if (idx >= 0 && idx < fieldOrder.length - 1) focusField(fieldOrder[idx + 1]);
-      else void requestSave();
+      else void requestSaveRef.current();
     },
-    [fieldOrder, focusField, requestSave],
+    [fieldOrder, focusField],
   );
 
   // ── 되돌리기 ──────────────────────────────────────────
@@ -404,6 +407,45 @@ export function useDonationInput() {
   const prevWeek = useCallback(() => setDateState((d) => (isValidDateString(d) ? shiftWeek(d, -1) : lastSunday())), []);
   const nextWeek = useCallback(() => setDateState((d) => (isValidDateString(d) ? shiftWeek(d, 1) : lastSunday())), []);
   const goLastSunday = useCallback(() => setDateState(lastSunday()), []);
+  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
+  const closeQuickRegister = useCallback(() => setQuickRegisterOpen(false), []);
+
+  // 자식 컴포넌트별 묶음: 관련 값이 바뀔 때만 새 객체가 되어, memo된 자식이 금액 입력에는 다시 렌더되지 않습니다.
+  const resultLabels = useMemo(() => results.map(memberLabel), [results]);
+  const selectedLabel = selected ? memberLabel(selected) : '';
+  const showDropdown = dropdownOpen && !anonymous && !selected && query.trim() !== '';
+  const search = useMemo(
+    () => ({
+      searchRef,
+      query,
+      onQueryChange,
+      onSearchKeyDown,
+      results,
+      resultLabels,
+      selectedLabel,
+      selectMember,
+      dropdownOpen: showDropdown,
+      closeDropdown,
+      highlight,
+      setHighlight,
+      anonymous,
+      anonName,
+      setAnonName: setAnonNameEdit,
+      toggleAnonymous,
+      openQuickRegister,
+    }),
+    [query, onQueryChange, onSearchKeyDown, results, resultLabels, selectedLabel, selectMember, showDropdown, closeDropdown, highlight, anonymous, anonName, toggleAnonymous, openQuickRegister],
+  );
+  const quickRegisterName = query.trim();
+  const quickRegister = useMemo(
+    () => ({ open: quickRegisterOpen, name: quickRegisterName, onClose: closeQuickRegister, onRegistered: onQuickRegistered }),
+    [quickRegisterOpen, quickRegisterName, closeQuickRegister, onQuickRegistered],
+  );
+  const largeAmount = useMemo(() => ({ pending: pendingLarge, onConfirm: confirmLarge, onCancel: cancelLarge }), [pendingLarge, confirmLarge, cancelLarge]);
+  const duplicate = useMemo(
+    () => ({ pending: pendingDuplicate, onResolve: resolveDuplicate, onCancel: cancelDuplicate }),
+    [pendingDuplicate, resolveDuplicate, cancelDuplicate],
+  );
 
   return {
     date,
@@ -411,33 +453,10 @@ export function useDonationInput() {
     prevWeek,
     nextWeek,
     goLastSunday,
-    // 검색
-    searchRef,
-    query,
-    onQueryChange,
-    onSearchKeyDown,
-    results,
-    resultLabels: results.map(memberLabel),
-    selectedLabel: selected ? memberLabel(selected) : '',
-    selectMember,
-    dropdownOpen: dropdownOpen && !anonymous && !selected && query.trim() !== '',
-    closeDropdown: () => setDropdownOpen(false),
-    highlight,
-    setHighlight,
-    // 무명
-    anonymous,
-    anonName,
-    setAnonName: setAnonNameEdit,
-    toggleAnonymous,
-    // 빠른 등록
-    quickRegisterOpen,
-    quickRegisterName: query.trim(),
-    openQuickRegister,
-    closeQuickRegister: () => setQuickRegisterOpen(false),
-    onQuickRegistered,
-    onQuickRegisterCloseFocus: (e: Event) => {
-      e.preventDefault();
-    },
+    search,
+    quickRegister,
+    largeAmount,
+    duplicate,
     // 금액
     primaryTypes,
     dropdownTypes,
@@ -463,13 +482,6 @@ export function useDonationInput() {
     // 성도가 한 명도 없는 처음 상태(시작 안내를 보여 줌)
     isFirstRun: members.length === 0,
     message,
-    pendingLarge,
-    confirmLarge,
-    cancelLarge,
-    pendingDuplicate,
-    resolveDuplicate,
-    cancelDuplicate,
-    preventAutoFocus: (e: Event) => e.preventDefault(),
     // 되돌리기
     canUndo: history.length > 0,
     undo,
@@ -477,3 +489,10 @@ export function useDonationInput() {
 }
 
 export type DonationInputController = ReturnType<typeof useDonationInput>;
+export type MemberSearchController = DonationInputController['search'];
+export type QuickRegisterController = DonationInputController['quickRegister'];
+export type LargeAmountController = DonationInputController['largeAmount'];
+export type DuplicateController = DonationInputController['duplicate'];
+
+/** 모달이 닫힐 때 포커스를 원래 자리로 돌려보내지 않습니다(다음 입력 칸 포커스는 훅이 직접 맞춤). */
+export const preventAutoFocus = (e: Event) => e.preventDefault();
