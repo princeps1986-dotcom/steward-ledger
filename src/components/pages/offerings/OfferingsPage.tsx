@@ -50,9 +50,14 @@ export function OfferingsPage() {
                 className={`${t.isActive ? '' : 'text-gray-400'} ${p.dragId === t.id ? 'opacity-40' : ''} ${p.dragId && p.drop?.id === t.id && p.dragId !== t.id ? (p.drop.after ? 'shadow-[inset_0_-2px_0_#2563eb]' : 'shadow-[inset_0_2px_0_#2563eb]') : ''}`}
               >
                 <td className="td cursor-grab select-none" title="끌어서 순서 바꾸기">
-                  <span aria-hidden="true" className="mr-1 text-gray-400">
-                    ⠿
-                  </span>
+                  <svg aria-hidden="true" viewBox="0 0 12 18" width="12" height="18" className="mr-1.5 inline-block align-middle text-gray-500">
+                    {[3, 9, 15].map((y) => (
+                      <g key={y} fill="currentColor">
+                        <circle cx="3" cy={y} r="1.6" />
+                        <circle cx="9" cy={y} r="1.6" />
+                      </g>
+                    ))}
+                  </svg>
                   {t.sortOrder}
                 </td>
                 <td className="td sticky left-0 bg-white font-medium">{t.name}</td>

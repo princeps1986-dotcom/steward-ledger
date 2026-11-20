@@ -34,7 +34,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
       <>
         <span className="text-center text-xs text-gray-500">{no}</span>
         <DateText date={row.donation.date} />
-        <span className="truncate">
+        <span className="sticky left-2 z-0 truncate bg-white">
           <NameWithTag name={row.donation.donorDisplayName} tag={row.tag} />
         </span>
         <span className="truncate">{row.typeName}</span>
@@ -65,7 +65,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
         <div className={`${GRID} w-max min-w-full sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600`} style={{ height: ROW_HEIGHT }}>
           <span className="text-center">No</span>
           <span>날짜</span>
-          <span>표기명</span>
+          <span className="sticky left-2 z-20 bg-gray-50">표기명</span>
           <span>헌금 종류</span>
           <span className="text-right">금액</span>
           <span className="pl-3">메모</span>

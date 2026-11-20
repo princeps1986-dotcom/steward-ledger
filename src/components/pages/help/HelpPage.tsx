@@ -34,7 +34,7 @@ function Line({ text }: { text: string }) {
   );
 }
 
-/** 메뉴별 사용 설명서 */
+/** 메뉴별 설명서 */
 export function HelpPage() {
   const h = useHelpPage();
   return (

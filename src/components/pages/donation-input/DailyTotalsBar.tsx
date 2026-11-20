@@ -7,7 +7,8 @@ import { DateText } from '../../shared/DateText';
 export const DailyTotalsBar = memo(function DailyTotalsBar({ date, flashKey = 0 }: { date: string; flashKey?: number }) {
   const t = useDailyTotals(date);
   return (
-    <section className="card flex flex-wrap items-center gap-x-6 gap-y-2">
+    <section className="card space-y-2">
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
       {/* flashKey가 바뀔 때(저장 성공) 합계 영역이 잠깐 강조됩니다. */}
       <div key={flashKey} className={`rounded px-1 ${flashKey > 0 ? 'flash-save' : ''}`}>
         <div className="text-xs text-gray-500"><DateText date={date} /> 입력 합계</div>
@@ -19,20 +20,13 @@ export const DailyTotalsBar = memo(function DailyTotalsBar({ date, flashKey = 0 
             </button>
           </div>
         ) : (
-          <>
-            <div className="text-xl font-bold">{formatWon(t.total)}</div>
-            <div className="text-xs text-gray-500">{formatNumber(t.count)}건</div>
-          </>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xl font-bold">{formatWon(t.total)}</span>
+            <span className="text-xs text-gray-500">{formatNumber(t.count)}건</span>
+          </div>
         )}
       </div>
-      <div className="flex flex-1 flex-wrap gap-2">
-        {t.rows.map((r) => (
-          <span key={r.id} className="rounded bg-gray-100 px-2 py-1 text-xs">
-            {r.name} <b>{formatNumber(r.amount)}</b>
-          </span>
-        ))}
-      </div>
-      <div className="flex items-end gap-2">
+      <div className="ml-auto flex items-end gap-2">
         <label>
           <span className="label">현금 계수 금액</span>
           <input
@@ -57,6 +51,16 @@ export const DailyTotalsBar = memo(function DailyTotalsBar({ date, flashKey = 0 
           </span>
         )}
       </div>
+      </div>
+      {t.rows.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {t.rows.map((r) => (
+            <span key={r.id} className="rounded bg-gray-100 px-2 py-1 text-xs">
+              {r.name} <b>{formatNumber(r.amount)}</b>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 });

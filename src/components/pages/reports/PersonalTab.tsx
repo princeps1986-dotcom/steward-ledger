@@ -80,7 +80,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           <div ref={paging.scrollRef} aria-busy={r.loading} className={`max-h-[480px] overflow-auto rounded border transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
             <div className={`${GRID} sticky top-0 z-10 w-max min-w-full border-b bg-gray-50 px-2 py-1.5 text-xs font-semibold text-gray-600`}>
               <span>날짜</span>
-              <span>표기명</span>
+              <span className="sticky left-2 z-20 bg-gray-50">표기명</span>
               <span>헌금 종류</span>
               <span className="text-right">금액</span>
               <span className="pl-3">메모</span>
@@ -90,7 +90,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
                 <div key={donation.id} className={`${GRID} w-max min-w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
                   <DateText date={donation.date} />
-                  <span className="truncate">
+                  <span className="sticky left-2 z-0 truncate bg-white">
                     <NameWithTag name={donation.donorDisplayName} tag={tagOf(donation.memberId)} />
                   </span>
                   <span>{typeName}</span>

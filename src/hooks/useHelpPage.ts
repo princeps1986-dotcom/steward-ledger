@@ -3,7 +3,7 @@ import { HELP_SECTIONS, type HelpParagraph } from '../components/pages/help/help
 
 const paragraphText = (p: HelpParagraph) => (typeof p === 'string' ? p : p.text);
 
-/** 사용 설명서: 목차에서 메뉴를 선택하면 해당 설명으로 이동하고 현재 위치를 강조합니다. 검색어가 있으면 제목·본문에 포함된 항목만 보여 줍니다. */
+/** 설명서: 목차에서 메뉴를 선택하면 해당 설명으로 이동하고 현재 위치를 강조합니다. 검색어가 있으면 제목·본문에 포함된 항목만 보여 줍니다. */
 export function useHelpPage() {
   const [activeId, setActiveId] = useState(HELP_SECTIONS[0].id);
   const [query, setQuery] = useState('');

@@ -17,7 +17,7 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'members', label: '성도 정보' },
   { key: 'offerings', label: '헌금 종류' },
   { key: 'settings', label: '설정 정보' },
-  { key: 'help', label: '사용 설명서' },
+  { key: 'help', label: '설명서' },
 ];
 
 export function useAppNav() {

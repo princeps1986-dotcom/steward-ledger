@@ -1,4 +1,4 @@
-/** 사용 설명서 내용. 화면(메뉴)별 섹션 → 항목(제목 + 설명 문단) 구조입니다. */
+/** 설명서 내용. 화면(메뉴)별 섹션 → 항목(제목 + 설명 문단) 구조입니다. */
 import { desktop } from '../../../services/desktopBridge';
 
 const PRINT_SAVE = '인쇄·PDF 저장';
