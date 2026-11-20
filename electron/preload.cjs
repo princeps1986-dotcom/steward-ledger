@@ -20,10 +20,17 @@ contextBridge.exposeInMainWorld('desktop', {
   backupAbort: (id) => ipcRenderer.invoke('backup:abort', id),
   backupEnd: (id) => ipcRenderer.invoke('backup:end', id),
   // 고른 파일의 경로를 main에 넘겨 체크섬을 확인합니다(경로를 모르는 파일이면 null: 화면 쪽에서 확인).
-  verifyBackupFile: (file) => {
+  verifyBackupFile: (file, password) => {
     const path = webUtils.getPathForFile(file);
-    return path ? ipcRenderer.invoke('backup:verify-file', path) : Promise.resolve(null);
+    return path ? ipcRenderer.invoke('backup:verify-file', path, password) : Promise.resolve(null);
   },
+  inspectBackupFile: (file) => {
+    const path = webUtils.getPathForFile(file);
+    return path ? ipcRenderer.invoke('backup:inspect-file', path) : Promise.resolve(null);
+  },
+  openBackupReader: (file, password) => ipcRenderer.invoke('backup:open-reader', webUtils.getPathForFile(file), password),
+  readBackup: (id) => ipcRenderer.invoke('backup:read', id),
+  closeBackupReader: (id) => ipcRenderer.invoke('backup:close-reader', id),
   skipBackup: () => ipcRenderer.send('backup:skip'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),

@@ -89,7 +89,7 @@ export function SettingsPage() {
           </button>
           <label className={`btn ${s.backupBlocked ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`} aria-disabled={s.backupBlocked}>
             백업 파일 복원
-            <input type="file" accept=".json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
+            <input type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
           </label>
         </div>
       </section>
@@ -160,6 +160,26 @@ export function SettingsPage() {
             </>
           )}
         </p>
+        {/* 데스크톱 앱의 직접 백업은 사용자가 정한 암호로 잠급니다(다른 PC에서도 이 암호로 복원). 앱은 암호를 저장하지 않습니다. */}
+        {s.isDesktop ? (
+          <div className="mt-3 space-y-2 rounded border border-gray-200 p-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="w-20 text-gray-600" htmlFor="backup-pw">
+                백업 암호
+              </label>
+              <input id="backup-pw" type="password" className="input w-56" autoComplete="new-password" value={s.backupPassword} onChange={(e) => s.setBackupPassword(e.target.value)} disabled={s.busy} placeholder="6자 이상" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="w-20 text-gray-600" htmlFor="backup-pw2">
+                암호 확인
+              </label>
+              <input id="backup-pw2" type="password" className="input w-56" autoComplete="new-password" value={s.backupPassword2} onChange={(e) => s.setBackupPassword2(e.target.value)} disabled={s.busy} />
+            </div>
+            {/* 암호 확인·저장 실패 같은 안내는 창 뒤의 화면 위쪽에도 뜨지만 창에 가려지므로 여기에도 보여 줍니다. */}
+            {s.message?.kind === 'error' ? <p className="rounded bg-red-50 p-2 text-red-700">{s.message.text}</p> : null}
+            <p className="font-semibold text-red-700">암호를 잊으면 이 백업 파일은 어떤 방법으로도 복원할 수 없습니다. 암호를 따로 적어 안전하게 보관하세요.</p>
+          </div>
+        ) : null}
       </Modal>
 
       {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
@@ -302,6 +322,37 @@ export function SettingsPage() {
           {s.restore?.migratedFrom ? <p className="text-amber-700">구버전(v{s.restore.migratedFrom}) 백업입니다. v2 형식으로 자동 변환됩니다.</p> : null}
           <p className="text-gray-600">무결성 검증을 통과했습니다.</p>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!s.restorePw}
+        onClose={s.cancelRestorePassword}
+        title="백업 암호를 입력하세요"
+        description="이 백업 파일은 저장할 때 정한 암호로 잠겨 있습니다."
+        footer={
+          <>
+            <button className="btn" onClick={s.cancelRestorePassword} disabled={s.busy}>
+              취소
+            </button>
+            <button className="btn-primary" onClick={() => void s.confirmRestorePassword()} disabled={s.busy || !s.restorePw?.input}>
+              {s.busy ? '확인하는 중…' : '확인'}
+            </button>
+          </>
+        }
+      >
+        <form
+          className="space-y-2 text-sm"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void s.confirmRestorePassword();
+          }}
+        >
+          <p>
+            파일: <b>{s.restorePw?.file.name}</b>
+          </p>
+          <input type="password" className="input w-64" aria-label="백업 암호" autoComplete="off" autoFocus value={s.restorePw?.input ?? ''} onChange={(e) => s.setRestorePwInput(e.target.value)} disabled={s.busy} />
+          {s.restorePw?.error ? <p className="text-red-700">{s.restorePw.error}</p> : null}
+        </form>
       </Modal>
     </div>
   );

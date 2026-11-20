@@ -6,6 +6,7 @@ import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
 import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, type Write } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { Sha256 } from './sha256';
+import type { DesktopApi } from '../desktopBridge';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
 
 /**
@@ -23,6 +24,30 @@ export interface ReadableBackup {
 }
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
+
+/**
+ * 암호화한 백업(.slbk)을 줄 단위로 읽을 수 있는 파일처럼 감쌉니다: 화면은 키를 모르므로 main이 풀어서(압축도 풀어서) 조각으로 건넵니다.
+ * 검사·복원이 파일을 여러 번 읽으므로 stream()을 부를 때마다 새로 엽니다. 이름이 .json이라 readFileLines는 압축을 다시 풀지 않습니다.
+ */
+export function decryptedBackup(api: Pick<DesktopApi, 'openBackupReader' | 'readBackup' | 'closeBackupReader'>, file: File, password?: string): ReadableBackup {
+  return {
+    name: 'backup.json',
+    stream() {
+      let id: Promise<number> | null = null;
+      return new ReadableStream<Uint8Array>({
+        async pull(c) {
+          id ??= api.openBackupReader(file, password);
+          const chunk = await api.readBackup(await id);
+          if (chunk) c.enqueue(chunk);
+          else c.close(); // 끝까지 읽으면 main이 스스로 닫습니다.
+        },
+        async cancel() {
+          if (id) await api.closeBackupReader(await id).catch(() => undefined);
+        },
+      });
+    },
+  };
+}
 
 /** 파일을 줄 단위로 읽습니다(.gz는 압축을 풂). 각 줄은 끝의 줄바꿈 문자를 포함합니다. */
 export async function* readFileLines(file: ReadableBackup): AsyncGenerator<string> {

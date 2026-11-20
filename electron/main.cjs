@@ -4,25 +4,27 @@
 // - 종료 시 자동 로컬 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
 process.env.TZ = 'Asia/Seoul'; // 날짜·시각은 PC 설정과 상관없이 서울 기준(화면 프로세스도 상속)
-const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { pickBackupDir, resolveBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
-const { verifyBackupFile } = require('./backupVerify.cjs');
+const { pickBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
+const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
+const { pcHeader, passwordHeader, parseHeader, deriveKey, keyIdOf, createEncryptStream } = require('./backupCrypto.cjs');
 
 const DEV_URL = process.env.ELECTRON_DEV_URL;
 const DIST = path.join(__dirname, '..', 'dist');
 const AUTO_BACKUP_KEEP = 10;
 // 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
-const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.json(\.gz)?$/;
+// 백업 파일은 암호화한 .slbk입니다. 예전 형식(.json, .json.gz)도 보관 개수 정리에 함께 셉니다.
+const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.(slbk|json(\.gz)?)$/;
 // 앱을 쓰는 동안 주기적으로 만드는 백업(autosave_*)은 종료 때 백업(backup_*)과 따로 최근 3개만 보관합니다.
 const PERIODIC_BACKUP_KEEP = 3;
-const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.json\.gz$/;
+const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.(slbk|json\.gz)$/;
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -59,7 +61,8 @@ if (!app.requestSingleInstanceLock()) {
 
   const statusFile = () => path.join(app.getPath('userData'), 'auto-backup-status.json');
   // 포장하지 않은 실행(스모크 시험 등)에서만 환경 변수로 백업 폴더를 바꿀 수 있습니다(실제 문서 폴더를 건드리지 않고 시험하려는 용도).
-  const defaultBackupDir = () => (!app.isPackaged && process.env.STEWARD_TEST_BACKUP_DIR) || resolveBackupDir(app.getPath('documents'));
+  // 기본 백업 폴더는 앱 데이터 폴더 안(%APPDATA%\StewardLedger\backup)입니다. 설치 폴더는 업데이트·재설치 때 통째로 지워지므로 쓰지 않습니다.
+  const defaultBackupDir = () => (!app.isPackaged && process.env.STEWARD_TEST_BACKUP_DIR) || path.join(app.getPath('userData'), 'backup');
 
   function stamp(d = new Date()) {
     const p = (n) => String(n).padStart(2, '0');
@@ -77,7 +80,7 @@ if (!app.requestSingleInstanceLock()) {
   async function pruneBackups(dir) {
     const all = await fs.readdir(dir);
     // 쓰다 중단된 임시 파일은 지웁니다.
-    for (const n of all.filter((x) => /^(backup|autosave)_\d{8}_\d{6}\.json(\.gz)?\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
+    for (const n of all.filter((x) => /^(backup|autosave)_\d{8}_\d{6}\.(slbk|json(\.gz)?)\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
     for (const [re, keep] of [[AUTO_BACKUP_FILE_RE, AUTO_BACKUP_KEEP], [PERIODIC_BACKUP_FILE_RE, PERIODIC_BACKUP_KEEP]]) {
       const names = all.filter((n) => re.test(n)).sort();
       for (const n of names.slice(0, Math.max(0, names.length - keep))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
@@ -109,8 +112,47 @@ if (!app.requestSingleInstanceLock()) {
   // 세션 번호: 서로 다른 백업(주기·종료·직접·긴급)이 겹쳐도 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
   // 백업은 렌더러가 한 달치씩 줄 단위(NDJSON)로 보내고 main이 gzip 파일로 바로 씁니다. 메모리는 한 달치 수준에 머뭅니다.
   let sessionCounter = 0;
-  const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.json\.gz$/;
-  function startSession(file, kind) {
+  const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.slbk$/;
+
+  // 자동 백업(종료·주기·긴급)을 잠그는 이 PC의 키: 처음 쓸 때 무작위로 만들어 Windows 보안 저장소(DPAPI)로 잠근 뒤 앱 데이터 폴더에 둡니다.
+  // 설치 파일에는 키가 없으므로 백업 파일을 다른 곳으로 가져가면 열 수 없습니다(PC를 옮길 때는 암호를 건 직접 백업을 씀).
+  let pcKey = null;
+  function getPcKey() {
+    if (pcKey) return pcKey;
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('이 PC에서 백업 암호화를 쓸 수 없습니다.');
+    const file = path.join(app.getPath('userData'), 'backup-key.bin');
+    let locked = null;
+    try {
+      locked = fsSync.readFileSync(file);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err; // 읽기 오류(잠김 등)로 새 키를 만들면 예전 백업을 못 열게 되므로 실패로 알립니다.
+    }
+    if (locked) {
+      try {
+        const key = Buffer.from(safeStorage.decryptString(locked), 'base64');
+        if (key.length === 32) return (pcKey = key);
+      } catch {
+        /* Windows를 다시 설치하는 등으로 풀 수 없음: 아래에서 새 키를 만듭니다 */
+      }
+      fsSync.renameSync(file, `${file}.${stamp()}.old`); // 풀 수 없는 키 파일도 지우지 않고 남겨 둡니다.
+    }
+    const key = crypto.randomBytes(32);
+    fsSync.writeFileSync(file, safeStorage.encryptString(key.toString('base64')));
+    return (pcKey = key);
+  }
+  const OTHER_PC = '다른 PC(또는 Windows를 다시 설치하기 전)에서 만든 자동 백업이라 이 PC에서는 열 수 없습니다. PC를 옮길 때는 암호를 건 직접 백업을 쓰세요.';
+  /** 백업 파일 머리말에 맞는 키: 자동 백업은 이 PC의 키(식별값이 다르면 거절), 직접 백업은 사용자 암호에서 만든 키 */
+  const keyForFile = (password) => async (h) => {
+    if (h.mode === 'pc') {
+      const key = getPcKey();
+      if (!h.keyId.equals(keyIdOf(key))) throw new Error(`백업 파일 검증 실패: ${OTHER_PC}`);
+      return key;
+    }
+    if (typeof password !== 'string' || !password) throw new Error('백업 파일 검증 실패: 암호를 입력하세요.');
+    return deriveKey(password, h.salt, h.iterations);
+  };
+
+  function startSession(file, kind, lock) {
     // 이전 세션이 남아 있으면 동기로 닫고 임시 파일을 지웁니다(겹쳐 시작될 때 파일 핸들·.tmp가 남지 않도록).
     if (autoSession) {
       const old = autoSession;
@@ -121,10 +163,12 @@ if (!app.requestSingleInstanceLock()) {
     const tmp = `${file}.tmp`;
     const out = fsSync.createWriteStream(tmp);
     const gz = zlib.createGzip();
-    const sess = { id: ++sessionCounter, kind, file, tmp, out, gz, hash: crypto.createHash('sha256'), error: null };
+    const enc = createEncryptStream(lock.header, lock.key); // 줄 → gzip → 암호화 → 임시 파일
+    const sess = { id: ++sessionCounter, kind, file, tmp, out, gz, enc, lock, hash: crypto.createHash('sha256'), error: null };
     out.on('error', (e) => (sess.error = e));
     gz.on('error', (e) => (sess.error = e));
-    gz.pipe(out);
+    enc.on('error', (e) => (sess.error = e));
+    gz.pipe(enc).pipe(out);
     autoSession = sess;
     return sess.id;
   }
@@ -137,21 +181,25 @@ if (!app.requestSingleInstanceLock()) {
       if (kind === 'emergency') {
         const dir = defaultBackupDir();
         await fs.mkdir(dir, { recursive: true });
-        return startSession(path.join(dir, spec.name), kind);
+        const key = getPcKey();
+        return startSession(path.join(dir, spec.name), kind, { header: pcHeader(key), key });
       }
+      // 직접 백업은 사용자가 정한 암호로만 잠급니다(앱은 암호를 저장하지 않음).
+      if (typeof spec.password !== 'string' || spec.password.length < 6 || spec.password.length > 256) throw new Error('암호는 6자 이상이어야 합니다.');
       const win = BrowserWindow.fromWebContents(event.sender);
       const res = await dialog.showSaveDialog(win, {
         title: '백업 파일 저장',
         defaultPath: path.join(defaultBackupDir(), spec.name),
-        filters: [{ name: '백업 파일(압축)', extensions: ['gz'] }],
+        filters: [{ name: '청지기 장부 백업 파일', extensions: ['slbk'] }],
       });
       if (res.canceled || !res.filePath) return null;
-      return startSession(res.filePath, kind);
+      return startSession(res.filePath, kind, await passwordHeader(spec.password));
     }
     if (kind !== 'close' && kind !== 'periodic') throw new Error('잘못된 백업 종류');
     const d = allowedBackupDir(spec.dir);
     await fs.mkdir(d, { recursive: true });
-    return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.json.gz`), kind);
+    const key = getPcKey();
+    return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.slbk`), kind, { header: pcHeader(key), key });
   });
   const sessionOf = (id) => {
     const s = autoSession;
@@ -169,7 +217,7 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:restart', async (_event, id) => {
     const s = sessionOf(id);
     await abortAutoSession();
-    return startSession(s.file, s.kind);
+    return startSession(s.file, s.kind, s.lock);
   });
   ipcMain.handle('backup:abort', async (_event, id) => {
     if (autoSession && autoSession.id === id) await abortAutoSession();
@@ -186,6 +234,7 @@ if (!app.requestSingleInstanceLock()) {
       s.out.once('finish', resolve);
       s.out.once('error', reject);
       s.gz.once('error', reject);
+      s.enc.once('error', reject);
       s.gz.end(endLine);
     }).catch(async (err) => {
       s.gz.destroy();
@@ -194,7 +243,7 @@ if (!app.requestSingleInstanceLock()) {
       throw err;
     });
     try {
-      await verifyBackupFile(s.tmp);
+      await verifyBackupFile(s.tmp, () => s.lock.key);
     } catch (err) {
       await fs.unlink(s.tmp).catch(() => undefined); // 검증에 실패한 파일은 남기지 않습니다(이미 있는 좋은 백업은 그대로)
       throw err;
@@ -351,20 +400,95 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   ipcMain.handle('backup:default-dir', () => defaultBackupDir());
-  // 복원할 백업 파일의 체크섬 확인(내장 SHA-256이라 화면 쪽 계산보다 훨씬 빠름). ''=통과, 문구=실패, null=확인하지 않음
-  ipcMain.handle('backup:verify-file', async (_event, file) => {
-    if (typeof file !== 'string' || !/\.(json|gz)$/i.test(file)) return null;
-    // 정규화한 뒤 드라이브 문자 경로만 읽는다. UNC(\\서버\공유, \/서버/공유 같은 혼합 구분자)·장치 경로는 막는다(원격 인증 정보가 나가는 것을 막음)
+  // 화면이 고른 백업 파일 경로: 정규화한 뒤 드라이브 문자 경로만 읽는다. UNC(\\서버\공유, \/서버/공유 같은 혼합 구분자)·장치 경로는 막는다(원격 인증 정보가 나가는 것을 막음)
+  const backupFilePath = (file) => {
+    if (typeof file !== 'string' || !/\.(json|gz|slbk)$/i.test(file)) return null;
     const resolved = path.resolve(file);
-    if (!/^[A-Za-z]:[\\/]/.test(resolved)) return null;
+    return /^[A-Za-z]:[\\/]/.test(resolved) ? resolved : null;
+  };
+  // 검증 실패 문구만 그대로 보내고, 파일 시스템 오류(경로가 섞인 메시지)는 고정 문구로 바꾼다
+  const verifyMessage = (err) => {
+    const msg = err instanceof Error ? err.message : '';
+    return msg.startsWith('백업 파일 검증 실패') ? msg : '백업 파일을 읽을 수 없습니다.';
+  };
+  // 백업 파일 종류: plain(예전 일반 파일) · pc(이 PC의 자동 백업, otherPc면 열 수 없음) · password(암호가 필요한 직접 백업). 읽을 수 없는 경로면 null
+  ipcMain.handle('backup:inspect-file', async (_event, file) => {
+    const p = backupFilePath(file);
+    if (!p) return null;
     try {
-      await verifyBackupFile(file);
+      if (!isEncryptedFile(p)) return { kind: 'plain' };
+      const fd = await fs.open(p, 'r');
+      const head = Buffer.alloc(26);
+      const { bytesRead } = await fd.read(head, 0, head.length, 0).finally(() => fd.close());
+      const h = parseHeader(head.subarray(0, bytesRead));
+      if (!h) return { error: '백업 파일 검증 실패: 내용이 잘렸습니다.' };
+      if (h.mode === 'password') return { kind: 'password' };
+      return h.keyId.equals(keyIdOf(getPcKey())) ? { kind: 'pc' } : { kind: 'pc', error: OTHER_PC };
+    } catch (err) {
+      return { error: verifyMessage(err) };
+    }
+  });
+  // 복원할 백업 파일의 체크섬 확인(내장 SHA-256이라 화면 쪽 계산보다 훨씬 빠름). ''=통과, 문구=실패, null=확인하지 않음
+  ipcMain.handle('backup:verify-file', async (_event, file, password) => {
+    const p = backupFilePath(file);
+    if (!p) return null;
+    try {
+      await verifyBackupFile(p, keyForFile(password));
       return '';
     } catch (err) {
-      // 검증 실패 문구만 그대로 보내고, 파일 시스템 오류(경로가 섞인 메시지)는 고정 문구로 바꾼다
-      const msg = err instanceof Error ? err.message : '';
-      return msg.startsWith('백업 파일 검증 실패') ? msg : '백업 파일을 읽을 수 없습니다.';
+      return verifyMessage(err);
     }
+  });
+  // 암호화한 백업을 화면이 줄 단위로 읽도록 main이 풀어서 조각(최대 1MB)으로 건넵니다. 화면은 키를 모릅니다.
+  const readers = new Map();
+  let readerCounter = 0;
+  ipcMain.handle('backup:open-reader', (event, file, password) => {
+    const p = backupFilePath(file);
+    if (!p) throw new Error('백업 파일을 읽을 수 없습니다.');
+    // 닫지 않은 읽기(화면을 다시 불러온 경우 등)가 쌓이지 않게 가장 오래된 것부터 닫습니다.
+    for (const [oldId, r] of readers) {
+      if (readers.size < 8) break;
+      readers.delete(oldId);
+      r.stream.destroy();
+    }
+    let stream;
+    try {
+      stream = openPlainStream(p, keyForFile(password));
+    } catch (err) {
+      throw new Error(verifyMessage(err));
+    }
+    const id = ++readerCounter;
+    readers.set(id, { stream, it: stream[Symbol.asyncIterator](), sender: event.sender });
+    return id;
+  });
+  ipcMain.handle('backup:read', async (event, id) => {
+    const r = readers.get(id);
+    if (!r || r.sender !== event.sender) throw new Error('백업 파일 읽기가 끝났거나 시작되지 않았습니다.');
+    const parts = [];
+    let size = 0;
+    try {
+      while (size < 1024 * 1024) {
+        const { value, done } = await r.it.next();
+        if (done) break;
+        parts.push(value);
+        size += value.length;
+      }
+    } catch (err) {
+      readers.delete(id);
+      r.stream.destroy();
+      throw new Error(verifyMessage(err));
+    }
+    if (parts.length === 0) {
+      readers.delete(id);
+      return null;
+    }
+    return Buffer.concat(parts);
+  });
+  ipcMain.handle('backup:close-reader', (_event, id) => {
+    const r = readers.get(id);
+    readers.delete(id);
+    if (r) r.stream.destroy();
+    return true;
   });
   ipcMain.handle('backup:select-dir', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

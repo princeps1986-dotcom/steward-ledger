@@ -156,16 +156,16 @@ describe('streamBackup', () => {
 });
 
 describe('desktop save functions use the streaming sessions', () => {
-  it('emergency backup is a named gz session in the default folder; manual backup carries the years and the user may cancel', async () => {
+  it('emergency backup is a named .slbk session in the default folder; manual backup carries the years and the password, and the user may cancel', async () => {
     const f = fakeSink();
     const specs = fakeDesktop(f.sink);
     expect(await saveEmergencyBackup('emergency_before_restore')).toBe('C:/x/backup.json.gz');
     expect(specs[0]).toMatchObject({ kind: 'emergency' });
-    expect((specs[0] as { name: string }).name).toMatch(/^emergency_before_restore_\d{8}_\d{6}\.json\.gz$/);
+    expect((specs[0] as { name: string }).name).toMatch(/^emergency_before_restore_\d{8}_\d{6}\.slbk$/);
 
-    expect(await saveBackupFile('backup', ['2026'])).toBe('C:/x/backup.json.gz');
-    expect((specs[1] as { name: string; kind: string }).kind).toBe('manual');
-    expect((specs[1] as { name: string }).name).toMatch(/^backup_2026_\d{8}_\d{6}\.json\.gz$/);
+    expect(await saveBackupFile('backup', ['2026'], undefined, '교회암호123')).toBe('C:/x/backup.json.gz');
+    expect(specs[1]).toMatchObject({ kind: 'manual', password: '교회암호123' });
+    expect((specs[1] as { name: string }).name).toMatch(/^backup_2026_\d{8}_\d{6}\.slbk$/);
     expect(f.sessions().at(-1)!.filter((l) => l.includes('"t":"donations"'))).toHaveLength(2);
 
     const cancelled = fakeSink({ cancel: true });

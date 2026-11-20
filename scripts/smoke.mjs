@@ -72,7 +72,7 @@ try {
     const NL = String.fromCharCode(10);
     const written = await ev(`(async () => { const id = await window.desktop.backupBegin({ kind: 'periodic', dir: 'C:/Windows/Temp/evil' }); await window.desktop.backupWrite(id, JSON.stringify({ ndjson: 3 }) + String.fromCharCode(10)); await window.desktop.backupWrite(id, JSON.stringify({ t: 'members', data: [] }) + String.fromCharCode(10)); return await window.desktop.backupEnd(id); })()`);
     const { readdirSync, existsSync } = await import('node:fs');
-    check('백업 IPC: 주기 백업 파일이 검증을 거쳐 저장됨', typeof written === 'string' && /autosave_\d{8}_\d{6}\.json\.gz$/.test(written) && existsSync(written), String(written));
+    check('백업 IPC: 주기 백업 파일이 검증을 거쳐 저장됨', typeof written === 'string' && /autosave_\d{8}_\d{6}\.slbk$/.test(written) && existsSync(written), String(written));
     check('보안: 임의 폴더를 보내도 허용된 폴더에만 씀', String(written).startsWith(backupDir), String(written));
     check('백업 IPC: 임시 파일이 남지 않음', readdirSync(backupDir).every((n) => !n.endsWith('.tmp')));
     void NL;

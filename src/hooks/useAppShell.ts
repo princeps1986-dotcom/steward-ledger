@@ -115,7 +115,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
 }
 
 /** 백업 권고 배너 */
-export function useBackupReminder(autoBackupFailure: string | null) {
+export function useBackupReminder(autoBackupFailure: string | null, goSettings: () => void) {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
   const { markBackupDone } = useSettingsActions();
@@ -140,6 +140,8 @@ export function useBackupReminder(autoBackupFailure: string | null) {
   }
 
   const backupNow = useCallback(async () => {
+    // 데스크톱 앱의 직접 백업은 사용자가 정한 암호가 필요하므로 설정 정보의 [백업 파일 저장]으로 안내합니다.
+    if (desktop()) return goSettings();
     setBusy(true);
     try {
       // 'backup_날짜_시각'은 종료 백업 이름이라 최근 10개만 남기고 지워지므로 직접 백업은 다른 이름으로 저장합니다.
@@ -151,7 +153,7 @@ export function useBackupReminder(autoBackupFailure: string | null) {
     } finally {
       setBusy(false);
     }
-  }, [markBackupDone]);
+  }, [markBackupDone, goSettings]);
 
   return { visible: !!text && !dismissed, text, tone, busy, canBackup: !demoBlocked, backupNow, dismiss: () => setDismissed(true) };
 }

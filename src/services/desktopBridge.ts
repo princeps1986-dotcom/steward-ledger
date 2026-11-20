@@ -17,8 +17,16 @@ export interface BackupSessionSpec {
   kind: 'close' | 'periodic' | 'emergency' | 'manual';
   /** close·periodic에서 사용자가 선택한 폴더(설정값). main이 허용한 폴더가 아니면 무시됩니다. */
   dir?: string;
-  /** emergency·manual의 파일 이름(영문·숫자·_- 와 .json.gz) */
+  /** emergency·manual의 파일 이름(영문·숫자·_- 와 .slbk) */
   name?: string;
+  /** manual: 사용자가 정한 암호(6자 이상). 자동·긴급 백업은 이 PC의 키로 잠그므로 필요 없음 */
+  password?: string;
+}
+
+/** 백업 파일 종류: plain(예전 일반 파일) · pc(이 PC의 자동 백업) · password(암호가 필요한 직접 백업). error면 열 수 없음 */
+export interface BackupFileInfo {
+  kind?: 'plain' | 'pc' | 'password';
+  error?: string;
 }
 
 export interface SavedFileInfo {
@@ -48,8 +56,14 @@ export interface DesktopApi {
   backupRestart(id: number): Promise<number>;
   backupAbort(id: number): Promise<boolean>;
   backupEnd(id: number): Promise<string>;
-  /** 복원할 백업 파일의 체크섬을 main이 확인합니다. ''=통과, 문구=실패 사유, null=확인하지 않음(경로를 모르는 파일 등) */
-  verifyBackupFile?(file: File): Promise<string | null>;
+  /** 복원할 백업 파일의 체크섬을 main이 확인합니다(암호화한 파일은 풀어서). ''=통과, 문구=실패 사유, null=확인하지 않음(경로를 모르는 파일 등) */
+  verifyBackupFile?(file: File, password?: string): Promise<string | null>;
+  /** 백업 파일이 암호화됐는지·암호가 필요한지(null = 경로를 모르는 파일) */
+  inspectBackupFile(file: File): Promise<BackupFileInfo | null>;
+  /** 암호화한 백업을 main이 풀어 줄 단위 평문 조각으로 건넵니다: open → read(끝이면 null) → close */
+  openBackupReader(file: File, password?: string): Promise<number>;
+  readBackup(id: number): Promise<Uint8Array | null>;
+  closeBackupReader(id: number): Promise<boolean>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
   onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */

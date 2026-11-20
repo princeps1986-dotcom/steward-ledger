@@ -282,7 +282,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 복원 | `restoreBackup(payload, {years, mode})` | 화면은 `mode: 'YEARS'`, 연도 하나 |
 | 전체 교체 | `replaceAllData(payload)` | 시연 데이터·초기화용(단일 트랜잭션, 큰 데이터에는 한도 있음) |
 | 초기화 | `resetAllData()` | 빈 성도·내역·이력 + 새 id의 기본 헌금 종류로 교체(설정 유지) |
-| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개 보관. 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip(`backup_….json.gz`)으로 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 웹 브라우저의 직접·긴급 백업은 `createBackupBlob`이 달마다 만든 줄을 Blob으로 이어 붙이고 끝 줄에 해시를 붙인 줄 단위 파일로 내려받음 |
+| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개 보관. 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip한 뒤 암호화해(`backup_….slbk`) 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 웹 브라우저의 직접·긴급 백업은 `createBackupBlob`이 달마다 만든 줄을 Blob으로 이어 붙이고 끝 줄에 해시를 붙인 줄 단위 파일로 내려받음 |
 
 ### 10.1 연도 복원(YEARS)과 다른 PC 백업 병합
 한 트랜잭션에서 ① 선택 연도의 기존 월 키·이력 키를 지우고 ② 백업 내용을 월별로 쓰고 ③ 성도·종류를 **현재 데이터와 대응**시킵니다. 대응 규칙(`mergeRules.planMerge`)은 다음과 같습니다.
@@ -310,8 +310,12 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **백업 검증:** main이 자동 백업 파일을 쓴 뒤 다시 읽어 끝 줄의 SHA-256을 확인하고(`verifyBackupFile`), 맞을 때만 이름을 바꿔 확정합니다. 실패하면 임시 파일을 지우고 오류로 알립니다(이미 있는 좋은 백업은 그대로).
 * **백업 세션 번호:** 주기·종료·직접·긴급 백업이 겹쳐도 줄이 섞이지 않도록 `backupBegin`이 세션 번호를 돌려주고 write·end가 그 번호를 요구합니다(새 백업이 시작되면 이전 세션은 취소). 종료 때 주기 백업이 진행 중이면 종료 백업은 '변경 없음'으로 건너뛰지 않습니다.
 * **전역 오류 안내:** 처리되지 않은 오류·Promise 거부는 `GlobalErrorBanner`가 화면 위쪽에 보여 줍니다(저장소 오류는 `StorageError` 한글 문구 그대로).
-* **직접·긴급 백업:** 데스크톱 앱에서는 이 둘도 같은 스트리밍 세션(`backupBegin` kind `manual`·`emergency`)으로 줄 단위 `.json.gz`에 씁니다. 큰 데이터를 한 문자열로 만들 때의 한도(약 512MB)와 메모리 2~3배 사용을 피합니다. 브라우저·데모는 기존 JSON 내려받기입니다.
-* **줄 단위 복원(streamRestore):** 줄 단위 백업(.json/.json.gz)은 파일째 읽지 않고 흘려 읽습니다. 1단계 `scanBackupFile`이 파일 전체를 읽으며 증분 SHA-256(`sha256.ts`; WebCrypto는 조각 입력이 안 됨)과 줄별 형식을 검증하고 연도별 건수를 셉니다(아무것도 쓰지 않음). 2단계 `restoreFromFile`이 검증된 파일을 다시 읽으며 달마다 따로 저장합니다(메모리는 한 달치). 달마다 따로 저장하므로 전체가 한 트랜잭션은 아니며, 시작 트랜잭션에서 `meta_restore_in_progress` 표시를 남기고 끝에 지웁니다. 중간에 꺼지면 표시가 남아 다음 실행 때 상단 안내로 알리고(같은 백업으로 다시 복원), 전체 교체(`replaceAllData`: 시연·초기화)도 표시를 지웁니다. 한 덩어리 JSON(예전 형식)은 기존처럼 전체를 읽어 한 트랜잭션으로 복원합니다.
+* **직접·긴급 백업:** 데스크톱 앱에서는 이 둘도 같은 스트리밍 세션(`backupBegin` kind `manual`·`emergency`)으로 줄 단위 `.slbk`에 씁니다(직접 백업은 사용자 암호, 긴급 백업은 PC 키). 큰 데이터를 한 문자열로 만들 때의 한도(약 512MB)와 메모리 2~3배 사용을 피합니다. 브라우저·데모는 기존 JSON 내려받기입니다.
+* **백업 암호화(.slbk, `electron/backupCrypto.cjs`):** 데스크톱 앱의 백업은 줄 단위 v3 내용을 gzip한 바이트를 1MB 조각마다 AES-256-GCM으로 암호화합니다. 머리말 `SLBK`+버전+방식, 조각은 길이·마지막 표시·IV·암호문+태그이고, 인증 데이터에 머리말·조각 번호·마지막 표시를 넣어 바꿔치기·순서 바꾸기·잘라내기를 막습니다(끝 줄 SHA-256 검사는 그대로).
+  * **자동·긴급 백업 = PC 키:** main이 처음 쓸 때 32바이트 무작위 키를 만들어 `safeStorage`(Windows DPAPI)로 잠근 뒤 `userData\backup-key.bin`에 둡니다. 머리말에 키 식별값(키 SHA-256 앞 8바이트)을 넣어, 다른 PC·Windows 재설치 전의 파일이면 손상이 아니라 '다른 PC' 안내를 합니다. 키 파일을 풀 수 없으면 `.old`로 남기고 새 키를 만듭니다. 설치 파일·저장소에는 키가 없습니다.
+  * **직접 백업 = 사용자 암호:** PBKDF2-SHA256 60만 회(파일마다 salt)로 키를 만들며 앱은 암호를 저장하지 않습니다. 다른 PC에서도 암호로 복원됩니다.
+  * **복원:** 화면은 키를 모릅니다. `backup:inspect-file`로 종류(일반·PC 키·암호)를 확인하고, `backup:verify-file`(암호 포함)로 main이 풀어서 체크섬을 확인한 뒤, `backup:open-reader`/`read`/`close-reader`로 main이 풀어 준 평문 조각을 `decryptedBackup` 래퍼(`ReadableBackup`)로 읽어 기존 `scanBackupFile`·`restoreFromFile`을 그대로 씁니다. 예전 `.json`·`.json.gz`도 그대로 복원됩니다. 웹 버전은 암호화하지 않습니다.
+* **줄 단위 복원(streamRestore):** 줄 단위 백업(.slbk/.json/.json.gz)은 파일째 읽지 않고 흘려 읽습니다. 1단계 `scanBackupFile`이 파일 전체를 읽으며 증분 SHA-256(`sha256.ts`; WebCrypto는 조각 입력이 안 됨)과 줄별 형식을 검증하고 연도별 건수를 셉니다(아무것도 쓰지 않음). 2단계 `restoreFromFile`이 검증된 파일을 다시 읽으며 달마다 따로 저장합니다(메모리는 한 달치). 달마다 따로 저장하므로 전체가 한 트랜잭션은 아니며, 시작 트랜잭션에서 `meta_restore_in_progress` 표시를 남기고 끝에 지웁니다. 중간에 꺼지면 표시가 남아 다음 실행 때 상단 안내로 알리고(같은 백업으로 다시 복원), 전체 교체(`replaceAllData`: 시연·초기화)도 표시를 지웁니다. 한 덩어리 JSON(예전 형식)은 기존처럼 전체를 읽어 한 트랜잭션으로 복원합니다.
 * **시연 중 백업 차단:** 시연 데이터가 있거나 만드는 중이면(`isDemoBusy`) 자동 백업(종료 시 `buildAutoBackup`·10분 `runPeriodicBackup`)은 아무것도 하지 않고(null), 수동 백업·복원(`saveBackupFile`·`restoreBackup`·`restoreFromFile`)은 오류로 거부하며(`assertNoDemo`), 설정 화면의 백업·복원·자동 백업 컨트롤은 비활성, 백업 권고 배너는 숨깁니다. 시연 생성 직전 백업과 시연 제거 복구는 시연 흐름의 일부라 막지 않습니다.
 * **시연 데이터(`demo/`):** [시연 데이터 생성]은 오늘 이전 3년(156주)을 주 단위로 나누어 만듭니다(`planDemo`, 고정 시드; 주마다 편차를 두고 매년 12/25·1/1 날짜 하루에는 건수 추가; 이력 6건).
   * **규모는 접속 방식에 따라 다릅니다.**
@@ -357,11 +361,11 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 ## 13. Electron 셸
 
 * `requestSingleInstanceLock()`으로 중복 실행 차단. `contextIsolation: true`, `nodeIntegration: false`. CSP는 응답 헤더로 강제. 서비스 워커·PWA 없음. 업데이트는 자동으로 확인하지 않고 사용자가 누를 때만 확인합니다(아래).
-* **영문 저장·백업 경로:** 데이터 폴더는 `%APPDATA%\StewardLedger`, 기본 자동 백업 폴더는 `문서\StewardLedgerBackup`입니다(`electron/dataPaths.cjs`). 이전 버전의 한글 폴더(`교회헌금회계`, `교회헌금백업`)가 있으면 앱이 데이터를 열기 전에 한 번 이름을 바꿔 옮기고, 옮기지 못하면(다른 프로그램이 사용 중 등) 데이터를 잃지 않도록 이전 폴더를 계속 씁니다. 설치 폴더 이름도 영문입니다: `productName`이 `StewardLedger`라 기본 설치 위치는 `%LOCALAPPDATA%\Programs\StewardLedger`, 설치 파일은 `StewardLedger Setup 1.0.0.exe`이며 데이터와는 별개입니다(바탕화면·시작 메뉴 바로가기 이름 `청지기 장부`와 창 제목은 표시용이라 한글 그대로). 이미 한글 폴더(`청지기장부`)에 설치된 PC에 새 설치 파일을 실행하면 설치 프로그램이 이전 설치 위치를 그대로 재사용할 수 있으므로, 영문 폴더로 옮기려면 기존 프로그램을 먼저 제거(데이터는 `deleteAppDataOnUninstall: false`로 보존)한 뒤 설치합니다. 테스트는 `dataPaths.test.ts`.
+* **영문 저장·백업 경로:** 데이터 폴더는 `%APPDATA%\StewardLedger`, 기본 백업 폴더는 그 안의 `backup`입니다(설치 폴더는 업데이트·재설치 때 설치 프로그램이 통째로 지우므로 쓰지 않음. 예전 기본 폴더 `문서\StewardLedgerBackup`의 파일은 옮기거나 지우지 않음). 이전 버전의 한글 폴더(`교회헌금회계`, `교회헌금백업`)가 있으면 앱이 데이터를 열기 전에 한 번 이름을 바꿔 옮기고, 옮기지 못하면(다른 프로그램이 사용 중 등) 데이터를 잃지 않도록 이전 폴더를 계속 씁니다. 설치 폴더 이름도 영문입니다: `productName`이 `StewardLedger`라 기본 설치 위치는 `%LOCALAPPDATA%\Programs\StewardLedger`, 설치 파일은 `StewardLedger Setup 1.0.0.exe`이며 데이터와는 별개입니다(바탕화면·시작 메뉴 바로가기 이름 `청지기 장부`와 창 제목은 표시용이라 한글 그대로). 이미 한글 폴더(`청지기장부`)에 설치된 PC에 새 설치 파일을 실행하면 설치 프로그램이 이전 설치 위치를 그대로 재사용할 수 있으므로, 영문 폴더로 옮기려면 기존 프로그램을 먼저 제거(데이터는 `deleteAppDataOnUninstall: false`로 보존)한 뒤 설치합니다. 테스트는 `dataPaths.test.ts`.
 * **프로그램 업데이트(`electron-updater`):** 설정 화면의 [업데이트 확인]을 누를 때만 main이 `update:check`로 GitHub 릴리스(`build.publish`)의 `latest.yml`을 읽습니다(평소에는 네트워크를 쓰지 않음, 포장된 앱에서만). [내려받기]는 `update:download`로 `.blockmap`을 비교해 바뀐 블록만 받고(`update:progress`로 진행률), `autoInstallOnAppQuit`로 앱을 닫을 때 종료 백업이 끝난 뒤 설치합니다(강제 재시작 없음). 내려받은 파일은 `latest.yml`의 sha512로 확인합니다. 오류는 경로가 섞이지 않은 고정 문구로 바꿔 보냅니다. 화면용 라이브러리는 vite가 `dist`에 묶으므로 `devDependencies`에 두고, 설치 파일에는 `electron-updater`와 그 의존성만 들어갑니다.
   * **릴리스 절차:** `package.json`의 `version`을 올리고 `npm run dist` → `release/`의 `StewardLedger Setup x.y.z.exe`, 같은 이름의 `.blockmap`, `latest.yml` 세 파일을 GitHub 릴리스(태그 `vx.y.z`)에 올립니다(`GH_TOKEN`을 설정하면 `npx electron-builder --win nsis --publish always`로도 가능).
 * **화면 멈춤 대응:** `render-process-gone`(비정상 종료)이면 창을 다시 불러오고(1분에 3번 넘으면 안내 후 중단), `unresponsive`이면 [기다리기 / 다시 불러오기]를 묻습니다. 데이터는 IndexedDB에 있어 다시 불러와도 이어서 쓸 수 있습니다. React 화면 오류는 `ErrorBoundary`가 화면 단위로 잡아 앱 전체가 하얗게 되지 않고 메뉴를 계속 쓸 수 있습니다(메뉴를 옮기면 새로 시작).
-* **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 저장 파일 열기/폴더 보기, 다운로드 완료 알림.
+* **preload**는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 선택·자동 백업 쓰기·정리, 백업 파일 검사·풀어 읽기, 저장 파일 열기/폴더 보기, 다운로드 완료 알림, 업데이트.
 * **종료 시 자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보냅니다. 렌더러는 줄 단위 백업 세션(`backupBegin`·`backupWrite`·`backupEnd`)으로 한 달치씩 main에 보내고, main이 gzip 파일로 씁니다(10장). main은 **끝날 때까지 기다린 뒤 종료**합니다(상한 5분).
   * 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 8초 후 [백업 없이 종료] → `backup:skip`)를 띄웁니다.
   * 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다).
@@ -398,7 +402,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 되돌리기, 연도 퇴출(건수 예산·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
-| 백업 | `backup/autoBackupService.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접·긴급 백업 세션, 백업 파일 검증(변조·잘림), 백업 폴더 허용 |
+| 백업 | `backup/autoBackupService.test.ts`, `backup/backupCrypto.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접·긴급 백업 세션, 백업 파일 검증(변조·잘림), 암호화 왕복·틀린 암호·다른 PC·조각 변조/순서/잘림, 백업 폴더 허용 |
 | 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선 |
 
 **Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다.

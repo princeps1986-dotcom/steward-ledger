@@ -4,7 +4,7 @@ import type { Donation } from '../../contexts/types';
 import { db } from '../storage/db';
 import { listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
 import { backupLines } from './backupService';
-import { interruptedRestore, isNdjsonFile, readFileLines, restoreFromFile, scanBackupFile } from './streamRestore';
+import { decryptedBackup, interruptedRestore, isNdjsonFile, readFileLines, restoreFromFile, scanBackupFile } from './streamRestore';
 import { sha256Hex } from './validation';
 
 const d = (id: string, date: string): Donation =>
@@ -96,5 +96,32 @@ describe('restoreFromFile', () => {
     await restoreFromFile(file, scan, ['2026']);
     expect((await readMonth('2026-01')).map((x) => x.id).sort()).toEqual(['b', 'c']);
     expect((await readMonth('2025-03')).map((x) => x.id)).toEqual(['a']);
+  });
+});
+
+describe('decryptedBackup (암호화한 백업을 main이 풀어 주는 래퍼)', () => {
+  it('읽을 때마다 새로 열어 조각을 줄로 이어 주고, 중간에 멈추면 닫는다', async () => {
+    const enc = new TextEncoder();
+    const log: string[] = [];
+    let next = 0;
+    const api = {
+      openBackupReader: async (_f: File, pw?: string) => (log.push(`open:${pw}`), ++next),
+      readBackup: async (id: number) => {
+        const left = (reads[id] ??= id === 1 ? ['{"a":', '1}\n{"b":2}\n'] : Array.from({ length: 50 }, (_, i) => `{"n":${i}}\n`));
+        return left.length ? enc.encode(left.shift()!) : null;
+      },
+      closeBackupReader: async (id: number) => (log.push(`close:${id}`), true),
+    };
+    const reads: Record<number, string[]> = {};
+    const src = decryptedBackup(api, new File([], 'x.slbk'), '암호');
+    const lines: string[] = [];
+    for await (const l of readFileLines(src)) lines.push(l);
+    expect(lines).toEqual(['{"a":1}\n', '{"b":2}\n']);
+    for await (const l of readFileLines(src)) {
+      void l;
+      break; // 첫 줄만 읽고 멈춤 → 닫기
+    }
+    await new Promise((r) => setTimeout(r, 0)); // 취소가 파이프를 거쳐 원본까지 전달될 때까지
+    expect(log).toEqual(['open:암호', 'open:암호', 'close:2']);
   });
 });

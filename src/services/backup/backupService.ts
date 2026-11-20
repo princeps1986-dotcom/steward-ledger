@@ -146,6 +146,9 @@ export function backupYearsLabel(years?: readonly string[]): string {
   return s.length === 1 ? s[0] : `${s[0]}-${s[s.length - 1]}`;
 }
 
+/** 데스크톱 앱의 백업 파일 이름(암호화한 .slbk) */
+const slbkName = (jsonName: string): string => jsonName.replace(/\.json$/, '.slbk');
+
 export const backupFileName = (prefix = 'backup', years?: readonly string[]): string => {
   const label = backupYearsLabel(years);
   return `${prefix}${label ? `_${label}` : ''}_${nowStamp()}.json`;
@@ -159,7 +162,7 @@ export const saveEmergencyBackup = (prefix: string): Promise<string> => withBack
 async function saveEmergencyBackupNow(prefix: string): Promise<string> {
   const api = desktop();
   if (api) {
-    const saved = await streamBackup(desktopSink(api, { kind: 'emergency', name: `${backupFileName(prefix)}.gz` }));
+    const saved = await streamBackup(desktopSink(api, { kind: 'emergency', name: slbkName(backupFileName(prefix)) }));
     if (!saved) throw new Error('긴급 백업을 저장하지 못했습니다.');
     return saved;
   }
@@ -204,23 +207,26 @@ export async function createBackupBlob(years?: readonly string[]): Promise<Blob>
 /** onProgress(저장한 달, 전체 달): 데스크톱 앱에서 달마다 부릅니다(웹 브라우저는 한 번에 만들어 부르지 않음). */
 export type BackupProgress = (done: number, total: number) => void;
 
-/** 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록). */
-export const saveBackupFile = (prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> =>
-  withBackupBusy(() => saveBackupFileNow(prefix, years, onProgress));
-async function saveBackupFileNow(prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> {
+/**
+ * 직접 하는 백업: 데스크톱 앱은 저장 위치를 선택하게 하며, 취소하면 오류를 던집니다(저장되지 않은 것을 '백업함'으로 기록하지 않도록).
+ * 데스크톱 앱은 password(사용자가 정한 암호)로 잠근 파일만 만듭니다. 웹 브라우저는 지금처럼 일반 파일입니다.
+ */
+export const saveBackupFile = (prefix: string, years?: readonly string[], onProgress?: BackupProgress, password?: string): Promise<string> =>
+  withBackupBusy(() => saveBackupFileNow(prefix, years, onProgress, password));
+async function saveBackupFileNow(prefix: string, years?: readonly string[], onProgress?: BackupProgress, password?: string): Promise<string> {
   await assertNoDemo();
   // 전체가 담기는 백업이면 변경 표시를 읽기 전에 내립니다: 백업하는 동안 생긴 변경은 표시가 다시 올라가 다음 자동 백업에 담깁니다.
   const full = !years || (years.length === 1 && (await isCompleteYearBackup(years[0])));
   const wasDirty = full && (await isDirtySinceBackup());
   if (wasDirty) await clearDirty();
   try {
-    return await saveBackupFileTo(prefix, years, onProgress);
+    return await saveBackupFileTo(prefix, years, onProgress, password);
   } catch (e) {
     if (wasDirty) await markDirty();
     throw e;
   }
 }
-async function saveBackupFileTo(prefix: string, years?: readonly string[], onProgress?: BackupProgress): Promise<string> {
+async function saveBackupFileTo(prefix: string, years?: readonly string[], onProgress?: BackupProgress, password?: string): Promise<string> {
   const api = desktop();
   if (!api) {
     const name = backupFileName(prefix, years);
@@ -231,7 +237,7 @@ async function saveBackupFileTo(prefix: string, years?: readonly string[], onPro
   const want = years ? new Set(years) : null;
   const months = onProgress ? (await listDonationMonths()).filter((m) => !want || want.has(m.slice(0, 4))) : [];
   const onMonthRead = onProgress ? async (ym: string) => onProgress(months.indexOf(ym) + 1, months.length) : undefined;
-  const saved = await streamBackup(desktopSink(api, { kind: 'manual', name: `${backupFileName(prefix, years)}.gz` }), { years, onMonthRead });
+  const saved = await streamBackup(desktopSink(api, { kind: 'manual', name: slbkName(backupFileName(prefix, years)), password }), { years, onMonthRead });
   if (!saved) throw new Error('저장을 취소했습니다.');
   return saved;
 }

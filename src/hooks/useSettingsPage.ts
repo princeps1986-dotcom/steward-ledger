@@ -11,7 +11,7 @@ import { formatDateTime } from '../services/domain/dates';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
 import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
-import { isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan } from '../services/backup/streamRestore';
+import { decryptedBackup, isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop, type UpdateCheck } from '../services/desktopBridge';
 import type { MergePlan } from '../services/backup/mergeRules';
@@ -20,7 +20,7 @@ interface RestoreCandidate {
   /** 한 덩어리 JSON 백업(작은 파일)은 전체를 읽어 둔 내용, 줄 단위 백업은 null(복원할 때 파일을 다시 읽음) */
   envelope: BackupEnvelope | null;
   /** 줄 단위 백업: 검증을 마친 파일과 그 요약 */
-  stream?: { file: File; scan: BackupScan };
+  stream?: { file: ReadableBackup; scan: BackupScan };
   fileName: string;
   migratedFrom: number | null;
   summary: string;
@@ -73,6 +73,11 @@ export function useSettingsPage() {
   const [backupProgress, setBackupProgress] = useState<{ done: number; total: number } | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  // 직접 백업 암호(데스크톱 앱). 앱은 암호를 저장하지 않으며, 창을 닫거나 저장하면 지웁니다.
+  const [backupPassword, setBackupPassword] = useState('');
+  const [backupPassword2, setBackupPassword2] = useState('');
+  // 암호가 필요한 백업 파일을 골랐을 때 암호 입력 창
+  const [restorePw, setRestorePw] = useState<{ file: File; input: string; error: string } | null>(null);
   const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
   const [demoProgress, setDemoProgress] = useState<{ done: number; total: number } | null>(null);
   // 시연 데이터가 한 건이라도 있으면 시연 중(전체 데이터를 훑지 않고 색인으로 판정). 설정 화면에 들어올 때 다시 확인합니다.
@@ -123,13 +128,15 @@ export function useSettingsPage() {
   const backupNow = useCallback(async () => {
     if (backupBlocked) return;
     if (!backupYear) return setMessage({ kind: 'error', text: '백업할 연도가 없습니다. 헌금 내역이 있는 연도만 백업할 수 있습니다.' });
+    if (isDesktop && backupPassword.length < 6) return setMessage({ kind: 'error', text: '백업 암호는 6자 이상으로 정하세요.' });
+    if (isDesktop && backupPassword !== backupPassword2) return setMessage({ kind: 'error', text: '암호 확인이 맞지 않습니다. 같은 암호를 두 번 입력하세요.' });
     setBusy(true);
     try {
       const all = await isCompleteYearBackup(backupYear); // 다른 연도의 헌금·이력이 없을 때만 전체 백업으로 취급
-      const name = await saveBackupFile('backup', [backupYear], (done, total) => setBackupProgress({ done, total }));
+      const name = await saveBackupFile('backup', [backupYear], (done, total) => setBackupProgress({ done, total }), isDesktop ? backupPassword : undefined);
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
-      setBackupOpen(false);
+      closeBackup();
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {
       setMessage({ kind: 'error', text: `백업 실패: ${(err as Error).message}` });
@@ -137,11 +144,46 @@ export function useSettingsPage() {
       setBusy(false);
       setBackupProgress(null);
     }
-  }, [markBackupDone, years, backupYear, backupBlocked]);
+  }, [markBackupDone, years, backupYear, backupBlocked, isDesktop, backupPassword, backupPassword2]);
+  const closeBackup = () => {
+    setBackupOpen(false);
+    setBackupPassword('');
+    setBackupPassword2('');
+  };
 
   /** 자동 백업(.json.gz)은 압축을 풀어서, 그 외(.json)는 그대로 읽습니다. */
   const readBackupText = (file: File): Promise<string> =>
     /\.gz$/i.test(file.name) ? new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text() : file.text();
+
+  /**
+   * 줄 단위 백업 검사: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음). source는 읽을 내용(암호화한 파일이면 main이 풀어 주는 래퍼).
+   * 데스크톱 앱은 체크섬을 main의 내장 기능으로 먼저 확인합니다(큰 파일에서 화면 쪽 계산보다 훨씬 빠름). 실패 사유를 돌려주고, 통과하면 복원 창을 엽니다.
+   */
+  const checkStreamBackup = async (file: File, source: ReadableBackup, password?: string): Promise<string | null> => {
+    setBusy(true);
+    try {
+      const checked = (await desktop()?.verifyBackupFile?.(file, password)) ?? null;
+      if (checked) return checked;
+      const scan = await scanBackupFile(source, { hashChecked: checked === '' });
+      if (!scan.ok) return scan.error;
+      setMessage(null);
+      const years = Object.keys(scan.yearCounts).sort();
+      setRestore({
+        mergeNotice: mergeNoticeOf(await planFor(scan)),
+        envelope: null,
+        stream: { file: source, scan },
+        fileName: file.name,
+        migratedFrom: null,
+        summary: `백업 일시 ${formatDateTime(scan.exportedAt ?? '')} · 성도 ${scan.members.length}명 · 헌금 종류 ${scan.offeringTypes.length}개 · 헌금 내역 ${Object.values(scan.yearCounts).reduce((s, n) => s + n, 0)}건`,
+        yearRows: years.map((year) => ({ year, count: scan.yearCounts[year] })),
+      });
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onRestoreFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -149,31 +191,22 @@ export function useSettingsPage() {
     if (!file || backupBlocked) return;
     setRestoreYearPick('');
     setMessage(CHECKING_FILE); // 큰 파일은 검사(체크섬·형식)에 수십 초가 걸리므로 멈춘 것으로 보이지 않게 알립니다.
+    // 암호화한 백업(.slbk): 자동 백업은 이 PC의 키로 바로 풀고, 직접 백업은 암호를 물어봅니다. 화면은 키를 모르고 main이 풀어 줍니다.
+    const api = desktop();
+    const info = api ? await api.inspectBackupFile(file) : null;
+    if (info?.error) return setMessage({ kind: 'error', text: `복원 불가: ${info.error.replace(/^백업 파일 검증 실패: /, '')}` });
+    if (api && info?.kind === 'password') {
+      setMessage(null);
+      return setRestorePw({ file, input: '', error: '' });
+    }
+    if (api && info?.kind === 'pc') {
+      const fail = await checkStreamBackup(file, decryptedBackup(api, file));
+      if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
+      return;
+    }
     if (await isNdjsonFile(file)) {
-      // 줄 단위 백업: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음).
-      setBusy(true);
-      try {
-        // 데스크톱 앱은 체크섬을 main의 내장 기능으로 먼저 확인합니다(큰 파일에서 화면 쪽 계산보다 훨씬 빠름).
-        const checked = (await desktop()?.verifyBackupFile?.(file)) ?? null;
-        if (checked) return setMessage({ kind: 'error', text: `복원 불가: ${checked}` });
-        const scan = await scanBackupFile(file, { hashChecked: checked === '' });
-        if (!scan.ok) return setMessage({ kind: 'error', text: `복원 불가: ${scan.error}` });
-        setMessage(null);
-        const years = Object.keys(scan.yearCounts).sort();
-        setRestore({
-          mergeNotice: mergeNoticeOf(await planFor(scan)),
-          envelope: null,
-          stream: { file, scan },
-          fileName: file.name,
-          migratedFrom: null,
-          summary: `백업 일시 ${formatDateTime(scan.exportedAt ?? '')} · 성도 ${scan.members.length}명 · 헌금 종류 ${scan.offeringTypes.length}개 · 헌금 내역 ${Object.values(scan.yearCounts).reduce((s, n) => s + n, 0)}건`,
-          yearRows: years.map((year) => ({ year, count: scan.yearCounts[year] })),
-        });
-      } catch (err) {
-        setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
-      } finally {
-        setBusy(false);
-      }
+      const fail = await checkStreamBackup(file, file);
+      if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
       return;
     }
     const res = await parseAndValidateBackup(await readBackupText(file));
@@ -192,6 +225,16 @@ export function useSettingsPage() {
       yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
     });
   }, []);
+
+  /** 암호 입력 창의 [확인]: 틀리면 창에 사유를 보여 주고, 맞으면 복원 창으로 넘어갑니다(암호는 복원할 때 파일을 다시 읽으려고 래퍼 안에만 둡니다). */
+  const confirmRestorePassword = useCallback(async () => {
+    const api = desktop();
+    if (!api || !restorePw || !restorePw.input) return;
+    const { file, input } = restorePw;
+    const fail = await checkStreamBackup(file, decryptedBackup(api, file, input), input);
+    if (fail) return setRestorePw({ file, input: '', error: fail.replace(/^백업 파일 검증 실패: /, '') });
+    setRestorePw(null);
+  }, [restorePw]);
 
   // 초기화 확인창이 열리면 10초 카운트다운 후에만 [초기화]를 누를 수 있습니다.
   useEffect(() => {
@@ -337,8 +380,16 @@ export function useSettingsPage() {
     backupNow,
     backupOpen,
     openBackup: () => !backupBlocked && setBackupOpen(true),
-    cancelBackup: () => setBackupOpen(false),
+    cancelBackup: closeBackup,
+    backupPassword,
+    setBackupPassword,
+    backupPassword2,
+    setBackupPassword2,
     onRestoreFile,
+    restorePw,
+    setRestorePwInput: (input: string) => setRestorePw((r) => (r ? { ...r, input } : r)),
+    confirmRestorePassword,
+    cancelRestorePassword: () => setRestorePw(null),
     restore,
     confirmRestore,
     cancelRestore: () => setRestore(null),

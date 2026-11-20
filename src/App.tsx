@@ -41,7 +41,7 @@ export function App() {
   }, []);
   const backup = useAutoBackupBridge();
   const restoring = useRestoring();
-  const reminder = useBackupReminder(backup.failure);
+  const reminder = useBackupReminder(backup.failure, () => goPage('settings'));
   return (
     <div className="flex h-full flex-col">
       {restoring ? <RestoringOverlay /> : null}
