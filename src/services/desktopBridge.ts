@@ -56,6 +56,19 @@ export interface DesktopApi {
   skipBackup(): void;
   /** 백업 실패 후 사용자가 종료를 취소해 앱을 계속 쓰게 된 경우 main이 알려 줍니다. */
   onBackupCancelled(handler: () => void): () => void;
+  /** [업데이트 확인]: 이때만 인터넷에 접속합니다. 실패하면 error에 안내 문구. */
+  checkForUpdate(): Promise<UpdateCheck>;
+  /** 바뀐 부분만 내려받습니다. ready면 앱을 닫을 때 설치됩니다. */
+  downloadUpdate(): Promise<{ ready?: true; error?: string }>;
+  /** 내려받기 진행률(0~100) */
+  onUpdateProgress(handler: (percent: number) => void): () => void;
+}
+
+export interface UpdateCheck {
+  current: string;
+  latest?: string;
+  available?: boolean;
+  error?: string;
 }
 
 declare global {

@@ -25,6 +25,13 @@ contextBridge.exposeInMainWorld('desktop', {
     return path ? ipcRenderer.invoke('backup:verify-file', path) : Promise.resolve(null);
   },
   skipBackup: () => ipcRenderer.send('backup:skip'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  onUpdateProgress: (handler) => {
+    const listener = (_event, percent) => handler(percent);
+    ipcRenderer.on('update:progress', listener);
+    return () => ipcRenderer.removeListener('update:progress', listener);
+  },
   onBackupCancelled: (handler) => {
     const listener = () => handler();
     ipcRenderer.on('backup:cancelled', listener);

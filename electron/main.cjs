@@ -412,6 +412,55 @@ if (!app.requestSingleInstanceLock()) {
     return true;
   });
 
+  // 프로그램 업데이트: 사용자가 [업데이트 확인]을 누를 때만 GitHub 릴리스에 접속합니다(평소에는 인터넷을 쓰지 않음).
+  // 바뀐 블록만 내려받고(차등 업데이트), 설치는 앱을 닫을 때(종료 백업이 끝난 뒤) 합니다. 강제로 다시 시작하지 않습니다.
+  let updater = null;
+  const getUpdater = () => {
+    if (!updater) {
+      updater = require('electron-updater').autoUpdater;
+      updater.autoDownload = false;
+      updater.autoInstallOnAppQuit = true;
+      updater.logger = null;
+    }
+    return updater;
+  };
+  const updateError = (err) => {
+    const msg = String((err && err.message) || err);
+    if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET|net::/i.test(msg)) return '인터넷에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.';
+    if (/404|latest\.yml|No published versions|Cannot find/i.test(msg)) return '올라온 업데이트를 찾지 못했습니다.';
+    return '업데이트를 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.';
+  };
+  ipcMain.handle('update:check', async () => {
+    const current = app.getVersion();
+    if (!app.isPackaged) return { current, error: '설치한 앱에서만 업데이트를 확인할 수 있습니다.' };
+    try {
+      const res = await getUpdater().checkForUpdates();
+      const latest = res && res.updateInfo ? res.updateInfo.version : current;
+      return { current, latest, available: !!(res && res.isUpdateAvailable) };
+    } catch (err) {
+      return { current, error: updateError(err) };
+    }
+  });
+  let downloading = null;
+  ipcMain.handle('update:download', (event) => {
+    if (!app.isPackaged) return { error: '설치한 앱에서만 업데이트할 수 있습니다.' };
+    if (downloading) return downloading; // 단추를 여러 번 눌러도 한 번만 내려받습니다.
+    const u = getUpdater();
+    const onProgress = (p) => {
+      if (!event.sender.isDestroyed()) event.sender.send('update:progress', Math.round(p.percent));
+    };
+    u.on('download-progress', onProgress);
+    downloading = u
+      .downloadUpdate()
+      .then(() => ({ ready: true }))
+      .catch((err) => ({ error: updateError(err) }))
+      .finally(() => {
+        u.removeListener('download-progress', onProgress);
+        downloading = null;
+      });
+    return downloading;
+  });
+
   app.whenReady().then(() => {
     // 이 앱은 카메라·위치·알림 같은 권한이 필요 없으므로 모든 권한 요청을 거부합니다.
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
