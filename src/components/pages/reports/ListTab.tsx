@@ -62,7 +62,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
       </div>
 
       <div ref={paging.scrollRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
-        <div className={`${GRID} sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600`} style={{ height: ROW_HEIGHT }}>
+        <div className={`${GRID} w-max min-w-full sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600`} style={{ height: ROW_HEIGHT }}>
           <span className="text-center">No</span>
           <span>날짜</span>
           <span>표기명</span>
@@ -75,7 +75,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
           const no = paging.from + k + 1;
           const row = r.rowAt(no - 1);
           return (
-            <div key={row.donation?.id ?? no} className={`${GRID} w-full border-b border-gray-100 px-2 text-sm row-hover ${no % 10 === 0 ? 'row-sep' : ''}`} style={{ height: ROW_HEIGHT }}>
+            <div key={row.donation?.id ?? no} className={`${GRID} w-max min-w-full border-b border-gray-100 px-2 text-sm row-hover ${no % 10 === 0 ? 'row-sep' : ''}`} style={{ height: ROW_HEIGHT }}>
               {cells(row, no)}
             </div>
           );

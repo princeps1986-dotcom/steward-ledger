@@ -76,7 +76,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           </div>
 
           <div className="rounded border">
-            <div className={`${GRID} border-b bg-gray-50 px-2 py-1.5 text-xs font-semibold text-gray-600`}>
+            <div className={`${GRID} w-max min-w-full border-b bg-gray-50 px-2 py-1.5 text-xs font-semibold text-gray-600`}>
               <span>날짜</span>
               <span>표기명</span>
               <span>헌금 종류</span>
@@ -86,7 +86,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             </div>
             <div ref={paging.scrollRef} aria-busy={r.loading} className={`max-h-[480px] overflow-y-auto transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
-                <div key={donation.id} className={`${GRID} w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
+                <div key={donation.id} className={`${GRID} w-max min-w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
                   <DateText date={donation.date} />
                   <span className="truncate">
                     <NameWithTag name={donation.donorDisplayName} tag={tagOf(donation.memberId)} />
@@ -110,7 +110,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
               r.slow ? (
                 <>
                   {[0, 1, 2].map((i) => (
-                    <div key={i} aria-hidden="true" className={`${GRID} border-b border-gray-100 px-2`} style={{ height: ROW_HEIGHT }}>
+                    <div key={i} aria-hidden="true" className={`${GRID} w-max min-w-full border-b border-gray-100 px-2`} style={{ height: ROW_HEIGHT }}>
                       {[0, 1, 2, 3, 4, 5].map((c) => (
                         <span key={c} className="mr-3 h-3 rounded bg-gray-100" />
                       ))}
