@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useWeeklyMatrix, type ReportFilters } from '../../../hooks/useReports';
 import { useIsPrinting } from '../../../hooks/useIsPrinting';
 import { useNameTag } from '../../../hooks/useNameTag';
@@ -23,6 +23,10 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
   const periodWord = isMonth ? '월간' : isDay ? '당일' : '주간';
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fit = useFitHeight(scrollRef);
+  // 보고서(기간·날짜)가 바뀌면 표를 맨 위로 되돌립니다.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [f.label, f.personKind]);
   const printing = useIsPrinting();
   // 화면에서는 보이는 행(약 40행)만 그리고 위아래는 빈 행으로 높이만 채웁니다. 인쇄할 때는 모든 행을 그립니다.
   const virtualizer = useVirtualizer({

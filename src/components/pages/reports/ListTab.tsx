@@ -11,7 +11,7 @@ import { PAGER_RESERVE, REPORT_SCROLL, useFitHeight } from './reportScroll';
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 30;
 // 번호 · 날짜 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
-const GRID = 'grid grid-cols-[2.75rem_9rem_10rem_8.5rem_9rem_minmax(8rem,1fr)_7.5rem] items-center';
+const GRID = 'grid grid-cols-[2.75rem_9rem_10rem_8.5rem_9rem_14rem_7.5rem] items-center';
 
 type Row = ReturnType<ReturnType<typeof useDonationListReport>['rowAt']>;
 

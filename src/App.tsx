@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useEffect } from 'react';
+import { lazy, startTransition, Suspense, useEffect, useRef } from 'react';
 import { BrowserNotice } from './components/shared/BrowserNotice';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { RestoringOverlay } from './components/shared/RestoringOverlay';
@@ -29,6 +29,11 @@ const SettingsPage = lazy(loadSettings);
 
 export function App() {
   const nav = useAppNav();
+  // 메뉴(페이지)를 옮기면 본문 스크롤을 맨 위로 되돌립니다.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+  }, [nav.page]);
   const preparing = useAutoDemo();
   // 메뉴 이동은 transition으로 처리해, 아직 불러오지 못한 화면이 있어도 '불러오는 중' 문구로 바꾸지 않고 이전 화면을 유지하다가 바로 전환합니다.
   const goPage: typeof nav.setPage = (k) => startTransition(() => nav.setPage(k));
@@ -68,7 +73,7 @@ export function App() {
       <GlobalErrorBanner />
       <NewVersionBanner />
       <BackupReminderBanner {...reminder} />
-      <main className="flex-1 overflow-y-auto p-4 print:overflow-visible print:px-[8mm] print:py-[5mm]">
+      <main ref={mainRef} className="flex-1 overflow-y-auto p-4 print:overflow-visible print:px-[8mm] print:py-[5mm]">
         {/* 한 화면에서 오류가 나도 앱 전체가 멈추지 않도록 화면마다 경계를 둡니다. 메뉴를 옮기면 새로 시작합니다. */}
         <Suspense fallback={<p className="p-4 text-sm text-slate-500">화면을 불러오는 중…</p>}>
           <ErrorBoundary key={nav.page}>

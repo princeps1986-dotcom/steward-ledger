@@ -53,19 +53,19 @@ export function MembersPage() {
       </section>
       <Notice message={p.message} />
       <section ref={paging.scrollRef} style={fit} className={`card p-0 ${REPORT_SCROLL}`}>
-        <table className="w-full">
+        <table className="w-full whitespace-nowrap">
           <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10">
             <tr>
               <th className="th w-12 text-center">No</th>
               {COLUMNS.map((c) => (
-                <th key={c.key} className="th" aria-sort={p.sort.key === c.key ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                <th key={c.key} className={c.key === 'phoneLast4' ? 'th text-center' : 'th'} aria-sort={p.sort.key === c.key ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort(c.key)} title="누르면 이 열 기준으로 정렬합니다">
                     {c.label}
                     <SortMark active={p.sort.key === c.key} dir={p.sort.dir} />
                   </button>
                 </th>
               ))}
-              <th className="th">세대주</th>
+              <th className="th text-center">세대주</th>
               <th className="th">등록일</th>
               <th className="th" aria-sort={p.sort.key === 'state' ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                 <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort('state')} title="누르면 이 열 기준으로 정렬합니다">
@@ -82,9 +82,9 @@ export function MembersPage() {
                 <td className="td text-center text-xs text-gray-500">{paging.from + k + 1}</td>
                 <td className="td font-medium">{m.name}</td>
                 <td className="td">{normalizePosition(m.position) || '-'}</td>
-                <td className="td">{m.phoneLast4 ?? '-'}</td>
+                <td className="td text-center">{m.phoneLast4 ?? '-'}</td>
                 <td className="td">{familyLabel}</td>
-                <td className="td">{m.isFamilyHead ? '●' : ''}</td>
+                <td className="td text-center">{m.isFamilyHead ? '●' : ''}</td>
                 <td className="td">{registeredLabel}</td>
                 <td className="td">{stateLabel}</td>
                 <td className="td text-right">

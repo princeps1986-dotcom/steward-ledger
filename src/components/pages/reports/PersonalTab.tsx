@@ -11,7 +11,8 @@ import { NameWithTag } from './NameWithTag';
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 40;
-const GRID = 'grid grid-cols-[135px_1fr_140px_130px_1fr_120px] items-center';
+// 칸 너비를 고정합니다(1fr은 머리글·내역 줄마다 따로 정해져 칸이 어긋남). 옆으로 스크롤하면 전체가 함께 움직입니다.
+const GRID = 'grid grid-cols-[135px_150px_140px_130px_224px_120px] items-center';
 
 export function PersonalTab({ f }: { f: ReportFilters }) {
   const r = usePersonalReport(f);
@@ -75,8 +76,9 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             </span>
           </div>
 
-          <div className="rounded border">
-            <div className={`${GRID} w-max min-w-full border-b bg-gray-50 px-2 py-1.5 text-xs font-semibold text-gray-600`}>
+          {/* 머리글과 내역을 한 스크롤 영역에 둬서, 옆으로 밀면 머리글 칸도 같이 움직입니다(머리글은 위쪽에 고정). */}
+          <div ref={paging.scrollRef} aria-busy={r.loading} className={`max-h-[480px] overflow-auto rounded border transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
+            <div className={`${GRID} sticky top-0 z-10 w-max min-w-full border-b bg-gray-50 px-2 py-1.5 text-xs font-semibold text-gray-600`}>
               <span>날짜</span>
               <span>표기명</span>
               <span>헌금 종류</span>
@@ -84,7 +86,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
               <span className="pl-3">메모</span>
               <span className="text-right">관리</span>
             </div>
-            <div ref={paging.scrollRef} aria-busy={r.loading} className={`max-h-[480px] overflow-y-auto transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
+            <div>
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
                 <div key={donation.id} className={`${GRID} w-max min-w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
                   <DateText date={donation.date} />

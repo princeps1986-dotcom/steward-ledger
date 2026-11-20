@@ -15,7 +15,7 @@ export function OfferingsPage() {
         </button>
       </section>
       <section className="card overflow-x-auto p-0">
-        <table className="w-full">
+        <table className="w-full whitespace-nowrap">
           <thead>
             <tr>
               <th className="th">순서</th>

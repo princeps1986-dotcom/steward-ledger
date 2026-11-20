@@ -365,7 +365,12 @@ export function usePersonalReport(f: ReportFilters) {
   const memberById = useMemberById();
   const typeById = useOfferingTypeById();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pickedMode, setMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
+  const [pickedMode, setPickedMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
+  // 세대 합산으로 들어갈 때마다 집계 기준은 현재 세대로 시작합니다(납부 당시 기준이 남아 있지 않도록).
+  const setMode = (m: 'PERSON' | 'FAMILY') => {
+    setPickedMode(m);
+    if (m === 'FAMILY') f.setBasis('CURRENT');
+  };
   // 세대 합산은 연도별 보고서에서만 가능합니다. 다른 기간에서는 선택과 무관하게 개인 기준입니다.
   const mode = f.periodType === 'YEAR' ? pickedMode : 'PERSON';
   const selected = selectedId ? memberById.get(selectedId) ?? null : null;
@@ -442,7 +447,7 @@ export function usePersonalReport(f: ReportFilters) {
       setSelectedId(id || null);
       // 선택을 풀면 조회 방식·세대 집계 기준도 처음 상태(개인 기준·현재 세대)로 되돌립니다.
       if (!id) {
-        setMode('PERSON');
+        setPickedMode('PERSON');
         f.setBasis('CURRENT');
       }
     },
