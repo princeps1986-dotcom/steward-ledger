@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { clampPage } from '../services/domain/paging';
 
 /**
@@ -10,7 +10,17 @@ export function usePaging(count: number, size: number, resetKey: string) {
   const pages = Math.max(1, Math.ceil(count / size));
   const page = clampPage(state.key === resetKey ? state.page : 1, pages);
   const from = (page - 1) * size;
-  return { page, pages, count, from, to: Math.min(count, from + size), setPage: (p: number) => setState({ page: clampPage(p, pages), key: resetKey }) };
+  // 스크롤되는 목록 영역에 붙이면, 쪽을 옮길 때 그 영역을 맨 위로 되돌리고 화면 밖으로 밀려난 영역 위쪽도 보이게 합니다.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const setPage = (p: number) => {
+    setState({ page: clampPage(p, pages), key: resetKey });
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = 0;
+      el.scrollIntoView?.({ block: 'nearest' });
+    }
+  };
+  return { page, pages, count, from, to: Math.min(count, from + size), setPage, scrollRef };
 }
 
 export type Paging = ReturnType<typeof usePaging>;

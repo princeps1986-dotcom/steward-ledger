@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useMembersPage } from '../../../hooks/useMembersPage';
 import { usePaging } from '../../../hooks/usePaging';
 import type { MemberSortKey } from '../../../services/domain/memberSort';
@@ -30,9 +29,8 @@ function SortMark({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 
 export function MembersPage() {
   const p = useMembersPage();
-  const scrollRef = useRef<HTMLElement>(null);
-  const fit = useFitHeight(scrollRef, PAGER_RESERVE); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
   const paging = usePaging(p.rows.length, PAGE_SIZE, `${p.query}|${p.showInactive}|${p.sort.key}|${p.sort.dir}`);
+  const fit = useFitHeight(paging.scrollRef, PAGER_RESERVE); // 표 안에서 스크롤해 머리글을 항상 보이게 합니다.
   return (
     <div className="space-y-4">
       <section className="card flex flex-wrap items-end gap-3">
@@ -54,7 +52,7 @@ export function MembersPage() {
         </button>
       </section>
       <Notice message={p.message} />
-      <section ref={scrollRef} style={fit} className={`card p-0 ${REPORT_SCROLL}`}>
+      <section ref={paging.scrollRef} style={fit} className={`card p-0 ${REPORT_SCROLL}`}>
         <table className="w-full">
           <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10">
             <tr>

@@ -43,7 +43,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
           <p className="text-sm">
             정상 {im.summary.ok}건 · 중복 {im.summary.dup}건 · 오류 {im.summary.err}건 (오류 행은 가져오지 않습니다. 중복은 기본 건너뛰기이며, 덮어쓰기는 직분·연락처만 갱신합니다.)
           </p>
-          <div className="max-h-[50vh] overflow-auto rounded border">
+          <div ref={paging.scrollRef} className="max-h-[50vh] overflow-auto rounded border">
             <table className="w-full">
               <thead className="sticky top-0">
                 <tr>

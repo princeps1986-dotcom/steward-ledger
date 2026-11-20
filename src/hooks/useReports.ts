@@ -297,7 +297,7 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
  */
 export function useDonationListReport(f: ReportFilters) {
   const typeById = useOfferingTypeById();
-  const tagOf = useNameTag();
+  const tagOf = useNameTag(true);
   const versions = useMonthVersions();
   const epoch = useDonationEpoch();
   const [query, setQuery] = useState('');
@@ -354,7 +354,9 @@ export function usePersonalReport(f: ReportFilters) {
   const memberById = useMemberById();
   const typeById = useOfferingTypeById();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mode, setMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
+  const [pickedMode, setMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
+  // 세대 합산은 연도별 보고서에서만 가능합니다. 다른 기간에서는 선택과 무관하게 개인 기준입니다.
+  const mode = f.periodType === 'YEAR' ? pickedMode : 'PERSON';
   const selected = selectedId ? memberById.get(selectedId) ?? null : null;
 
   // 비활성 성도도 과거 내역 조회를 위해 선택 대상에 포함(검색은 선택 칸이 함)
@@ -473,7 +475,7 @@ export function useAuditLogTab(f: ReportFilters) {
   const years = useDonationYears();
   const audits = useAllAudits();
   const typeById = useOfferingTypeById();
-  const tagOf = useNameTag();
+  const tagOf = useNameTag(true);
   useEffect(() => {
     for (const y of years) void ensureAuditYear(y);
   }, [ensureAuditYear, years]);

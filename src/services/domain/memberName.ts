@@ -22,6 +22,13 @@ export function nameDisambiguator(member: Member | undefined, dup: ReadonlySet<s
   return member.phoneLast4?.trim() || normalizePosition(member.position) || null;
 }
 
+/** 직분이 있으면 항상 표기하고, 동명이인이면 연락처 뒷4자리를 앞에 덧붙입니다(예: `1234 · 집사`). 표기할 값이 없으면 null. */
+export function memberTag(member: Member | undefined, dup: ReadonlySet<string>): string | null {
+  if (!member) return null;
+  const phone = dup.has(member.name.trim()) ? member.phoneLast4?.trim() : '';
+  return [phone, normalizePosition(member.position)].filter(Boolean).join(' · ') || null;
+}
+
 /**
  * 같은 이름의 성도끼리 정렬하는 보조 키: 연락처 뒷4자리가 있는 사람이 먼저(숫자 오름차순),
  * 없는 사람은 뒤에서 직분 순(목사 → … → 성도), 마지막으로 id.

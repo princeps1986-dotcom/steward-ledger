@@ -15,7 +15,7 @@ const GRID = 'grid grid-cols-[135px_1fr_140px_130px_1fr_120px] items-center';
 
 export function PersonalTab({ f }: { f: ReportFilters }) {
   const r = usePersonalReport(f);
-  const tagOf = useNameTag();
+  const tagOf = useNameTag(true);
   const editor = useDonationEditor();
   const paging = usePaging(r.rows.length, PAGE_SIZE, `${r.selectedId}|${r.mode}|${f.label}`);
 
@@ -26,6 +26,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           <span className="label">성도 검색 (비활성 성도 포함)</span>
           <MemberPicker options={r.options} value={r.selectedId ?? ''} onChange={r.select} ariaLabel="성도 검색" placeholder="이름·연락처 뒷자리 (↑↓ 이동 · Enter 선택)" clearLabel="선택 해제" />
         </div>
+        {f.periodType === 'YEAR' ? (
         <div className="flex overflow-hidden rounded border border-gray-300">
           <button className={`px-3 py-1.5 text-sm ${r.mode === 'PERSON' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={r.mode === 'PERSON'} onClick={() => r.setMode('PERSON')}>
             개인 기준 조회
@@ -34,6 +35,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             세대(가족) 합산 조회
           </button>
         </div>
+        ) : null}
         {r.mode === 'FAMILY' ? (
           <div>
             <span className="label">세대 집계 기준</span>
@@ -48,6 +50,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           </div>
         ) : null}
       </div>
+      {f.periodType !== 'YEAR' ? <p className="-mt-2 text-xs text-gray-500">※ 세대 합산 조회는 연도별 보고서에서만 가능합니다.</p> : null}
 
       {r.hasSelection ? (
         <>
@@ -81,7 +84,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
               <span className="pl-3">메모</span>
               <span className="text-right">관리</span>
             </div>
-            <div aria-busy={r.loading} className={`max-h-[480px] overflow-y-auto transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
+            <div ref={paging.scrollRef} aria-busy={r.loading} className={`max-h-[480px] overflow-y-auto transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
                 <div key={donation.id} className={`${GRID} w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
                   <DateText date={donation.date} />
@@ -129,7 +132,10 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           <Pager paging={paging} />
         </>
       ) : (
-        <p className="text-sm text-gray-500">성도를 검색해 선택하세요.</p>
+        <div className="rounded border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center">
+          <p className="text-base font-semibold text-gray-700">조회할 성도를 선택하세요</p>
+          <p className="mt-1 text-sm text-gray-500">위 검색창에 이름이나 연락처 뒷자리를 입력하면 내역을 볼 수 있습니다.</p>
+        </div>
       )}
       <DonationEditModal editor={editor} />
     </section>

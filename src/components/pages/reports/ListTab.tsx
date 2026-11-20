@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useDonationEditor } from '../../../hooks/useDonationEditor';
 import { usePaging } from '../../../hooks/usePaging';
 import { useDonationListReport, type ReportFilters } from '../../../hooks/useReports';
@@ -25,8 +24,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
   const r = useDonationListReport(f);
   const editor = useDonationEditor();
   const paging = usePaging(r.count, PAGE_SIZE, `${f.label}|${r.query}`);
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const fit = useFitHeight(parentRef, PAGER_RESERVE);
+  const fit = useFitHeight(paging.scrollRef, PAGER_RESERVE);
 
   const cells = (row: Row, no: number) =>
     !row.donation ? (
@@ -63,7 +61,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
         </p>
       </div>
 
-      <div ref={parentRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
+      <div ref={paging.scrollRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
         <div className={`${GRID} sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600`} style={{ height: ROW_HEIGHT }}>
           <span className="text-center">No</span>
           <span>날짜</span>

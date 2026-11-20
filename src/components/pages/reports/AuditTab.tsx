@@ -25,7 +25,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
       <p className="px-4 pt-3 text-sm text-gray-600">
         <b>{f.label}</b> 보고서에 해당하는 내역의 수정·삭제 이력만 보여 줍니다. ({logs.length}건)
       </p>
-      <div className="overflow-x-auto">
+      <div ref={paging.scrollRef} className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr>
