@@ -39,7 +39,8 @@ const CSP = [
 
 // 데이터 폴더는 영문 경로(%APPDATA%\StewardLedger)입니다. 이전 버전의 한글 폴더(교회헌금회계)는 처음 한 번 옮겨 기존 데이터를 이어 씁니다.
 // 단일 인스턴스 잠금도 userData 기준이므로 잠금보다 먼저 지정해야 합니다.
-app.setPath('userData', resolveUserDataDir(app.getPath('appData')));
+// Windows의 appData는 APPDATA 환경변수를 따르지 않으므로, 시험(개발 실행)은 STEWARD_TEST_APPDATA로 실제 데이터 폴더를 피합니다.
+app.setPath('userData', resolveUserDataDir((!app.isPackaged && process.env.STEWARD_TEST_APPDATA) || app.getPath('appData')));
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },

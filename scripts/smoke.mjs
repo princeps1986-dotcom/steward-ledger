@@ -1,5 +1,6 @@
 // Electron 스모크 시험: 빌드된 앱(dist)을 임시 데이터 폴더로 실제로 띄워, 시작·저장소·보안 설정·IPC가 동작하는지 확인합니다.
-// 사용: npm run build 후 `npm run smoke`. 실제 사용자 데이터(%APPDATA%\StewardLedger)는 건드리지 않습니다(APPDATA를 임시 폴더로 바꿈).
+// 사용: npm run build 후 `npm run smoke`. 개발 실행은 실제 사용자 데이터(%APPDATA%\StewardLedger) 대신 임시 폴더를 씁니다(STEWARD_TEST_APPDATA).
+// SMOKE_EXE(포장된 앱)는 이 바꿔치기를 받지 않아 실제 데이터 폴더를 열기만 합니다(읽기 확인만 하고 쓰지 않음).
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -12,7 +13,7 @@ const appData = mkdtempSync(join(tmpdir(), 'steward-smoke-'));
 // SMOKE_EXE=설치 전 묶음(release\win-unpacked\StewardLedger.exe)을 주면 포장된 앱(퓨즈·asar 포함)을 시험합니다.
 const exe = process.env.SMOKE_EXE;
 const backupDir = join(appData, 'backups');
-const child = spawn(exe || electronPath, exe ? [`--remote-debugging-port=${PORT}`] : ['.', `--remote-debugging-port=${PORT}`], { env: { ...process.env, APPDATA: appData, STEWARD_TEST_BACKUP_DIR: backupDir }, stdio: 'ignore' });
+const child = spawn(exe || electronPath, exe ? [`--remote-debugging-port=${PORT}`] : ['.', `--remote-debugging-port=${PORT}`], { env: { ...process.env, STEWARD_TEST_APPDATA: appData, STEWARD_TEST_BACKUP_DIR: backupDir }, stdio: 'ignore' });
 const failures = [];
 const check = (name, ok, detail = '') => {
   console.log(`${ok ? '통과' : '실패'}  ${name}${detail ? ` — ${detail}` : ''}`);
