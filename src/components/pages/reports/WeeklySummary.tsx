@@ -77,7 +77,7 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
               <SpacerRow cols={m.columns.length + 3} />
               <tr>
                 <th className="th sticky left-0 top-0 z-20 w-10 min-w-10 max-w-10 px-1 text-center print:static">No</th>
-                <th className="th rpt-name-col sticky left-10 top-0 z-20 w-[14rem] min-w-[14rem] max-w-[14rem] print:static">성도명</th>
+                <th className="th rpt-name-col sticky left-10 top-0 z-20 w-[9rem] min-w-[9rem] max-w-[9rem] print:static">성도명</th>
                 {m.columns.map((c) => (
                   <th key={c.id} className="th sticky top-0 z-10 px-1.5 text-right print:static">
                     {c.name}
@@ -97,7 +97,7 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
                 return (
                 <tr key={r.key} data-index={i} ref={printing ? undefined : virtualizer.measureElement} className={(i + 1) % 10 === 0 ? 'row-sep' : ''}>
                   <td className="rpt-num td sticky left-0 w-10 min-w-10 max-w-10 bg-white px-1 text-center text-xs text-gray-500 print:static">{i + 1}</td>
-                  <td className="rpt-name td sticky left-10 w-[14rem] min-w-[14rem] max-w-[14rem] bg-white whitespace-nowrap font-medium leading-tight print:static">
+                  <td className="rpt-name td sticky left-10 w-[9rem] min-w-[9rem] max-w-[9rem] bg-white whitespace-nowrap font-medium leading-tight print:static">
                     <NameWithTag name={r.name} tag={r.isAnonymous ? null : tagOf(r.key)} />
                   </td>
                   {r.cells.map((v, i) => (

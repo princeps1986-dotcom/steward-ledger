@@ -58,7 +58,7 @@ export function MembersPage() {
             <tr>
               <th className="th w-12 text-center">No</th>
               {COLUMNS.map((c) => (
-                <th key={c.key} className={c.key === 'phoneLast4' ? 'th text-center' : 'th'} aria-sort={p.sort.key === c.key ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                <th key={c.key} className={c.key === 'phoneLast4' ? 'th text-center' : c.key === 'name' ? 'th !left-0 !z-20' : 'th'} aria-sort={p.sort.key === c.key ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort(c.key)} title="누르면 이 열 기준으로 정렬합니다">
                     {c.label}
                     <SortMark active={p.sort.key === c.key} dir={p.sort.dir} />
@@ -80,7 +80,7 @@ export function MembersPage() {
             {p.rows.slice(paging.from, paging.to).map(({ member: m, familyLabel, stateLabel, registeredLabel }, k) => (
               <tr key={m.id} className={m.isActive ? '' : 'text-gray-400'}>
                 <td className="td text-center text-xs text-gray-500">{paging.from + k + 1}</td>
-                <td className="td font-medium">{m.name}</td>
+                <td className="td sticky left-0 bg-white font-medium">{m.name}</td>
                 <td className="td">{normalizePosition(m.position) || '-'}</td>
                 <td className="td text-center">{m.phoneLast4 ?? '-'}</td>
                 <td className="td">{familyLabel}</td>

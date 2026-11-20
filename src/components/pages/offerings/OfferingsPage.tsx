@@ -19,7 +19,7 @@ export function OfferingsPage() {
           <thead>
             <tr>
               <th className="th">순서</th>
-              <th className="th">헌금 명칭</th>
+              <th className="th sticky left-0 z-10">헌금 명칭</th>
               <th className="th">노출 영역</th>
               <th className="th">자주 쓰는 금액 단추</th>
               <th className="th">상태</th>
@@ -55,7 +55,7 @@ export function OfferingsPage() {
                   </span>
                   {t.sortOrder}
                 </td>
-                <td className="td font-medium">{t.name}</td>
+                <td className="td sticky left-0 bg-white font-medium">{t.name}</td>
                 <td className="td">{areaLabel}</td>
                 <td className="td">{quickLabel}</td>
                 <td className="td">{t.isActive ? '활성' : '비활성'}</td>
