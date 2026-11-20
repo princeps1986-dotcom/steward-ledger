@@ -453,6 +453,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     let stream;
     try {
+      // 암호화한 백업만 풀어 건넵니다(예전 일반 파일은 화면이 직접 읽으므로, 여기서 임의 파일 내용을 넘기지 않음).
+      if (!isEncryptedFile(p)) throw new Error('백업 파일 검증 실패: 암호화한 백업 파일이 아닙니다.');
       stream = openPlainStream(p, keyForFile(password));
     } catch (err) {
       throw new Error(verifyMessage(err));

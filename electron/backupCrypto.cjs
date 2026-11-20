@@ -50,10 +50,14 @@ function parseHeader(buf) {
       : { mode: "pc", keyId: buf.subarray(6, 14), bytes: buf.subarray(0, 14) };
   if (buf[5] === MODE_PASSWORD) {
     if (buf.length < 26) return undefined;
+    const iterations = buf.readUInt32BE(22);
+    // 조작된 파일이 반복 횟수를 터무니없이 크게 적어 앱을 멈추게 하지 못하도록 허용 범위만 받습니다.
+    if (iterations < 100000 || iterations > 2000000)
+      throw new Error(`${FAIL}: 알 수 없는 백업 형식입니다.`);
     return {
       mode: "password",
       salt: buf.subarray(6, 22),
-      iterations: buf.readUInt32BE(22),
+      iterations,
       bytes: buf.subarray(0, 26),
     };
   }

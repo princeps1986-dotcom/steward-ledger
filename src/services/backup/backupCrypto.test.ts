@@ -72,6 +72,15 @@ describe('암호화한 백업(electron/backupCrypto.cjs)', () => {
     await expect(decrypt(enc, pwGetKey('교회12345'))).rejects.toThrow('암호가 맞지 않습니다');
   });
 
+  it('조작된 머리말의 반복 횟수(PBKDF2)가 허용 범위를 벗어나면 키를 만들지 않고 거부한다', async () => {
+    const { header, key } = await bc.passwordHeader('교회1234');
+    const enc = await encrypt(Buffer.from('hello'), header, key);
+    enc.writeUInt32BE(0xffffffff, 22);
+    let called = false;
+    await expect(decrypt(enc, () => ((called = true), key))).rejects.toThrow('알 수 없는 백업 형식');
+    expect(called).toBe(false);
+  });
+
   it('변조·잘림·조각 순서 바꿈·뒤에 덧붙임을 거부한다', async () => {
     const plain = randomBytes(bc.CHUNK + 10); // 조각 2개
     const header = bc.pcHeader(pcKey);
