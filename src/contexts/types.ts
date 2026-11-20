@@ -10,6 +10,8 @@ export interface Member {
   familyGroupId?: string;
   isFamilyHead: boolean;
   isActive: boolean;
+  /** 등록일 YYYY-MM-DD. 이 필드가 생기기 전 성도는 없을 수 있습니다(registeredDateOf로 표시). */
+  registeredAt?: string;
   createdAt: string;
   updatedAt: string;
 }

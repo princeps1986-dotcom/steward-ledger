@@ -1,16 +1,24 @@
 import type { MemberFormController } from '../../hooks/useMemberForm';
+import { DatePicker } from './DatePicker';
 import { MemberPicker } from './MemberPicker';
 
 /** 성도 등록/수정 입력 필드 (성도 화면·빠른 등록 공용) */
-export function MemberFormFields({ draft, setField, headOptions, positionOptions, error }: MemberFormController) {
+export function MemberFormFields({ draft, setField, headOptions, positionOptions, error, isEditing }: MemberFormController) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <label className="col-span-2">
+      <label className={isEditing ? '' : 'col-span-2'}>
         <span className="label">
           이름 <span className="font-semibold text-red-600">* 필수</span>
         </span>
         <input className="input" value={draft.name} onChange={(e) => setField('name')(e.target.value)} autoFocus />
       </label>
+      {/* 새 등록은 오늘 날짜가 자동으로 들어가므로 수정할 때만 보여 줍니다. */}
+      {isEditing ? (
+        <div>
+          <span className="label">등록일</span>
+          <DatePicker value={draft.registeredAt} onChange={setField('registeredAt')} ariaLabel="등록일" />
+        </div>
+      ) : null}
       <label>
         <span className="label">직분</span>
         <select className="input" value={draft.position} onChange={(e) => setField('position')(e.target.value)}>

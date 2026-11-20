@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import type { Member } from '../contexts/types';
-import { canDeactivate, currentHeadOf, EMPTY_MEMBER_DRAFT, linkedHeadIdOf, type MemberDraft } from '../services/domain/memberRules';
+import { canDeactivate, currentHeadOf, EMPTY_MEMBER_DRAFT, linkedHeadIdOf, registeredDateOf, type MemberDraft } from '../services/domain/memberRules';
 import { memberComparator, type MemberSortKey, type SortDir } from '../services/domain/memberSort';
 import { matchMember } from '../services/domain/search';
 
@@ -9,6 +9,7 @@ export interface MemberRow {
   member: Member;
   familyLabel: string;
   stateLabel: string;
+  registeredLabel: string;
 }
 
 export function useMembersPage() {
@@ -31,6 +32,7 @@ export function useMembersPage() {
           member: m,
           familyLabel: m.familyGroupId ? `${currentHeadOf(members, m.familyGroupId)?.name ?? '?'} 세대` : '-',
           stateLabel: m.isActive ? '활성' : '비활성',
+          registeredLabel: registeredDateOf(m) || '-',
         }))
         .sort(memberComparator(sort.key, sort.dir)),
     [members, deferredQuery, showInactive, sort],
@@ -48,6 +50,7 @@ export function useMembersPage() {
           phoneLast4: m.phoneLast4 ?? '',
           isFamilyHead: m.isFamilyHead,
           headMemberId: linkedHeadIdOf(members, m),
+          registeredAt: registeredDateOf(m),
         },
       }),
     [members],

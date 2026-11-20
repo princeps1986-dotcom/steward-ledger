@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, DonationDraft, Member } from '../../contexts/types';
 import { formatAmountInput, parseAmount } from './amount';
-import { lastSunday, monthsOfPeriod, withWeekday } from './dates';
+import { lastSunday, monthsOfPeriod, todayString, withWeekday } from './dates';
 import { buildDonation, makeAudit, mergeDonation, validateReason } from './donationOps';
 import { familyKeyOf } from './family';
-import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT } from './memberRules';
+import { applyMemberSave, canDeactivate, EMPTY_MEMBER_DRAFT, registeredDateOf } from './memberRules';
 import { matchMember, memberLabel } from './search';
 
 const member = (p: Partial<Member>): Member => ({
@@ -145,6 +145,23 @@ describe('memberRules', () => {
   it('validates draft fields', () => {
     expect(applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: '' }).ok).toBe(false);
     expect(applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: 'a', phoneLast4: '12' }).ok).toBe(false);
+  });
+
+  it('registeredAt: today on create, editable on edit, fallback for old members', () => {
+    const r = applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: '김철수' });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.saved.registeredAt).toBe(todayString());
+    const e = applyMemberSave(r.members, { ...EMPTY_MEMBER_DRAFT, name: '김철수', registeredAt: '2020-03-01' }, r.saved.id);
+    if (!e.ok) throw new Error(e.error);
+    expect(e.saved.registeredAt).toBe('2020-03-01');
+    // 빈 값으로 수정하면 기존 등록일을 지우지 않음
+    const keep = applyMemberSave(e.members, { ...EMPTY_MEMBER_DRAFT, name: '김철수' }, r.saved.id);
+    if (!keep.ok) throw new Error(keep.error);
+    expect(keep.saved.registeredAt).toBe('2020-03-01');
+    expect(applyMemberSave([], { ...EMPTY_MEMBER_DRAFT, name: 'a', registeredAt: '2025-02-30' }).ok).toBe(false);
+    // 등록일이 없는 옛 성도: createdAt(UTC)을 서울 날짜로
+    expect(registeredDateOf(member({ createdAt: '2024-12-31T16:00:00.000Z' }))).toBe('2025-01-01');
+    expect(registeredDateOf(member({ registeredAt: '2019-05-05' }))).toBe('2019-05-05');
   });
 });
 

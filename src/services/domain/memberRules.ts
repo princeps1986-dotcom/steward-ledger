@@ -1,4 +1,5 @@
 import type { Member } from '../../contexts/types';
+import { formatDateTime, isValidDateString, todayString } from './dates';
 import { newId, nowIso } from './ids';
 import { normalizePosition } from './positions';
 
@@ -9,6 +10,8 @@ export interface MemberDraft {
   isFamilyHead: boolean;
   /** 세대원일 때 연결할 세대주의 Member.id ('' = 연결 없음) */
   headMemberId: string;
+  /** 등록일 YYYY-MM-DD ('' = 새 등록 시 오늘 날짜) */
+  registeredAt: string;
 }
 
 export const EMPTY_MEMBER_DRAFT: MemberDraft = {
@@ -17,6 +20,7 @@ export const EMPTY_MEMBER_DRAFT: MemberDraft = {
   phoneLast4: '',
   isFamilyHead: false,
   headMemberId: '',
+  registeredAt: '',
 };
 
 export type MemberSaveResult = { ok: true; members: Member[]; saved: Member } | { ok: false; error: string };
@@ -24,7 +28,13 @@ export type MemberSaveResult = { ok: true; members: Member[]; saved: Member } | 
 export function validateDraft(d: MemberDraft): string | null {
   if (!d.name.trim()) return '이름을 입력하세요.';
   if (d.phoneLast4 && !/^\d{4}$/.test(d.phoneLast4)) return '연락처 뒷자리는 숫자 4자리입니다.';
+  if (d.registeredAt && !isValidDateString(d.registeredAt)) return '등록일이 올바른 날짜가 아닙니다.';
   return null;
+}
+
+/** 화면에 보여 줄 등록일. 등록일이 없는 기존 성도는 처음 저장된 날짜(createdAt, 서울 기준)로 대신합니다. */
+export function registeredDateOf(m: Member): string {
+  return m.registeredAt ?? (m.createdAt ? formatDateTime(m.createdAt).slice(0, 10) : '');
 }
 
 /** 옛 데이터에 남은 생년월일(개인정보)을 뺍니다. 바뀐 게 없으면 같은 배열과 changed=false를 돌려줍니다. */
@@ -95,6 +105,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
       isFamilyHead: draft.isFamilyHead,
       familyGroupId: draft.isFamilyHead ? id : head ? ensureHeadGroup() : undefined,
       isActive: true,
+      registeredAt: draft.registeredAt || todayString(),
       createdAt: now,
       updatedAt: now,
     };
@@ -107,6 +118,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
   if (head && head.id === editingId) return { ok: false, error: '본인을 세대주로 연결할 수 없습니다.' };
   const m = own(idx);
   Object.assign(m, base(draft), { updatedAt: now });
+  if (draft.registeredAt) m.registeredAt = draft.registeredAt;
 
   if (draft.isFamilyHead && !m.isFamilyHead) {
     if (m.familyGroupId) {

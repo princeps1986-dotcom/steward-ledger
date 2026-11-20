@@ -66,6 +66,7 @@ export function MembersPage() {
                 </th>
               ))}
               <th className="th">세대주</th>
+              <th className="th">등록일</th>
               <th className="th" aria-sort={p.sort.key === 'state' ? (p.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                 <button type="button" className="font-semibold hover:text-blue-700" onClick={() => p.toggleSort('state')} title="누르면 이 열 기준으로 정렬합니다">
                   상태
@@ -76,7 +77,7 @@ export function MembersPage() {
             </tr>
           </thead>
           <tbody>
-            {p.rows.slice(paging.from, paging.to).map(({ member: m, familyLabel, stateLabel }, k) => (
+            {p.rows.slice(paging.from, paging.to).map(({ member: m, familyLabel, stateLabel, registeredLabel }, k) => (
               <tr key={m.id} className={m.isActive ? '' : 'text-gray-400'}>
                 <td className="td text-center text-xs text-gray-500">{paging.from + k + 1}</td>
                 <td className="td font-medium">{m.name}</td>
@@ -84,6 +85,7 @@ export function MembersPage() {
                 <td className="td">{m.phoneLast4 ?? '-'}</td>
                 <td className="td">{familyLabel}</td>
                 <td className="td">{m.isFamilyHead ? '●' : ''}</td>
+                <td className="td">{registeredLabel}</td>
                 <td className="td">{stateLabel}</td>
                 <td className="td text-right">
                   <div className="flex justify-end gap-1">
@@ -99,7 +101,7 @@ export function MembersPage() {
             ))}
             {p.rows.length === 0 ? (
               <tr>
-                <td className="td text-center text-gray-500" colSpan={8}>
+                <td className="td text-center text-gray-500" colSpan={9}>
                   성도가 없습니다.
                 </td>
               </tr>

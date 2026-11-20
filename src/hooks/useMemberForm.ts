@@ -58,7 +58,7 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
     }
   }, [saveMember, draft, opts]);
 
-  return { draft, setField, headOptions, positionOptions: positionChoices, error, saving, submit };
+  return { draft, setField, headOptions, positionOptions: positionChoices, error, saving, submit, isEditing: !!opts.editingId };
 }
 
 export type MemberFormController = ReturnType<typeof useMemberForm>;
