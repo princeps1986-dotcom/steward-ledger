@@ -11,8 +11,7 @@ import { NameWithTag } from './NameWithTag';
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 40;
-// divide-x: 열 사이 세로선(가로 스크롤 때 열 경계가 보이도록). 머리글·행 모두 같은 그리드를 씁니다.
-const GRID = 'grid grid-cols-[135px_1fr_140px_130px_1fr_120px] items-center divide-x divide-gray-200';
+const GRID = 'grid grid-cols-[135px_1fr_140px_130px_1fr_120px] items-center';
 
 export function PersonalTab({ f }: { f: ReportFilters }) {
   const r = usePersonalReport(f);
