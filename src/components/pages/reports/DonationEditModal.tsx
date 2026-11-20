@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DonationEditorController } from '../../../hooks/useDonationEditor';
 import { DatePicker } from '../../shared/DatePicker';
 import { Modal } from '../../shared/Modal';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 const OTHER = '기타(직접 입력)';
 /** 자주 쓰는 사유. 선택하면 입력 칸에 채워지고 그대로 고쳐 쓸 수 있습니다. */
@@ -27,14 +28,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
       title={isDelete ? '헌금 내역 삭제' : '헌금 내역 수정'}
       description={e.targetSummary}
       footer={
-        <>
-          <button className="btn" onClick={e.close}>
-            취소
-          </button>
-          <button className={isDelete ? 'btn-danger' : 'btn-primary'} onClick={() => void e.submit()} disabled={e.busy}>
-            {isDelete ? '삭제' : '저장'}
-          </button>
-        </>
+        <ConfirmFooter onCancel={e.close} onConfirm={e.submit} tone={isDelete ? 'danger' : 'primary'} confirmDisabled={e.busy} confirmLabel={isDelete ? '삭제' : '저장'} />
       }
     >
       {d ? (

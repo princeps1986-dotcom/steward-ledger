@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { preventAutoFocus, type LargeAmountController } from '../../../hooks/useDonationInput';
 import { formatWon } from '../../../services/domain/amount';
 import { Modal } from '../../shared/Modal';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 export const LargeAmountModal = memo(function LargeAmountModal({ large }: { large: LargeAmountController }) {
   const p = large.pending;
@@ -12,14 +13,7 @@ export const LargeAmountModal = memo(function LargeAmountModal({ large }: { larg
       onCloseAutoFocus={preventAutoFocus}
       title="금액을 확인해 주세요"
       footer={
-        <>
-          <button className="btn" onClick={large.onCancel}>
-            다시 입력
-          </button>
-          <button className="btn-primary" autoFocus onClick={() => void large.onConfirm()}>
-            확인
-          </button>
-        </>
+        <ConfirmFooter onCancel={large.onCancel} onConfirm={large.onConfirm} cancelLabel="다시 입력" autoFocus confirmLabel="확인" />
       }
     >
       <ul className="space-y-1 text-sm">

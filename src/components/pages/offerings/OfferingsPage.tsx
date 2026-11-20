@@ -1,5 +1,6 @@
 import { useOfferingsPage } from '../../../hooks/useOfferingsPage';
 import { Modal } from '../../shared/Modal';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 export function OfferingsPage() {
   const p = useOfferingsPage();
@@ -103,14 +104,7 @@ export function OfferingsPage() {
         title={`'${p.confirming?.name ?? ''}' 헌금 종류를 삭제할까요?`}
         description="입력된 헌금이 없는 헌금 종류입니다. 삭제하면 되돌릴 수 없습니다."
         footer={
-          <>
-            <button className="btn" onClick={p.cancelDelete}>
-              취소
-            </button>
-            <button className="btn-danger" autoFocus onClick={() => void p.confirmDelete()}>
-              삭제
-            </button>
-          </>
+          <ConfirmFooter onCancel={p.cancelDelete} onConfirm={p.confirmDelete} tone="danger" autoFocus confirmLabel="삭제" />
         }
       >
         <span className="sr-only">삭제 확인</span>

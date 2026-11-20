@@ -2,6 +2,7 @@ import { useSettingsPage } from '../../../hooks/useSettingsPage';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { ThemePicker } from '../../shared/ThemePicker';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 export function SettingsPage() {
   const s = useSettingsPage();
@@ -128,14 +129,13 @@ export function SettingsPage() {
         title="백업 파일을 저장할까요?"
         description="백업할 연도를 선택하고 확인하세요."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelBackup} disabled={s.busy}>
-              취소
-            </button>
-            <button className="btn-primary" onClick={() => void s.backupNow()} disabled={s.busy || !s.backupYear}>
-              {s.busy ? `저장하는 중…${s.backupProgress ? ` (${s.backupProgress.done}/${s.backupProgress.total}달)` : ''}` : `${s.backupYear}년 백업 파일 저장`}
-            </button>
-          </>
+          <ConfirmFooter
+            onCancel={s.cancelBackup}
+            onConfirm={s.backupNow}
+            busy={s.busy}
+            confirmDisabled={!s.backupYear}
+            confirmLabel={s.busy ? `저장하는 중…${s.backupProgress ? ` (${s.backupProgress.done}/${s.backupProgress.total}달)` : ''}` : `${s.backupYear}년 백업 파일 저장`}
+          />
         }
       >
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -210,14 +210,13 @@ export function SettingsPage() {
         title="시연 데이터를 생성할까요?"
         description="가상의 시연 데이터가 만들어집니다. 시연이 끝나면 [시연 데이터 제거]로 빈 상태로 되돌립니다."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelDemo} disabled={s.busy}>
-              취소
-            </button>
-            <button className="btn-danger" onClick={() => void s.confirmDemo()} disabled={s.busy}>
-              {s.demoProgress ? `만드는 중… ${s.demoProgress.done}/${s.demoProgress.total}` : '시연 데이터 생성'}
-            </button>
-          </>
+          <ConfirmFooter
+            onCancel={s.cancelDemo}
+            onConfirm={s.confirmDemo}
+            tone="danger"
+            busy={s.busy}
+            confirmLabel={s.demoProgress ? `만드는 중… ${s.demoProgress.done}/${s.demoProgress.total}` : '시연 데이터 생성'}
+          />
         }
       >
         <div className="space-y-2 text-sm">
@@ -236,14 +235,7 @@ export function SettingsPage() {
         title="시연 데이터를 제거할까요?"
         description="시연 중에 수정·삭제·추가한 데이터를 포함해 지금 앱의 모든 데이터가 지워집니다."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelRemoveDemo} disabled={s.busy}>
-              취소
-            </button>
-            <button className="btn-danger" onClick={() => void s.confirmRemoveDemo()} disabled={s.busy}>
-              {s.busy ? '제거하는 중…' : '시연 데이터 제거'}
-            </button>
-          </>
+          <ConfirmFooter onCancel={s.cancelRemoveDemo} onConfirm={s.confirmRemoveDemo} tone="danger" busy={s.busy} confirmLabel={s.busy ? '제거하는 중…' : '시연 데이터 제거'} />
         }
       >
         <div className="space-y-2 text-sm">
@@ -258,14 +250,14 @@ export function SettingsPage() {
         title="전체 데이터를 초기화할까요?"
         description="성도, 헌금 내역, 수정·삭제 이력이 모두 삭제되고 헌금 종류는 기본값으로 돌아갑니다."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelReset} disabled={s.busy}>
-              취소
-            </button>
-            <button className="btn-danger" onClick={() => void s.confirmReset()} disabled={s.busy || s.resetLeft > 0}>
-              {s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '긴급 백업 후 초기화'}
-            </button>
-          </>
+          <ConfirmFooter
+            onCancel={s.cancelReset}
+            onConfirm={s.confirmReset}
+            tone="danger"
+            busy={s.busy}
+            confirmDisabled={s.resetLeft > 0}
+            confirmLabel={s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '긴급 백업 후 초기화'}
+          />
         }
       >
         <div className="space-y-2 text-sm">
@@ -281,14 +273,7 @@ export function SettingsPage() {
         title="백업 파일 복원할까요?"
         description="복원할 연도를 선택하세요."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelRestore}>
-              취소
-            </button>
-            <button className="btn-danger" onClick={() => void s.confirmRestore()} disabled={s.busy || !s.restoreYear}>
-              복원
-            </button>
-          </>
+          <ConfirmFooter onCancel={s.cancelRestore} onConfirm={s.confirmRestore} tone="danger" confirmDisabled={s.busy || !s.restoreYear} confirmLabel="복원" />
         }
       >
         <div className="space-y-2 text-sm">
@@ -330,14 +315,13 @@ export function SettingsPage() {
         title="백업 암호를 입력하세요"
         description="이 백업 파일은 저장할 때 정한 암호로 잠겨 있습니다."
         footer={
-          <>
-            <button className="btn" onClick={s.cancelRestorePassword} disabled={s.busy}>
-              취소
-            </button>
-            <button className="btn-primary" onClick={() => void s.confirmRestorePassword()} disabled={s.busy || !s.restorePw?.input}>
-              {s.busy ? '확인하는 중…' : '확인'}
-            </button>
-          </>
+          <ConfirmFooter
+            onCancel={s.cancelRestorePassword}
+            onConfirm={s.confirmRestorePassword}
+            busy={s.busy}
+            confirmDisabled={!s.restorePw?.input}
+            confirmLabel={s.busy ? '확인하는 중…' : '확인'}
+          />
         }
       >
         <form

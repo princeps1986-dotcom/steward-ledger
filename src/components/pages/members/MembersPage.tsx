@@ -8,6 +8,7 @@ import { PAGER_RESERVE, REPORT_SCROLL, useFitHeight } from '../reports/reportScr
 import { MemberEditModal } from './MemberEditModal';
 import { MemberImportModal } from './MemberImportModal';
 import { normalizePosition } from '../../../services/domain/positions';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 const PAGE_SIZE = 100;
 
@@ -118,14 +119,7 @@ export function MembersPage() {
         title={p.confirmingText?.title ?? ''}
         description={p.confirmingText?.body}
         footer={
-          <>
-            <button className="btn" onClick={p.cancelToggleActive}>
-              취소
-            </button>
-            <button className="btn-primary" autoFocus onClick={() => void p.confirmToggleActive()}>
-              {p.confirmingText?.ok}
-            </button>
-          </>
+          <ConfirmFooter onCancel={p.cancelToggleActive} onConfirm={p.confirmToggleActive} autoFocus confirmLabel={p.confirmingText?.ok} />
         }
       >
         <p className="text-sm text-gray-600">
