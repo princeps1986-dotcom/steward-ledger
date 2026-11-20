@@ -10,7 +10,7 @@ export function OfferingsPage() {
         <p className="text-sm text-gray-600">
           '기본 나열'은 입력 화면에 항상 표시되고, '기타 드롭다운'은 선택해서 입력합니다. 행을 끌어서 순서를 바꿀 수 있습니다.
         </p>
-        <button className="btn-primary" onClick={p.openNew}>
+        <button className="btn-primary shrink-0 whitespace-nowrap" onClick={p.openNew}>
           + 헌금 종류 추가
         </button>
       </section>
