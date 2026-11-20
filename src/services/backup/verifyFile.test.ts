@@ -33,6 +33,11 @@ describe('main-process checksum check (electron/backupVerify.cjs)', () => {
     await expect(verifyBackupFile(join(dir, 'bad.json'))).rejects.toThrow('체크섬');
   });
 
+  it('backup:end가 검증하는 임시 파일(….json.gz.tmp)도 압축 파일로 읽는다', async () => {
+    writeFileSync(join(dir, 'autosave.json.gz.tmp'), gzipSync(text));
+    await expect(verifyBackupFile(join(dir, 'autosave.json.gz.tmp'))).resolves.toBeUndefined();
+  });
+
   it('scanBackupFile skips its own hash only when told the checksum was checked', async () => {
     const bad = new Blob([tampered()]);
     expect((await scanBackupFile(bad)).ok).toBe(false);

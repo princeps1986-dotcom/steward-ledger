@@ -63,7 +63,7 @@ try {
   const perm = await ev('new Promise((res) => navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code)))');
   check('보안: 위치 권한 요청이 거부됨', perm === '거부', perm);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
-  check('저장소: kv와 donations가 만들어짐', JSON.parse(db).s === 'donations,kv', db);
+  check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
   if (!exe) {

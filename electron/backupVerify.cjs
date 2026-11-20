@@ -11,7 +11,8 @@ async function verifyBackupFile(file) {
   let last = []; // 가장 최근에 끝난 줄(다음 줄이 끝나야 끝 줄이 아님을 알고 해시함)
   let partial = []; // 마지막 줄바꿈 뒤의 바이트
   const raw = fsSync.createReadStream(file);
-  const stream = /\.gz$/i.test(file) ? raw.pipe(zlib.createGunzip()) : raw;
+  // backup:end는 이름을 바꾸기 전의 임시 파일(….json.gz.tmp)을 검증하므로 .tmp가 붙어도 압축 파일로 읽습니다.
+  const stream = /\.gz(\.tmp)?$/i.test(file) ? raw.pipe(zlib.createGunzip()) : raw;
   raw.on('error', (err) => stream.destroy(err));
   for await (const chunk of stream) {
     let start = 0;
