@@ -189,41 +189,46 @@ export function useSettingsPage() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || backupBlocked) return;
-    setRestoreYearPick('');
-    setMessage(CHECKING_FILE); // 큰 파일은 검사(체크섬·형식)에 수십 초가 걸리므로 멈춘 것으로 보이지 않게 알립니다.
-    // 암호화한 백업(.slbk): 자동 백업은 이 PC의 키로 바로 풀고, 직접 백업은 암호를 물어봅니다. 화면은 키를 모르고 main이 풀어 줍니다.
-    const api = desktop();
-    const info = api ? await api.inspectBackupFile(file) : null;
-    if (info?.error) return setMessage({ kind: 'error', text: `복원 불가: ${info.error.replace(/^백업 파일 검증 실패: /, '')}` });
-    if (api && info?.kind === 'password') {
+    try {
+      setRestoreYearPick('');
+      setMessage(CHECKING_FILE); // 큰 파일은 검사(체크섬·형식)에 수십 초가 걸리므로 멈춘 것으로 보이지 않게 알립니다.
+      // 암호화한 백업(.slbk): 자동 백업은 이 PC의 키로 바로 풀고, 직접 백업은 암호를 물어봅니다. 화면은 키를 모르고 main이 풀어 줍니다.
+      const api = desktop();
+      const info = api ? await api.inspectBackupFile(file) : null;
+      if (info?.error) return setMessage({ kind: 'error', text: `복원 불가: ${info.error.replace(/^백업 파일 검증 실패: /, '')}` });
+      if (api && info?.kind === 'password') {
+        setMessage(null);
+        return setRestorePw({ file, input: '', error: '' });
+      }
+      if (api && info?.kind === 'pc') {
+        const fail = await checkStreamBackup(file, decryptedBackup(api, file));
+        if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
+        return;
+      }
+      if (await isNdjsonFile(file)) {
+        const fail = await checkStreamBackup(file, file);
+        if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
+        return;
+      }
+      const res = await parseAndValidateBackup(await readBackupText(file));
+      if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
+      const p = res.envelope.payload;
+      const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
+      // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
+      const plan = await previewMerge(p);
       setMessage(null);
-      return setRestorePw({ file, input: '', error: '' });
+      setRestore({
+        mergeNotice: mergeNoticeOf(plan),
+        envelope: res.envelope,
+        fileName: file.name,
+        migratedFrom: res.migratedFrom,
+        summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${p.members.length}명 · 헌금 종류 ${p.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
+        yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
+      });
+    } catch (err) {
+      // 손상된 압축 파일 등 읽는 중의 오류: '확인하고 있습니다' 문구가 남지 않게 사유를 알립니다.
+      setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
     }
-    if (api && info?.kind === 'pc') {
-      const fail = await checkStreamBackup(file, decryptedBackup(api, file));
-      if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
-      return;
-    }
-    if (await isNdjsonFile(file)) {
-      const fail = await checkStreamBackup(file, file);
-      if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
-      return;
-    }
-    const res = await parseAndValidateBackup(await readBackupText(file));
-    if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
-    const p = res.envelope.payload;
-    const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
-    // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
-    const plan = await previewMerge(p);
-    setMessage(null);
-    setRestore({
-      mergeNotice: mergeNoticeOf(plan),
-      envelope: res.envelope,
-      fileName: file.name,
-      migratedFrom: res.migratedFrom,
-      summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${p.members.length}명 · 헌금 종류 ${p.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
-      yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
-    });
   }, []);
 
   /** 암호 입력 창의 [확인]: 틀리면 창에 사유를 보여 주고, 맞으면 복원 창으로 넘어갑니다(암호는 복원할 때 파일을 다시 읽으려고 래퍼 안에만 둡니다). */

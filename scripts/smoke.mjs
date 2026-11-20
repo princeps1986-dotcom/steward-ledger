@@ -61,7 +61,8 @@ try {
   check('보안: 최소 API만 노출', (await ev('typeof window.desktop?.backupBegin')) === 'function');
   const csp = await ev('fetch(location.href).then(r => r.headers.get("content-security-policy"))');
   check('보안: CSP 헤더가 있음', typeof csp === 'string' && csp.includes("default-src 'self'"));
-  const perm = await ev('new Promise((res) => navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code), { timeout: 5000 }))');
+  // 권한 단계에서 답이 없으면 timeout 옵션이 적용되지 않으므로 5초 타이머와 경쟁시킵니다.
+  const perm = await ev('new Promise((res) => { setTimeout(() => res("시간 초과"), 5000); navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code)); })');
   check('보안: 위치 권한 요청이 거부됨', perm === '거부', perm);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
