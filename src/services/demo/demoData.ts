@@ -1,6 +1,7 @@
 import type { AuditLog, BackupPayload, Donation, Member } from '../../contexts/types';
 import { DEFAULT_OFFERING_TYPES } from '../domain/offeringDefaults';
 import { lastSunday, seoulNow } from '../domain/dates';
+import { addDays, GIVEN, pad2, parseYmd, rngOf, SURNAMES, ymd } from './demoPrimitives';
 
 /**
  * 시연용 데이터. 시연 성도·헌금 종류·헌금 id는 모두 DEMO_PREFIX로 시작해, 앱이 시연 중인지 한 건만 보고 알 수 있습니다(demoState.ts).
@@ -27,25 +28,6 @@ export interface DemoSpec {
 export const DEMO_SPEC_APP: DemoSpec = { members: 800, weeks: 156, total: 200_000, weekMean: 1090, weekMin: 750, weekMax: 2000, spikeCount: 5000 };
 /** 브라우저(휴대폰 포함): 성도 800명 · 헌금 약 6.3만 건(최근 18개월, 주 500~1,333건, 12/25·1/1은 하루 3,333건 추가). 브라우저는 저장·메모리 여유가 적고 시연용이라 더 작게 만듭니다. */
 export const DEMO_SPEC_BROWSER: DemoSpec = { members: 800, weeks: 78, total: 63_000, weekMean: 727, weekMin: 500, weekMax: 1333, spikeCount: 3333 };
-
-const pad2 = (n: number): string => String(n).padStart(2, '0');
-const ymd = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const parse = (s: string): Date => new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10)));
-const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-
-function rngOf(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '전', '홍', '고', '문', '양', '손', '배', '백', '허', '유', '남'];
-const GIVEN = ['민수', '서연', '지훈', '수빈', '현우', '지민', '하준', '예은', '도윤', '서윤', '준호', '지원', '승현', '유진', '태양', '나연', '성민', '은지', '재원', '소영', '진우', '다은', '동현', '혜진', '상철', '미경', '영수', '순자', '병철', '정희', '광수', '명숙', '기태', '옥순', '한결', '보람', '시우', '아린', '건우', '채원'];
 
 /** 헌금 종류별 (비중, 금액 후보) — 기본 종류(DEFAULT_OFFERING_TYPES)의 순서와 같습니다. */
 const TYPE_MIX: { weight: number; amounts: number[] }[] = [
@@ -150,7 +132,7 @@ export function planDemo(spec: DemoSpec = DEMO_SPEC_APP, today: Date = seoulNow(
 
   // 날짜별 건수: 주마다(일~토) 1,500~4,000건을 일요일 70%·나머지 요일 30%로, 12/25·1/1 날짜는 하루에 spikeCount 추가
   const todayStr = ymd(today);
-  const lastSun = parse(lastSunday(today));
+  const lastSun = parseYmd(lastSunday(today));
   const firstSun = addDays(lastSun, -7 * (spec.weeks - 1));
   const spikes = new Set<string>();
   for (let y = firstSun.getFullYear(); y <= today.getFullYear(); y++) {

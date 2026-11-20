@@ -1,13 +1,6 @@
-// 테스트·시연 데이터 생성 핵심 로직(브라우저와 Node 양쪽에서 사용). 파일 입출력은 하지 않습니다.
-// scripts/generate-test-data.mjs(백업 파일 생성)와 앱의 [시연 데이터 불러오기]가 함께 씁니다.
-const pad2 = (n) => String(n).padStart(2, '0');
-const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const parseYmd = (s) => {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-
+// 시험 데이터 생성 핵심 로직(파일 입출력은 하지 않음). scripts/generate-test-data.mjs가 씁니다.
+// 날짜·난수 헬퍼와 이름 목록은 앱의 시연 데이터와 같은 것을 씁니다(src/services/demo/demoPrimitives.ts).
+import { addDays, GIVEN, pad2, parseYmd, rngOf, SURNAMES, ymd } from '../src/services/demo/demoPrimitives.ts';
 
 export { ymd, parseYmd, addDays };
 
@@ -19,16 +12,7 @@ const YESTERDAY_COUNT = 300;
 const TODAY_COUNT = 100;
 
 // ── 난수(재현 가능) ─────────────────────────────────────
-function mulberry32(a) {
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rnd = mulberry32(SEED);
+const rnd = rngOf(SEED);
 const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chance = (p) => rnd() < p;
@@ -53,8 +37,6 @@ const hex = (n) => Array.from({ length: n }, () => Math.floor(rnd() * 16).toStri
 const uid = () => `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`;
 
 // ── 성도 ────────────────────────────────────────────────
-const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '전', '홍', '고', '문', '양', '손', '배', '백', '허', '유', '남', '심', '노', '하', '곽', '성', '차', '주', '우', '구', '민'];
-const GIVEN = ['민수', '서연', '지훈', '수빈', '현우', '지민', '하준', '예은', '도윤', '서윤', '준호', '지원', '승현', '유진', '태양', '나연', '성민', '은지', '재원', '소영', '진우', '다은', '동현', '혜진', '상철', '미경', '영수', '순자', '병철', '정희', '광수', '명숙', '기태', '옥순', '한결', '보람', '시우', '아린', '건우', '채원', '용기', '은혜', '믿음', '소망', '사랑', '진리', '평강', '다윗', '요한', '바울'];
 const MEMBER_TS = () => new Date(Date.UTC(2024, int(0, 11), int(1, 28), int(0, 23), int(0, 59))).toISOString();
 const birth = (minAge, maxAge) => {
   const y = parseYmd(TODAY).getFullYear() - int(minAge, maxAge);
