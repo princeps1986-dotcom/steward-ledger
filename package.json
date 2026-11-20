@@ -5,6 +5,9 @@
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -50,7 +53,9 @@
       "enableNodeOptionsEnvironmentVariable": false,
       "enableNodeCliInspectArguments": false,
       "enableEmbeddedAsarIntegrityValidation": true,
-      "onlyLoadAppFromAsar": true
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "enableCookieEncryption": true
     },
     "publish": {
       "provider": "github",
@@ -59,6 +64,7 @@
     }
   },
   "dependencies": {
+    "electron-log": "^5.4.4",
     "electron-updater": "^6.8.11"
   },
   "devDependencies": {
@@ -85,6 +91,6 @@
     "typescript": "^7.0.2",
     "use-context-selector": "^2.0.0",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }

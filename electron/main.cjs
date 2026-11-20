@@ -44,6 +44,13 @@ const CSP = [
 // Windows의 appData는 APPDATA 환경변수를 따르지 않으므로, 시험(개발 실행)은 STEWARD_TEST_APPDATA로 실제 데이터 폴더를 피합니다.
 app.setPath('userData', resolveUserDataDir((!app.isPackaged && process.env.STEWARD_TEST_APPDATA) || app.getPath('appData')));
 
+// 현장 장애 진단용 로그(%APPDATA%\StewardLedger\logs). 외부로 전송하지 않으며, 교인 정보가 섞이지 않도록 오류 메시지만 남깁니다.
+// initialize()는 부르지 않습니다: 화면에 window.__electronLog를 노출하는 preload를 끼워 넣기 때문(로그는 main에서만 씀).
+const log = require('electron-log/main');
+log.transports.file.maxSize = 1024 * 1024;
+// 처리 안 된 예외는 로그를 남기고 Electron 기본처럼 오류 창을 띄웁니다(조용히 묻히지 않게). Promise 거부는 Electron 기본(경고만)처럼 로그만 남깁니다.
+log.errorHandler.startCatching();
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
@@ -355,6 +362,7 @@ if (!app.requestSingleInstanceLock()) {
     let reloads = [];
     win.webContents.on('render-process-gone', (_e, details) => {
       if (details.reason === 'clean-exit') return;
+      log.error('render-process-gone', details.reason, details.exitCode);
       const now = Date.now();
       reloads = reloads.filter((t) => now - t < 60000);
       if (reloads.length >= 3) {
@@ -547,12 +555,13 @@ if (!app.requestSingleInstanceLock()) {
       updater = require('electron-updater').autoUpdater;
       updater.autoDownload = false;
       updater.autoInstallOnAppQuit = true;
-      updater.logger = null;
+      updater.logger = log;
     }
     return updater;
   };
   const updateError = (err) => {
     const msg = String((err && err.message) || err);
+    log.warn('update error', msg);
     if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET|net::/i.test(msg)) return '인터넷에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.';
     if (/404|latest\.yml|No published versions|Cannot find/i.test(msg)) return '올라온 업데이트를 찾지 못했습니다.';
     return '업데이트를 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.';
