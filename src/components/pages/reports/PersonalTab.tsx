@@ -81,7 +81,7 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
               <span className="pl-3">메모</span>
               <span className="text-right">관리</span>
             </div>
-            <div className="max-h-[480px] overflow-y-auto">
+            <div aria-busy={r.loading} className={`max-h-[480px] overflow-y-auto transition-opacity ${r.stale ? 'opacity-60' : ''}`}>
               {r.rows.slice(paging.from, paging.to).map(({ donation, typeName, amountLabel }) => (
                 <div key={donation.id} className={`${GRID} w-full border-b border-gray-100 px-2 text-sm`} style={{ height: ROW_HEIGHT }}>
                   <DateText date={donation.date} />
@@ -102,22 +102,22 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
                 </div>
               ))}
             </div>
-            {r.loading ? (
-              <>
-                {/* 읽는 동안 표 자리를 비우지 않고 흐린 빈 줄을 보여 줍니다. */}
-                {[0, 1, 2].map((i) => (
-                  <div key={i} aria-hidden="true" className={`${GRID} border-b border-gray-100 px-2`} style={{ height: ROW_HEIGHT }}>
-                    {[0, 1, 2, 3, 4, 5].map((c) => (
-                      <span key={c} className="mr-3 h-3 rounded bg-gray-100" />
-                    ))}
-                  </div>
-                ))}
-                {r.slow ? (
+            {/* 이전 결과가 있으면 흐리게 두고, 결과가 없을 때만 빈 줄을 보여 줍니다(300ms 넘게 걸릴 때만). */}
+            {r.loading && r.rows.length === 0 ? (
+              r.slow ? (
+                <>
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} aria-hidden="true" className={`${GRID} border-b border-gray-100 px-2`} style={{ height: ROW_HEIGHT }}>
+                      {[0, 1, 2, 3, 4, 5].map((c) => (
+                        <span key={c} className="mr-3 h-3 rounded bg-gray-100" />
+                      ))}
+                    </div>
+                  ))}
                   <p role="status" className="px-3 py-4 text-center text-sm text-gray-400">
                     내역을 불러오고 있습니다…
                   </p>
-                ) : null}
-              </>
+                </>
+              ) : null
             ) : r.failed ? (
               <p role="alert" className="px-3 py-4 text-center text-sm text-red-600">
                 내역을 불러오지 못했습니다. 다시 선택해 주세요.

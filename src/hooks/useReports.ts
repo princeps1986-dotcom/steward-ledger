@@ -373,7 +373,7 @@ export function usePersonalReport(f: ReportFilters) {
   }, [selected, mode, basis, members]);
   // 선택·기간·대상 성도가 같으면 같은 조회입니다(이 값과 versionKey가 바뀔 때만 다시 읽음).
   const queryKey = selected ? [selected.id, mode, basis, listMonths.join(','), listRange?.start ?? '', listRange?.end ?? '', memberIds?.join(',') ?? ''].join('|') : '';
-  const [found, setFound] = useState<{ key: string; list: Donation[] } | null>(null);
+  const [found, setFound] = useState<{ key: string; memberId: string; list: Donation[] } | null>(null);
   const [failedKey, setFailedKey] = useState('');
   const latest = useRef({ selected, memberIds, listMonths, listRange, memberById });
   latest.current = { selected, memberIds, listMonths, listRange, memberById };
@@ -395,7 +395,7 @@ export function usePersonalReport(f: ReportFilters) {
     };
     void load()
       .then((list) => {
-        if (!stop) setFound({ key: queryKey, list: list.sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt)) });
+        if (!stop) setFound({ key: queryKey, memberId: who.id, list: list.sort((a, b) => compareFixed(a.date, b.date) || compareFixed(a.createdAt, b.createdAt)) });
       })
       .catch(() => {
         if (!stop) setFailedKey(`${queryKey}#${versionKey}`); // 읽기 실패: '불러오는 중'을 끝내고 알립니다(선택·데이터가 바뀌면 다시 시도).
@@ -404,9 +404,12 @@ export function usePersonalReport(f: ReportFilters) {
       stop = true;
     };
   }, [queryKey, versionKey]);
-  const rows = useMemo(() => (found && found.key === queryKey ? found.list : []), [found, queryKey]);
   const failed = !!selected && found?.key !== queryKey && failedKey === `${queryKey}#${versionKey}`;
   const loading = !!selected && found?.key !== queryKey && !failed;
+  // 새 결과를 기다리는 동안에도 같은 성도의 마지막 결과를 남깁니다(기준 전환 때 표가 비었다 채워지며 깜박이지 않게).
+  // 성도가 바뀌거나 읽기가 실패하면 버립니다.
+  const rows = useMemo(() => (found && selected && found.memberId === selected.id && !failed ? found.list : []), [found, selected, failed]);
+  const stale = loading && rows.length > 0;
   // 0.3초 안에 끝나는 조회는 '불러오는 중' 문구를 띄우지 않습니다(깜빡임 방지).
   const slow = useDebouncedValue(loading, 300);
 
@@ -435,6 +438,7 @@ export function usePersonalReport(f: ReportFilters) {
     headLabel: !selected ? '' : !selected.familyGroupId ? '세대 미연결(본인만)' : head ? memberLabel(head) : '(세대주 없음)',
     hasSelection: !!selected,
     loading,
+    stale,
     slow,
     failed,
     mode,
