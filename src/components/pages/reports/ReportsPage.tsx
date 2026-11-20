@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useReportExport, useReportFilters, useTypeToggleOptions, type ReportTab } from '../../../hooks/useReports';
+import { useHasExportableData, useReportExport, useReportFilters, useTypeToggleOptions, type ReportTab } from '../../../hooks/useReports';
 import type { PeriodType } from '../../../services/domain/dates';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
@@ -29,6 +29,9 @@ export function ReportsPage() {
     return new Set(typeOptions.filter((o) => o.isActive === flipped.has(o.id)).map((o) => o.id));
   }, [typeOptions, flippedIds]);
   const ex = useReportExport(f);
+  // 노출할 내역이 없으면(모든 종류를 숨겼거나 기간에 내역이 없음) 인쇄·PDF 저장을 막습니다.
+  const hasData = useHasExportableData(f, hidden);
+  const exportDisabled = f.pending || f.loadFailed || !hasData;
   // 보고서(기간 종류·연도·분기/월·주)가 바뀌면 항상 [종합 보고서] 탭부터 보여 줍니다.
   const reportKey = f.isRange ? `${f.periodType}:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
   useEffect(() => {
@@ -102,10 +105,10 @@ export function ReportsPage() {
         {/* 인쇄·PDF 저장은 종합 보고서 탭에서만 보이고 동작합니다(다른 탭은 해당 없음). */}
         {tab === 'SUMMARY' ? (
           <>
-            <button className="btn-primary" onClick={ex.print} disabled={f.pending || f.loadFailed}>
+            <button className="btn-primary" onClick={ex.print} disabled={exportDisabled}>
               보고서 인쇄
             </button>
-            <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || f.pending || f.loadFailed}>
+            <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || exportDisabled}>
               PDF 저장
             </button>
           </>

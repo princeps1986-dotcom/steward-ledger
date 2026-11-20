@@ -291,6 +291,17 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
   }, [f.donations, types, range, orderKey, hidden, f.personKind]);
 }
 
+/** 종합 보고서에 노출할 내역(숨김 종류 제외)이 하나라도 있는지. 인쇄·PDF 저장 버튼의 활성 조건으로 씁니다. */
+export function useHasExportableData(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN): boolean {
+  const types = useOfferingTypes();
+  const orderKey = useMemberOrderKey();
+  return useMemo(() => {
+    if (f.personRange) return buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), f.personRange, orderKey).count > 0;
+    for (const sums of f.monthSums?.values() ?? []) for (const [t, s] of sums) if (!hidden.has(t) && s.count > 0) return true;
+    return false;
+  }, [f.donations, f.monthSums, f.personRange, types, orderKey, hidden]);
+}
+
 /**
  * 전체 입력 내역 탭: 현재 보고서 기간의 모든 헌금 내역(무명/방문자 포함)을 최신순으로, 이름으로 거를 수 있음.
  * 기간 전체를 메모리에 올리지 않고 달 단위로 읽습니다(ListPager): 달마다 건수·합계만 구해 두고, 화면에 보이는 행의 달만 읽습니다.
