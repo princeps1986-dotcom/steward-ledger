@@ -281,6 +281,10 @@ export async function strayRowWrites(ids: ReadonlySet<string>, years: ReadonlySe
   return [...byMonth].map(([ym, deletes]) => rowWrite(ym, { puts: [], deletes }));
 }
 
+/** 그 연도의 헌금 건수(기본키 색인 범위로 세므로 내역을 읽지 않음) */
+export const countYearDonations = (year: string): Promise<number> =>
+  db.donations.where('[date+id]').between([`${year}-`, Dexie.minKey], [`${year}-￿`, Dexie.maxKey], true, true).count();
+
 /** 헌금 종류를 쓰는 내역 수(색인 사용) */
 export const countDonationsOfType = (offeringTypeId: string): Promise<number> => db.donations.where('offeringTypeId').equals(offeringTypeId).count();
 

@@ -6,6 +6,7 @@ import { useSettings, useSettingsActions, useSettingsSelector } from '../context
 import { interruptedRestore } from '../services/backup/streamRestore';
 import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from '../services/backup/autoBackupService';
 import { saveBackupFile } from '../services/backup/backupService';
+import { isRestoring } from '../services/backup/backupBusy';
 import { formatDateTime } from '../services/domain/dates';
 import { desktop } from '../services/desktopBridge';
 
@@ -47,6 +48,8 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     const api = desktop();
     if (!api) return;
     const offRequest = api.onBackupRequest(async () => {
+      // 백업 파일 확인·복원 중에는 창을 닫지 않습니다(main이 '복원하고 있습니다' 안내만 띄움).
+      if (isRestoring()) return { blocked: true as const };
       setClosing(true);
       return buildAutoBackup(settingsRef.current);
     });

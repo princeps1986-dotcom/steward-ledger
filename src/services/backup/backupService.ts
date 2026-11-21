@@ -1,4 +1,5 @@
 import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
+import type { RestoreResult } from './streamRestore';
 import { assertNoDemo } from '../demo/demoState';
 import { withBackupBusy, withRestoring } from './backupBusy';
 import { APP_VERSION } from '../../contexts/types';
@@ -24,7 +25,6 @@ import {
   monthOfDate,
   monthWrite,
   readMonth,
-  snapshot,
   structuralCommitCount,
   transact,
   type Write,
@@ -32,35 +32,6 @@ import {
 import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
 import { NDJSON_VERSION } from './validation';
 import { Sha256 } from './sha256';
-
-/**
- * 전역 로컬 데이터베이스를 백업 payload로 마샬링합니다.
- * years를 주면 그 연도의 헌금 내역·수정/삭제 이력만 담습니다(성도·헌금 종류는 항상 전부 담음). 생략하면 전체.
- */
-export async function collectPayload(years?: readonly string[]): Promise<BackupPayload> {
-  // 읽기 전용 트랜잭션 하나 안에서 모두 읽으므로, 읽는 도중 다른 저장이 커밋돼도 한 시점의 데이터가 담깁니다.
-  return snapshot(async () => {
-    const want = years ? new Set(years) : null;
-    const months = (await listDonationMonths()).filter((ym) => !want || want.has(ym.slice(0, 4)));
-    const auditKeys = (await listAuditKeys()).filter((k) => !want || want.has(AUDIT_KEY_RE.exec(k)![1]));
-    const [auditLists, meta] = await Promise.all([
-      getMany<AuditLog[]>(auditKeys),
-      getMany<Member[] | OfferingType[]>([KEYS.members, KEYS.offeringTypes]),
-    ]);
-    const donationsByYear: Record<string, Donation[]> = {};
-    for (const ym of months) (donationsByYear[ym.slice(0, 4)] ??= []).push(...(await readMonth(ym)));
-    const auditLogsByYear: Record<string, AuditLog[]> = {};
-    auditKeys.forEach((k, i) => {
-      auditLogsByYear[AUDIT_KEY_RE.exec(k)![1]] = auditLists[i] ?? [];
-    });
-    return {
-      members: (meta[0] as Member[] | null) ?? [],
-      offeringTypes: (meta[1] as OfferingType[] | null) ?? [],
-      donationsByYear,
-      auditLogsByYear,
-    };
-  });
-}
 
 /** 줄 단위 백업에서 한 번에 읽는 키 수(이력 키를 묶어 읽어 읽기 횟수를 줄임) */
 const BACKUP_READ_BATCH = 6;
@@ -277,17 +248,17 @@ const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Rec
  * - YEARS: 선택한 연도의 헌금 내역·이력만 백업 내용으로 교체하고, 다른 연도는 그대로 둡니다.
  *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다.
  */
-export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> => withRestoring(() => restoreBackupNow(payload, opts));
-async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<void> {
+export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<RestoreResult> => withRestoring(() => restoreBackupNow(payload, opts));
+async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<RestoreResult> {
   await assertNoDemo();
   const years = new Set(opts.years);
   const donationsByYear = pickYears(payload.donationsByYear, years);
   const auditLogsByYear = pickYears(payload.auditLogsByYear, years);
   if (opts.mode === 'FULL') {
     await replaceAllData({ members: payload.members, offeringTypes: payload.offeringTypes, donationsByYear, auditLogsByYear });
-    return;
+    return { addedMembers: payload.members.length, addedTypes: payload.offeringTypes.length };
   }
-  await transact(async (read) => {
+  const { result } = await transact(async (read) => {
     const writes: Write[] = [];
     // 선택한 연도의 기존 월별 헌금 키와 이력 키를 지우고, 백업 내용을 월별로 다시 씁니다.
     for (const ym of await listDonationMonths()) if (years.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
@@ -316,8 +287,9 @@ async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly 
     // 같은 키에 대한 삭제→쓰기 순서가 보장되도록 마지막 쓰기만 남깁니다.
     const last = new Map<string, Write>();
     for (const w of writes) last.set(w.key, w);
-    return { writes: [...last.values()], result: undefined };
+    return { writes: [...last.values()], result: { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length } };
   });
+  return result;
 }
 
 /**

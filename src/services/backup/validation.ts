@@ -12,55 +12,15 @@ export async function sha256Hex(text: string): Promise<string> {
 export const NDJSON_VERSION = 3;
 export const NDJSON_PREFIX = `{"ndjson":${NDJSON_VERSION}`;
 
-/**
- * 줄 단위 백업을 기존 백업과 같은 모양({schemaVersion, payload})으로 되돌립니다. 마지막 줄의 SHA-256으로 온전한지 먼저 확인합니다.
- * 실패하면 오류 문구(string)를 돌려줍니다.
- */
-async function parseNdjson(text: string): Promise<{ appVersion?: string; exportedAt?: string; schemaVersion: number; payload: unknown } | string> {
-  const cut = text.lastIndexOf('\n{"t":"end"');
-  if (cut < 0) return '백업 파일이 끝까지 저장되지 않았습니다(끝 표시가 없음).';
-  let end: unknown;
-  try {
-    end = JSON.parse(text.slice(cut + 1));
-  } catch {
-    return '백업 파일이 끝까지 저장되지 않았습니다.';
-  }
-  if (!isObj(end) || (await sha256Hex(text.slice(0, cut + 1))) !== end.sha256) return '무결성 검증 실패: 파일이 손상되었거나 변조되었습니다.';
-  let head: Record<string, unknown> | null = null;
-  let members: unknown = [];
-  let offeringTypes: unknown = [];
-  const donationsByYear: Record<string, unknown[]> = {};
-  const auditLogsByYear: Record<string, unknown> = {};
-  try {
-    for (const l of text.slice(0, cut).split('\n')) {
-      if (!l) continue;
-      const o = JSON.parse(l) as Record<string, unknown>;
-      if (head === null) head = o;
-      else if (o.t === 'members') members = o.data;
-      else if (o.t === 'offeringTypes') offeringTypes = o.data;
-      else if (o.t === 'donations' && isStr(o.ym) && Array.isArray(o.data)) (donationsByYear[o.ym.slice(0, 4)] ??= []).push(...o.data);
-      else if (o.t === 'audit' && isStr(o.year)) auditLogsByYear[o.year] = o.data;
-    }
-  } catch {
-    return 'JSON 파일을 읽을 수 없습니다.';
-  }
-  return {
-    appVersion: isStr(head?.appVersion) ? head.appVersion : undefined,
-    exportedAt: isStr(head?.exportedAt) ? head.exportedAt : undefined,
-    schemaVersion: SCHEMA_VERSION,
-    payload: { members, offeringTypes, donationsByYear, auditLogsByYear },
-  };
-}
-
 /** payload의 JSON 직렬화 문자열에 대한 SHA-256 */
 export const computeChecksum = (payload: unknown): Promise<string> => sha256Hex(JSON.stringify(payload));
 
-type BackupParseResult =
+export type BackupParseResult =
   | { ok: true; envelope: BackupEnvelope; migratedFrom: number | null }
   | { ok: false; error: string };
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isStr = (v: unknown): v is string => typeof v === 'string';
+export const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const isStr = (v: unknown): v is string => typeof v === 'string';
 const YEAR_RE = /^\d{4}$/;
 
 export function isMember(v: unknown): v is Member {
@@ -77,7 +37,8 @@ export function isDonation(v: unknown): v is Donation {
     isValidDateString(v.date) && // 형식뿐 아니라 실제로 있는 날짜인지(2025-02-30·2025-13-01 거부)
     (v.memberId === null || isStr(v.memberId)) &&
     isStr(v.offeringTypeId) &&
-    Number.isSafeInteger(v.amount)
+    Number.isSafeInteger(v.amount) &&
+    (v.amount as number) > 0 // 입력·수정 화면(parseAmount)과 같은 규칙: 0원·음수는 없음
   );
 }
 export function isAuditLike(v: unknown): v is AuditLog {
@@ -140,30 +101,22 @@ function migrateV1(p: Record<string, unknown>): BackupPayload | string {
 }
 
 export async function parseAndValidateBackup(text: string): Promise<BackupParseResult> {
+  // 한 덩어리 JSON(예전 형식)만 받습니다. 줄 단위 백업(v3)은 streamRestore.ts의 scanBackupFile이 흘려 읽으며 검사합니다.
   let raw: unknown;
-  let verified = false; // 줄 단위 백업은 parseNdjson에서 이미 체크섬을 확인했습니다.
-  if (text.startsWith(NDJSON_PREFIX)) {
-    raw = await parseNdjson(text);
-    if (typeof raw === 'string') return { ok: false, error: raw };
-    verified = true;
-  } else {
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      return { ok: false, error: 'JSON 파일을 읽을 수 없습니다.' };
-    }
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'JSON 파일을 읽을 수 없습니다.' };
   }
   if (!isObj(raw) || !isObj(raw.payload)) return { ok: false, error: '백업 파일 형식이 아닙니다.' };
   const version = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 1;
   if (version > SCHEMA_VERSION) return { ok: false, error: `더 새로운 버전(v${version})의 백업입니다. 앱을 업데이트하세요.` };
 
-  if (!verified) {
-    if (isStr(raw.checksum) && raw.checksum) {
-      const actual = await computeChecksum(raw.payload);
-      if (actual !== raw.checksum) return { ok: false, error: '무결성 검증 실패: 파일이 손상되었거나 변조되었습니다.' };
-    } else if (version >= 2) {
-      return { ok: false, error: '체크섬이 없는 백업 파일입니다.' };
-    }
+  if (isStr(raw.checksum) && raw.checksum) {
+    const actual = await computeChecksum(raw.payload);
+    if (actual !== raw.checksum) return { ok: false, error: '무결성 검증 실패: 파일이 손상되었거나 변조되었습니다.' };
+  } else if (version >= 2) {
+    return { ok: false, error: '체크섬이 없는 백업 파일입니다.' };
   }
 
   let payload: BackupPayload;

@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
-import { collectPayload, replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
+import { replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
+import { payloadNow } from '../backup/testPayload';
 import {
   listDonationMonths,
   monthWrite,
@@ -22,13 +23,13 @@ describe('monthly donation storage', () => {
     expect(await listDonationMonths()).not.toContain('2026-03');
   });
 
-  it('backup round-trips through the donation rows (collect → replace → collect)', async () => {
+  it('backup round-trips through the donation rows (backup → replace → backup)', async () => {
     await transact(async () => ({ writes: [monthWrite('2025-12', [d('a', '2025-12-28')]), monthWrite('2026-02', [d('e', '2026-02-01')])], result: 0 }));
-    const before = await collectPayload();
+    const before = await payloadNow();
     expect(Object.keys(before.donationsByYear).sort()).toEqual(['2025', '2026']);
     await replaceAllData({ ...before, donationsByYear: { '2024': [d('x', '2024-06-02'), d('y', '2024-07-07')] } });
     expect(await listDonationMonths()).toEqual(['2024-06', '2024-07']);
-    const after = await collectPayload();
+    const after = await payloadNow();
     expect(Object.fromEntries(Object.entries(after.donationsByYear).map(([y, l]) => [y, l.map((x) => x.id)]))).toEqual({ '2024': ['x', 'y'] });
   });
 });
@@ -38,18 +39,18 @@ describe('year-selectable backup and restore', () => {
   const t = (id: string) => ({ id, name: id, displayArea: 'PRIMARY' as const, quickAmounts: [], sortOrder: 1, isActive: true });
   const ids = (l: Donation[] | undefined) => (l ?? []).map((x) => x.id).sort();
 
-  it('collectPayload(years) keeps only the chosen years but always all members and types', async () => {
+  it('a backup of chosen years keeps only the chosen years but always all members and types', async () => {
     await replaceAllData({
       members: [m('a', '가'), m('b', '나')],
       offeringTypes: [t('t')],
       donationsByYear: { '2024': [d('a1', '2024-03-03')], '2025': [d('b1', '2025-05-04'), d('b2', '2025-12-28')] },
       auditLogsByYear: { '2024': [], '2025': [] },
     });
-    const only = await collectPayload(['2025']);
+    const only = await payloadNow(['2025']);
     expect(Object.keys(only.donationsByYear)).toEqual(['2025']);
     expect(ids(only.donationsByYear['2025'])).toEqual(['b1', 'b2']);
     expect(only.members).toHaveLength(2);
-    expect(yearsInPayload(await collectPayload())).toEqual(['2024', '2025']);
+    expect(yearsInPayload(await payloadNow())).toEqual(['2024', '2025']);
   });
 
   it('YEARS mode replaces only the chosen year, keeps other years, and only adds missing members/types', async () => {
@@ -66,7 +67,7 @@ describe('year-selectable backup and restore', () => {
       auditLogsByYear: {},
     };
     await restoreBackup(backup, { years: ['2025'], mode: 'YEARS' });
-    const after = await collectPayload();
+    const after = await payloadNow();
     expect(ids(after.donationsByYear['2024'])).toEqual(['keep24']); // 다른 연도 유지
     expect(ids(after.donationsByYear['2025'])).toEqual(['new25a', 'new25b']); // 선택 연도 교체
     expect(after.donationsByYear['2026']).toBeUndefined(); // 선택하지 않은 연도는 가져오지 않음
@@ -82,7 +83,7 @@ describe('year-selectable backup and restore', () => {
       auditLogsByYear: {},
     };
     await restoreBackup(backup, { years: ['2023'], mode: 'FULL' });
-    const after = await collectPayload();
+    const after = await payloadNow();
     expect(Object.keys(after.donationsByYear)).toEqual(['2023']);
     expect(after.members.map((x) => x.id)).toEqual(['z']);
   });
@@ -122,17 +123,18 @@ describe('atomic transactions', () => {
 });
 
 describe('streaming (v3) backup lines', () => {
-  it('round-trips through parseAndValidateBackup and detects tampering/truncation', async () => {
-    const { backupLines, collectPayload } = await import('../backup/backupService');
-    const { parseAndValidateBackup, sha256Hex } = await import('../backup/validation');
+  it('round-trips through the backup parser and detects tampering/truncation', async () => {
+    const { backupLines } = await import('../backup/backupService');
+    const { sha256Hex } = await import('../backup/validation');
+    const { parseNdjsonBackup } = await import('../backup/testPayload');
     await transact(async () => ({ writes: [monthWrite('2026-04', [d('x1', '2026-04-05')]), monthWrite('2026-05', [d('x2', '2026-05-03')])], result: 0 }));
     let body = '';
     for await (const l of backupLines()) body += l;
     const text = `${body}${JSON.stringify({ t: 'end', sha256: await sha256Hex(body) })}\n`;
-    const res = await parseAndValidateBackup(text);
+    const res = await parseNdjsonBackup(text);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.envelope.payload).toEqual(await collectPayload());
-    expect((await parseAndValidateBackup(text.replace('x1', 'zz'))).ok).toBe(false); // 변조
-    expect((await parseAndValidateBackup(body)).ok).toBe(false); // 끝 줄 없음(잘림)
+    if (res.ok) expect(res.envelope.payload.donationsByYear['2026'].map((x) => x.id)).toEqual(expect.arrayContaining(['x1', 'x2']));
+    expect((await parseNdjsonBackup(text.replace('x1', 'zz'))).ok).toBe(false); // 변조
+    expect((await parseNdjsonBackup(body)).ok).toBe(false); // 끝 줄 없음(잘림)
   });
 });

@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Donation } from '../../contexts/types';
 import { db } from '../storage/db';
-import { listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
+import { countYearDonations, listDonationMonths, monthWrite, readMonth, transact } from '../storage/storageService';
 import { backupLines } from './backupService';
 import { decryptedBackup, interruptedRestore, isNdjsonFile, readFileLines, restoreFromFile, scanBackupFile } from './streamRestore';
 import { sha256Hex } from './validation';
@@ -47,6 +47,10 @@ describe('scanBackupFile', () => {
   it('verifies plain and gz files and counts donations per year', async () => {
     const f = await makeBackup();
     expect(await isNdjsonFile(f)).toBe(true);
+    expect(await isNdjsonFile(await gzip(f))).toBe(true);
+    // 예전 형식(한 덩어리 JSON)과 프리픽스보다 짧은 파일은 줄 단위가 아님
+    expect(await isNdjsonFile(new File([JSON.stringify({ schemaVersion: 2, payload: {} })], 'old.json'))).toBe(false);
+    expect(await isNdjsonFile(new File(['{"nd'], 'short.json'))).toBe(false);
     for (const file of [f, await gzip(f)]) {
       const r = await scanBackupFile(file);
       expect(r.ok && r.yearCounts).toEqual({ '2025': 1, '2026': 2 });
@@ -75,6 +79,23 @@ describe('restoreFromFile', () => {
     expect((await readMonth('2025-03')).map((x) => x.id).sort()).toEqual(['a', 'y']); // 다른 연도는 그대로
     expect(await interruptedRestore()).toBeNull();
     expect(await listDonationMonths()).toEqual(['2025-03', '2026-01']);
+  });
+
+  it('does not parse months of years that were not chosen, and reports added members/types', async () => {
+    const file = await makeBackup();
+    const scan = await scanBackupFile(file);
+    if (!scan.ok) throw new Error(scan.error);
+    expect(await countYearDonations('2025')).toBe(1);
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const r = await restoreFromFile(file, scan, ['2026']);
+      expect(r).toEqual({ addedMembers: 0, addedTypes: 0 });
+      const parsed = parse.mock.calls.map(([t]) => String(t));
+      expect(parsed.some((t) => t.startsWith('{"t":"donations","ym":"2026'))).toBe(true);
+      expect(parsed.some((t) => t.startsWith('{"t":"donations","ym":"2025'))).toBe(false);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('leaves the marker when the restore stops halfway', async () => {

@@ -49,6 +49,15 @@ describe('backup validation', () => {
     expect(res.envelope.payload.donationsByYear['2026'][0].familyGroupIdSnapshot).toBe('g1');
   });
 
+  it('rejects a backup with a zero or negative amount, even when the checksum matches', async () => {
+    for (const amount of [0, -500000]) {
+      const d = { id: 'd1', date: '2025-03-02', memberId: null, donorDisplayName: '무명1', offeringTypeId: 't1', amount, createdAt: '' };
+      const payload = { members: [], offeringTypes: [], donationsByYear: { '2025': [d] }, auditLogsByYear: {} };
+      const env = { appVersion: '2.0.0', schemaVersion: 2, exportedAt: '2026-01-01T00:00:00Z', checksum: await computeChecksum(payload), payload };
+      expect((await parseAndValidateBackup(JSON.stringify(env))).ok).toBe(false);
+    }
+  });
+
   it('rejects a backup with a date that does not exist, even when the checksum matches', async () => {
     for (const date of ['2025-02-30', '2025-13-01']) {
       const d = { id: 'd1', date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't1', amount: 1000, createdAt: '' };
@@ -71,6 +80,22 @@ describe('member import', () => {
     expect(preview[1].headRef).toEqual({ kind: 'EXISTING', memberId: 'h' });
     const { members } = applyImport(preview, new Set(), existing);
     expect(members.find((m) => m.name === '박민수')?.familyGroupId).toBe('h');
+  });
+
+  it('does not link a household member to an existing member who is not a head (it would join another family)', () => {
+    const existing = [
+      member({ id: 'p', name: '박영호', isFamilyHead: true, familyGroupId: 'p' }),
+      member({ id: 'k', name: '김철수', phoneLast4: '1234', familyGroupId: 'p' }), // 박영호 세대의 세대원
+    ];
+    const rows = normalizeRows([
+      { 이름: '김철수', 연락처뒷4자리: '1234', 세대주여부: 'Y' },
+      { 이름: '이영희', 세대주여부: 'N', 세대주이름: '김철수' },
+    ]);
+    const preview = buildPreview(rows, existing);
+    expect(preview.map((r) => r.status)).toEqual(['DUPLICATE', 'ERROR']);
+    expect(preview[1].messages.join(' ')).toContain('세대주가 아닙니다');
+    const { members } = applyImport(preview, new Set(), existing);
+    expect(members.some((m) => m.name === '이영희')).toBe(false);
   });
 
   it('decodes CP949 and UTF-8 BOM', () => {

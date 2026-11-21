@@ -2,7 +2,8 @@ import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { KEYS, getItem, transact } from '../storage/storageService';
-import { collectPayload, previewMerge, restoreBackup } from './backupService';
+import { previewMerge, restoreBackup } from './backupService';
+import { payloadNow } from './testPayload';
 import { planMerge, remapAudits, remapDonations } from './mergeRules';
 
 const m = (id: string, name: string, phoneLast4?: string, extra: Partial<Member> = {}): Member =>
@@ -92,7 +93,7 @@ describe('restoreBackup(YEARS) — 다른 PC 백업', () => {
     expect(pre.memberIdMap.get('b1')).toBe('c1');
     expect(pre.sameNameAdded).toBe(1);
     await restoreBackup(backup, { years: ['2025'], mode: 'YEARS' });
-    const after = await collectPayload();
+    const after = await payloadNow();
     expect(after.members.map((x) => x.id)).toEqual(['c1', 'b2']);
     expect(after.offeringTypes.map((x) => x.id)).toEqual(['ct1', 'bt2']);
     const byId = Object.fromEntries(after.donationsByYear['2025'].map((x) => [x.id, x]));

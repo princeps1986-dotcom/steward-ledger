@@ -29,6 +29,20 @@ interface BackupFileInfo {
   error?: string;
 }
 
+/** 복원 기록(main이 오류 로그에 남김). 개인정보 없이 파일 이름·연도·건수만 */
+export interface RestoreLogEntry {
+  stage: 'start' | 'done' | 'fail';
+  file: string;
+  years: string[];
+  /** 백업 파일의 그 연도 헌금 건수 */
+  count?: number;
+  /** 복원 전 현재 데이터의 그 연도 헌금 건수 */
+  current?: number;
+  addedMembers?: number;
+  addedTypes?: number;
+  error?: string;
+}
+
 export interface SavedFileInfo {
   path: string;
   name: string;
@@ -64,8 +78,8 @@ export interface DesktopApi {
   openBackupReader(file: File, password?: string): Promise<number>;
   readBackup(id: number): Promise<Uint8Array | null>;
   closeBackupReader(id: number): Promise<boolean>;
-  /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략). */
-  onBackupRequest(handler: () => Promise<AutoBackupPayload | null>): () => void;
+  /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략, blocked = 복원 중이라 닫지 않음). */
+  onBackupRequest(handler: () => Promise<AutoBackupPayload | { blocked: true } | null>): () => void;
   /** 종료 중 자동 백업을 기다리다 사용자가 [백업 없이 종료]를 누른 경우 */
   skipBackup(): void;
   /** 백업 실패 후 사용자가 종료를 취소해 앱을 계속 쓰게 된 경우 main이 알려 줍니다. */
@@ -76,6 +90,8 @@ export interface DesktopApi {
   downloadUpdate(): Promise<{ ready?: true; error?: string }>;
   /** 내려받기 진행률(0~100) */
   onUpdateProgress(handler: (percent: number) => void): () => void;
+  /** 복원 기록을 main의 오류 로그에 남깁니다. */
+  logRestore?(entry: RestoreLogEntry): void;
 }
 
 export interface UpdateCheck {

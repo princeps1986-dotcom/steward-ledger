@@ -314,6 +314,8 @@ export function useDonationListReport(f: ReportFilters) {
   const [query, setQuery] = useState('');
   const [, setTick] = useState(0);
   const [done, setDone] = useState(false);
+  // 기간의 어느 달을 읽지 못하면 건수·합계에서 그 달이 빠지므로, 화면이 알릴 수 있게 표시합니다.
+  const [failed, setFailed] = useState(false);
   // 입력 칸은 바로 반영하고, 달들을 다시 거르는 계산은 입력이 잠시 멈춘 뒤에 합니다.
   const appliedQuery = useDebouncedValue(query, 350);
   const pager = useMemo(() => new ListPager(readMonth, undefined, () => setTick((t) => t + 1)), []);
@@ -324,11 +326,14 @@ export function useDonationListReport(f: ReportFilters) {
   useEffect(() => {
     let stop = false;
     setDone(false);
+    setFailed(false);
     const range = rangeStart ? { start: rangeStart, end: rangeEnd } : null;
     const keys = versionKey.split(',');
     void pager
       .refresh(listMonths, (ym) => keys[listMonths.indexOf(ym)], { query: appliedQuery, range }, () => stop)
-      .catch(() => undefined) // 읽기 실패: 읽은 달까지만 보입니다.
+      .catch(() => {
+        if (!stop) setFailed(true); // 읽기 실패: 읽은 달까지만 보이므로 알립니다(데이터·조건이 바뀌면 다시 시도).
+      })
       .then(() => !stop && setDone(true));
     return () => {
       stop = true;
@@ -354,9 +359,9 @@ export function useDonationListReport(f: ReportFilters) {
         total += s.amount;
       }
     }
-    return { query, setQuery, count, total, rowAt, loading: false };
+    return { query, setQuery, count, total, rowAt, loading: false, failed };
   }
-  return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done };
+  return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done, failed };
 }
 
 /** 개인별·세대별 조회 */

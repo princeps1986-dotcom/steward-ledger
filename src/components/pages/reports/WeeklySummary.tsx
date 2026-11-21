@@ -132,7 +132,7 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
           </table>
         </div>
       ) : (
-        <p className="py-6 text-center text-sm text-gray-500">이 주에 저장된 헌금 내역이 없습니다.</p>
+        <p className="py-6 text-center text-sm text-gray-500">{isMonth ? '이 달에' : isDay ? '이 날에' : '이 주에'} 저장된 헌금 내역이 없습니다.</p>
       )}
     </section>
   );

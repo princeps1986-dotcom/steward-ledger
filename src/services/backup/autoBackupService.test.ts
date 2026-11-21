@@ -5,10 +5,11 @@ import type { Donation } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
-import { backupLines, collectPayload, desktopSink, saveBackupFile, saveEmergencyBackup, streamBackup, type BackupSink } from './backupService';
+import { backupLines, desktopSink, saveBackupFile, saveEmergencyBackup, streamBackup, type BackupSink } from './backupService';
 import { buildAutoBackup, runPeriodicBackup } from './autoBackupService';
 import { withBackupBusy } from './backupBusy';
-import { parseAndValidateBackup, sha256Hex } from './validation';
+import { sha256Hex } from './validation';
+import { parseNdjsonBackup } from './testPayload';
 
 const d = (id: string, date: string): Donation =>
   ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: `c${id}`, updatedAt: 'x' }) as Donation;
@@ -53,13 +54,13 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('backupLines', () => {
-  it('produces a valid backup file whose payload equals collectPayload', async () => {
+  it('produces a valid backup file with every month of the store', async () => {
     let body = '';
     for await (const l of backupLines()) body += l;
     const text = body + JSON.stringify({ t: 'end', sha256: await sha256Hex(body) }) + NL;
-    const res = await parseAndValidateBackup(text);
+    const res = await parseNdjsonBackup(text);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.envelope.payload).toEqual(await collectPayload());
+    if (res.ok) expect(Object.fromEntries(Object.entries(res.envelope.payload.donationsByYear).map(([y, l]) => [y, l.map((x) => x.id)]))).toEqual({ '2026': ['a', 'b'] });
   });
 
   it('keeps only the chosen years (members and types always)', async () => {

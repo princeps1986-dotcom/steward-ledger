@@ -48,8 +48,10 @@ export function App() {
   const restoring = useRestoring();
   const reminder = useBackupReminder(backup.failure, () => goPage('settings'));
   return (
-    <div className="flex h-full flex-col">
+    <>
       {restoring ? <RestoringOverlay /> : null}
+      {/* 확인·복원 중에는 덮개 뒤의 앱 전체를 inert로 막아 클릭뿐 아니라 Tab·Enter로도 조작할 수 없게 합니다. */}
+    <div className="flex h-full flex-col" inert={restoring}>
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
       <AutoSaveToast status={backup.autoSave} />
       <BrowserNotice />
@@ -87,5 +89,6 @@ export function App() {
         </Suspense>
       </main>
     </div>
+    </>
   );
 }

@@ -76,10 +76,24 @@ export async function* readFileLines(file: ReadableBackup): AsyncGenerator<strin
   }
 }
 
-/** 줄 단위 형식(v3) 백업인지: 첫 줄만 읽어 확인합니다. */
+/**
+ * 줄 단위 형식(v3) 백업인지: 앞부분만 읽어 확인합니다. 예전 형식은 파일 전체가 한 줄이라, 첫 줄을 읽으면 파일을 통째로 읽게 됩니다.
+ */
 export async function isNdjsonFile(file: ReadableBackup): Promise<boolean> {
-  for await (const line of readFileLines(file)) return line.startsWith(NDJSON_PREFIX);
-  return false;
+  let stream: ReadableStream<Uint8Array> = file.stream() as ReadableStream<Uint8Array>;
+  if (/\.gz$/i.test(file.name ?? '')) stream = stream.pipeThrough(new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>);
+  const reader = stream.getReader();
+  try {
+    const head: number[] = [];
+    while (head.length < NDJSON_PREFIX.length) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      head.push(...value.subarray(0, NDJSON_PREFIX.length - head.length));
+    }
+    return new TextDecoder().decode(new Uint8Array(head)).startsWith(NDJSON_PREFIX);
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
 }
 
 export interface BackupScan {
@@ -105,13 +119,14 @@ const parse = (line: string): Record<string, unknown> | null => {
   }
 };
 
-/** hashChecked: 체크섬을 이미 확인했으면(데스크톱 main) 다시 계산하지 않고 형식만 검사합니다. */
-export async function scanBackupFile(file: ReadableBackup, opts: { hashChecked?: boolean } = {}): Promise<ScanResult> {
+/** hashChecked: 체크섬을 이미 확인했으면(데스크톱 main) 다시 계산하지 않고 형식만 검사합니다. onMonth(확인한 달 수): 진행 표시용 */
+export async function scanBackupFile(file: ReadableBackup, opts: { hashChecked?: boolean; onMonth?: (n: number) => void } = {}): Promise<ScanResult> {
   const hash = new Sha256();
   const enc = new TextEncoder();
   const scan: BackupScan = { members: [], offeringTypes: [], yearCounts: {}, monthCounts: {} };
   let first = true;
   let ended = false;
+  let months = 0;
   for await (const line of readFileLines(file)) {
     if (ended) return bad('백업 파일 끝 표시 뒤에 내용이 더 있습니다.');
     if (!line.endsWith('\n')) return bad('백업 파일이 끝까지 저장되지 않았습니다.');
@@ -140,6 +155,7 @@ export async function scanBackupFile(file: ReadableBackup, opts: { hashChecked?:
       if (o.data.some((d: Donation) => d.date.slice(0, 7) !== ym)) return bad(`${ym} 월에 다른 달 내역이 섞여 있습니다.`);
       scan.yearCounts[ym.slice(0, 4)] = (scan.yearCounts[ym.slice(0, 4)] ?? 0) + o.data.length;
       scan.monthCounts[ym.slice(0, 4)] = (scan.monthCounts[ym.slice(0, 4)] ?? 0) + 1;
+      opts.onMonth?.(++months);
     } else if (o.t === 'audit') {
       const y = o.year;
       if (typeof y !== 'string' || !/^\d{4}$/.test(y) || !Array.isArray(o.data) || !o.data.every(isAuditLike)) return bad(`${String(y)}년 감사 로그 형식이 올바르지 않습니다.`);
@@ -161,6 +177,15 @@ export interface RestoreMarker {
 /** 이전 복원이 끝나지 않고 중단됐다면 그 정보, 아니면 null */
 export const interruptedRestore = (): Promise<RestoreMarker | null> => getItem<RestoreMarker>(KEYS.restoreMarker);
 
+/** 복원하며 새로 추가한 성도·헌금 종류 수 */
+export interface RestoreResult {
+  addedMembers: number;
+  addedTypes: number;
+}
+
+/** 헌금·이력 줄의 연도(backupLines가 쓰는 줄 머리 그대로). 형식이 다르면 null이라 그 줄은 해석해서 판단합니다. */
+const LINE_YEAR_RE = /^\{"t":"(?:donations","ym"|audit","year"):"(\d{4})/;
+
 /** 복원 전에 보여 줄 합치기 계획(현재 성도·종류와 백업의 대응) */
 export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'>): Promise<MergePlan> {
   const members = (await getItem<Member[]>(KEYS.members)) ?? [];
@@ -172,8 +197,8 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
  * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
-export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> => withRestoring(() => restoreFromFileNow(file, scan, years));
-async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<void> {
+export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years));
+async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<RestoreResult> {
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
@@ -196,6 +221,9 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   });
   // 본문: 달마다 따로 저장(한 달치만 메모리에 둠)
   for await (const line of readFileLines(file)) {
+    // 고르지 않은 연도의 달은 해석(JSON.parse)하지 않고 건너뜁니다(여러 해가 든 자동 백업에서 복원이 빨라짐).
+    const lineYear = LINE_YEAR_RE.exec(line)?.[1];
+    if (lineYear && !want.has(lineYear)) continue;
     const o = parse(line);
     if (!o) continue;
     if (o.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) {
@@ -211,4 +239,5 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   }
   // 끝: 다른 연도에 남은 같은 내역을 지우고 '복원 중' 표시를 내립니다(한 트랜잭션). 중간에 꺼지면 표시가 남아 다시 복원하게 됩니다.
   await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }));
+  return { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length };
 }
