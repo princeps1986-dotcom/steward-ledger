@@ -26,6 +26,12 @@ export function isValidDateString(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && isValid(parseISO(s));
 }
 
+/** 날짜의 연도가 달력에서 고를 수 있는 범위(올해 100년 전 ~ 내년)인지. 날짜 칸은 읽기 전용이지만 주 이동 단추·달력의 월 이동을 계속 누르면 범위를 벗어날 수 있어 막습니다. */
+export function isDateInRange(date: string, today: Date = seoulNow()): boolean {
+  const y = Number(date.slice(0, 4));
+  return y >= today.getFullYear() - 100 && y <= today.getFullYear() + 1;
+}
+
 export type PeriodType = 'YEAR' | 'QUARTER' | 'MONTH' | 'WEEK' | 'DAY';
 
 /** 기간 필터에 포함되는 월 목록 (주별은 월 단위가 아니므로 빈 목록) */

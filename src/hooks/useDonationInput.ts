@@ -7,7 +7,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import type { Donation, DonationDraft, DuplicateResolution, Member } from '../contexts/types';
 import { addQuickAmount, formatAmountInput, formatWon, parseAmount } from '../services/domain/amount';
 import { shiftWeek } from '../services/domain/calendar';
-import { isValidDateString, lastSunday, withWeekday } from '../services/domain/dates';
+import { isDateInRange, isValidDateString, lastSunday, withWeekday } from '../services/domain/dates';
 import { memberLabel, searchMembers } from '../services/domain/search';
 
 interface DuplicateItem {
@@ -63,7 +63,7 @@ export function useDonationInput() {
   const [saving, setSaving] = useState(false);
   // 저장에 성공할 때마다 1씩 올라가, 합계·메시지에 '저장됨' 효과를 다시 보여 줍니다.
   const [savedSeq, setSavedSeq] = useState(0);
-  // 저장·되돌리기가 진행되는 동안의 중복 실행 차단. 상태(saving)는 다음 렌더 뒤에야 바뀌므로 연타를 막지 못해 ref로 즉시 막습니다.
+  // 저장·복구하기가 진행되는 동안의 중복 실행 차단. 상태(saving)는 다음 렌더 뒤에야 바뀌므로 연타를 막지 못해 ref로 즉시 막습니다.
   const busyRef = useRef(false);
   const exclusive = useMemo(() => createExclusive(busyRef), []);
 
@@ -255,6 +255,7 @@ export function useDonationInput() {
 
   const buildDrafts = useCallback((): { drafts: DonationDraft[] } | { error: string; focus?: string } => {
     if (!isValidDateString(date)) return { error: '날짜가 올바르지 않습니다.' };
+    if (!isDateInRange(date)) return { error: '날짜의 연도를 확인하세요.' };
     let memberId: string | null = null;
     let donorDisplayName: string;
     let snapshot: string | null = null;
@@ -360,15 +361,15 @@ export function useDonationInput() {
     [fieldOrder, focusField],
   );
 
-  // ── 되돌리기 ──────────────────────────────────────────
+  // ── 복구하기 ──────────────────────────────────────────
   const undo = useCallback(
     () =>
       exclusive(async () => {
         try {
           const b = await actions.undoLast();
-          if (b) setMessage({ kind: 'info', text: `되돌림: ${b.donorDisplayName} (${withWeekday(b.date)})` });
+          if (b) setMessage({ kind: 'info', text: `복구: ${b.donorDisplayName} (${withWeekday(b.date)})` });
         } catch (err) {
-          setMessage({ kind: 'error', text: `되돌리기 실패: ${(err as Error).message}` });
+          setMessage({ kind: 'error', text: `복구하기 실패: ${(err as Error).message}` });
         }
         focusSearch();
       }),
@@ -377,7 +378,7 @@ export function useDonationInput() {
 
   const modalOpen = !!pendingDuplicate || !!pendingLarge || quickRegisterOpen;
 
-  // 전역 단축키: F2 무명 전환, 입력 칸이 비었을 때 Ctrl+Z 되돌리기
+  // 전역 단축키: F2 무명 전환, 입력 칸이 비었을 때 Ctrl+Z 복구하기
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       // 이 화면의 모달뿐 아니라 수정창 같은 다른 대화상자가 열려 있을 때도 단축키를 막습니다.
@@ -392,7 +393,7 @@ export function useDonationInput() {
         e.preventDefault();
         document.getElementById('cash-count-input')?.focus();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && isFormEmpty && history.length > 0) {
-        // 값이 든 칸(현금 계수 등)의 Ctrl+Z는 글자 되돌리기이므로 저장 되돌리기로 가로채지 않습니다.
+        // 값이 든 칸(현금 계수 등)의 Ctrl+Z는 글자 복구하기이므로 저장 복구하기로 가로채지 않습니다.
         const t = e.target as HTMLInputElement | null;
         if ((t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA') && t.value !== '') return;
         e.preventDefault();
@@ -482,7 +483,7 @@ export function useDonationInput() {
     // 성도가 한 명도 없는 처음 상태(시작 안내를 보여 줌)
     isFirstRun: members.length === 0,
     message,
-    // 되돌리기
+    // 복구하기
     canUndo: history.length > 0,
     undo,
   };

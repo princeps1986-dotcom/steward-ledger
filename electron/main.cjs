@@ -11,7 +11,7 @@ const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { pickBackupDir, resolveUserDataDir, backupsToPrune } = require('./dataPaths.cjs');
+const { resolveUserDataDir, backupsToPrune } = require('./dataPaths.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, keyIdOf, createEncryptStream } = require('./backupCrypto.cjs');
@@ -83,17 +83,6 @@ if (!app.requestSingleInstanceLock()) {
     for (const n of backupsToPrune(await fs.readdir(dir))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
   }
 
-  // 자동 백업 폴더: 화면이 임의의 경로를 보내도 쓰지 않도록, 사용자가 [폴더 선택]으로 지정한 폴더(또는 기본 폴더)만 씁니다.
-  const backupDirFile = () => path.join(app.getPath('userData'), 'backup-dir.json');
-  let chosenBackupDir = null;
-  try {
-    const saved = JSON.parse(fsSync.readFileSync(backupDirFile(), 'utf8'));
-    if (typeof saved.dir === 'string' && path.isAbsolute(saved.dir)) chosenBackupDir = saved.dir;
-  } catch {
-    /* 아직 선택한 적 없음 */
-  }
-  const allowedBackupDir = (dir) => pickBackupDir(dir, chosenBackupDir, defaultBackupDir());
-
   // 자동 백업은 렌더러가 월 단위 줄(NDJSON)을 하나씩 보내면 main이 해시를 이어 계산하며 gzip 파일로 바로 씁니다.
   // 전체 JSON을 메모리에 만들지 않으므로 데이터가 커도 메모리가 한 달치 수준에 머뭅니다.
   let autoSession = null;
@@ -105,12 +94,12 @@ if (!app.requestSingleInstanceLock()) {
     s.out.destroy();
     await fs.unlink(s.tmp).catch(() => undefined);
   }
-  // 세션 번호: 서로 다른 백업(주기·종료·직접·긴급)이 겹쳐도 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
+  // 세션 번호: 서로 다른 백업(주기·종료·직접)이 겹쳐도 줄이 섞이지 않게 합니다(새로 시작하면 이전 세션은 취소됨).
   // 백업은 렌더러가 한 달치씩 줄 단위(NDJSON)로 보내고 main이 gzip 파일로 바로 씁니다. 메모리는 한 달치 수준에 머뭅니다.
   let sessionCounter = 0;
   const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.slbk$/;
 
-  // 자동 백업(종료·주기·긴급)을 잠그는 이 PC의 키: 처음 쓸 때 무작위로 만들어 Windows 보안 저장소(DPAPI)로 잠근 뒤 앱 데이터 폴더에 둡니다.
+  // 자동 백업(종료·주기)을 잠그는 이 PC의 키: 처음 쓸 때 무작위로 만들어 Windows 보안 저장소(DPAPI)로 잠근 뒤 앱 데이터 폴더에 둡니다.
   // 설치 파일에는 키가 없으므로 백업 파일을 다른 곳으로 가져가면 열 수 없습니다(PC를 옮길 때는 암호를 건 직접 백업을 씀).
   let pcKey = null;
   function getPcKey() {
@@ -168,31 +157,26 @@ if (!app.requestSingleInstanceLock()) {
     autoSession = sess;
     return sess.id;
   }
-  // 백업 시작. kind: close(종료 때) · periodic(앱을 쓰는 동안) · emergency(복원·초기화 직전, 기본 폴더에 이름 지정) · manual(저장 위치를 고름, 취소하면 null)
+  // 백업 시작. kind: close(종료 때) · periodic(앱을 쓰는 동안) · manual(저장 위치를 고름, 취소하면 null)
   ipcMain.handle('backup:begin', async (event, spec) => {
     await abortAutoSession();
     const kind = spec && spec.kind;
-    if (kind === 'manual' || kind === 'emergency') {
+    if (kind === 'manual') {
       if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
-      if (kind === 'emergency') {
-        const dir = defaultBackupDir();
-        await fs.mkdir(dir, { recursive: true });
-        const key = getPcKey();
-        return startSession(path.join(dir, spec.name), kind, { header: pcHeader(key), key });
-      }
       // 직접 백업은 사용자가 정한 암호로만 잠급니다(앱은 암호를 저장하지 않음).
       if (typeof spec.password !== 'string' || spec.password.length < 6 || spec.password.length > 256) throw new Error('암호는 6자 이상이어야 합니다.');
       const win = BrowserWindow.fromWebContents(event.sender);
       const res = await dialog.showSaveDialog(win, {
         title: '백업 파일 저장',
-        defaultPath: path.join(defaultBackupDir(), spec.name),
+        // 자동 백업 폴더(앱 데이터 안)는 Windows를 다시 설치하면 함께 지워지므로, 직접 백업은 문서 폴더에서 시작합니다.
+        defaultPath: path.join(app.getPath('documents'), spec.name),
         filters: [{ name: '청지기 장부 백업 파일', extensions: ['slbk'] }],
       });
       if (res.canceled || !res.filePath) return null;
       return startSession(res.filePath, kind, await passwordHeader(spec.password));
     }
     if (kind !== 'close' && kind !== 'periodic') throw new Error('잘못된 백업 종류');
-    const d = allowedBackupDir(spec.dir);
+    const d = defaultBackupDir(); // 화면이 보낸 dir은 쓰지 않습니다.
     await fs.mkdir(d, { recursive: true });
     const key = getPcKey();
     return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.slbk`), kind, { header: pcHeader(key), key });
@@ -246,13 +230,13 @@ if (!app.requestSingleInstanceLock()) {
     }
     // 임시 파일에 다 쓰고 검증한 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
     await fs.rename(s.tmp, s.file);
-    // 오래된 파일 정리는 종료·주기 백업만(직접·긴급 백업 파일은 지우지 않음). 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
+    // 오래된 파일 정리는 종료·주기 백업만(직접 백업과 예전 긴급 백업 파일은 지우지 않음). 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
     if (s.kind === 'close' || s.kind === 'periodic') await pruneBackups(path.dirname(s.file)).catch(() => undefined);
     return s.file;
   });
 
   /**
-   * 렌더러에 백업 내용을 요청하고 지정 폴더에 기록합니다. 끝날 때까지 기다리며(큰 데이터는 오래 걸릴 수 있음),
+   * 렌더러에 백업 내용을 요청하고 백업 폴더에 기록합니다. 끝날 때까지 기다리며(큰 데이터는 오래 걸릴 수 있음),
    * 화면에는 렌더러가 "백업 중" 안내를 띄웁니다. 사용자가 [백업 없이 종료]를 누르거나 화면이 죽으면 기다리지 않습니다.
    * 반환값: true = 종료해도 됨, false = 백업이 실패했고 사용자가 종료를 취소함.
    */
@@ -344,7 +328,15 @@ if (!app.requestSingleInstanceLock()) {
     // 외부 탐색 차단, mailto:만 OS로 위임
     const allowed = DEV_URL ? new URL(DEV_URL).origin : 'app://local';
     win.webContents.on('will-navigate', (e, url) => {
-      if (url.startsWith(allowed)) return;
+      // 앞부분 비교(startsWith)는 app://local.x 같은 주소도 통과시키므로 방식+호스트를 정확히 비교합니다(app:의 URL.origin은 'null'이라 쓰지 않음).
+      let target = '';
+      try {
+        const u = new URL(url);
+        target = `${u.protocol}//${u.host}`;
+      } catch {
+        /* 해석할 수 없는 주소는 막음 */
+      }
+      if (target === allowed) return;
       e.preventDefault();
       if (url.startsWith('mailto:')) void shell.openExternal(url);
     });
@@ -402,8 +394,7 @@ if (!app.requestSingleInstanceLock()) {
     return win;
   }
 
-  ipcMain.handle('backup:default-dir', () => defaultBackupDir());
-  // 화면이 고른 백업 파일 경로: 정규화한 뒤 드라이브 문자 경로만 읽는다. UNC(\\서버\공유, \/서버/공유 같은 혼합 구분자)·장치 경로는 막는다(원격 인증 정보가 나가는 것을 막음)
+  // 화면이 선택한 백업 파일 경로: 정규화한 뒤 드라이브 문자 경로만 읽는다. UNC(\\서버\공유, \/서버/공유 같은 혼합 구분자)·장치 경로는 막는다(원격 인증 정보가 나가는 것을 막음)
   const backupFilePath = (file) => {
     if (typeof file !== 'string' || !/\.(json|gz|slbk)$/i.test(file)) return null;
     const resolved = path.resolve(file);
@@ -496,13 +487,11 @@ if (!app.requestSingleInstanceLock()) {
     r.stream.destroy();
     return true;
   });
-  ipcMain.handle('backup:select-dir', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const res = await dialog.showOpenDialog(win, { title: '자동 백업 폴더 선택', properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || res.filePaths.length === 0) return null;
-    chosenBackupDir = res.filePaths[0];
-    await fs.writeFile(backupDirFile(), JSON.stringify({ dir: chosenBackupDir }), 'utf8').catch(() => undefined);
-    return chosenBackupDir;
+  // 자동 백업 폴더는 기본 폴더로 고정합니다(화면이 경로를 보내지 않음). 없으면 만들어서 탐색기로 엽니다.
+  ipcMain.handle('backup:open-dir', async () => {
+    const d = defaultBackupDir();
+    await fs.mkdir(d, { recursive: true });
+    return shell.openPath(d);
   });
   ipcMain.handle('backup:get-status', async () => {
     try {

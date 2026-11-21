@@ -10,7 +10,7 @@ export function normalizePosition(p: string | undefined | null): string {
 }
 
 /**
- * 선택 목록 항목. 이전 버전·명단 가져오기로 등록되어 목록에 없는 직분(예: 장로)은
+ * 선택 목록 항목. 이전 버전·명단 불러오기로 등록되어 목록에 없는 직분(예: 장로)은
  * 값이 유실되지 않도록 마지막 항목으로 함께 노출합니다.
  */
 export function positionOptions(current: string): string[] {

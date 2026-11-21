@@ -48,7 +48,6 @@ describe('manual backup progress', () => {
   it('reports month order out of the backed-up months', async () => {
     const calls: [number, number][] = [];
     const api = {
-      getDefaultBackupDir: async () => 'C:/x',
       backupBegin: async () => 1,
       backupWrite: async () => undefined,
       backupRestart: async () => 1,

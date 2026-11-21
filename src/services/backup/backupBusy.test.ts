@@ -39,12 +39,12 @@ describe('backup/restore lock', () => {
 
   it('makes automatic backups (periodic and on close) stand aside without touching main', async () => {
     const begin = vi.fn(async () => 1);
-    vi.stubGlobal('window', { desktop: { getDefaultBackupDir: async () => 'C:/x', backupBegin: begin } as unknown as DesktopApi });
+    vi.stubGlobal('window', { desktop: { backupBegin: begin } as unknown as DesktopApi });
     const settings = { ...DEFAULT_SETTINGS, autoBackupEnabled: true };
     await withBackupBusy(async () => {
       expect(await runPeriodicBackup(settings)).toBeNull();
       // 종료 때 백업은 건너뛰면 진행 중인 작업이 끊긴 채 닫히므로, 오류로 알려 main이 종료 여부를 묻게 합니다.
-      await expect(buildAutoBackup(settings)).rejects.toThrow('진행 중');
+      await expect(buildAutoBackup()).rejects.toThrow('진행 중');
     });
     expect(begin).not.toHaveBeenCalled();
   });

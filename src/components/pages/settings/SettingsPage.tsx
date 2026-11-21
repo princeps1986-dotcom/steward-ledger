@@ -54,23 +54,22 @@ export function SettingsPage() {
         <h3 className="font-semibold">
           자동 로컬 백업 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
         </h3>
+        <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm font-semibold text-amber-900">
+          자동 백업 파일은 이 PC의 키로 잠겨 있어, PC를 바꾸거나 Windows를 다시 설치하면 자동 백업 파일로 복원할 수 없습니다. 아래 [백업 파일 저장]으로 수동 백업을 하고, 메일·USB 같은 별도 저장소에 보관하세요.
+        </p>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
-          변경 사항이 있으면 자동 백업: 앱 종료 시(최근 10개 보관)와 사용 중 10분마다(최근 3개 보관)
+          {/* 자동 백업은 데스크톱 앱에서만 동작하므로 브라우저에서는 꺼진 상태로 보여 주고 바꿀 수 없습니다. */}
+          <input type="checkbox" checked={s.isDesktop && s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
+          변경 사항이 있으면 해당 연도 자동 백업: 10분마다(최근 3개 보관)
         </label>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-600">저장 폴더:</span>
-          <code className="flex-1 truncate rounded bg-gray-100 px-2 py-1">{s.backupDir}</code>
-          <button className="btn" onClick={() => void s.selectDir()} disabled={!s.isDesktop || s.backupBlocked}>
-            폴더 선택
+        {s.isDesktop && !s.autoBackupEnabled ? <p className="text-sm font-semibold text-red-700">10분 자동 백업이 꺼져 있습니다. 앱이 비정상 종료되면 마지막 백업 이후 입력한 내용을 잃을 수 있습니다.</p> : null}
+        <p className="text-sm text-gray-600">앱을 닫을 때는 체크와 상관없이, 마지막 전체 백업 이후 바뀐 내용이 있으면 항상 전체 백업합니다(최근 10개 보관).</p>
+        <div>
+          <button className="btn" onClick={s.openBackupDir} disabled={!s.isDesktop}>
+            백업 폴더 열기
           </button>
-          {s.isCustomDir ? (
-            <button className="btn" onClick={s.resetDir} disabled={s.backupBlocked}>
-              기본 폴더로
-            </button>
-          ) : null}
         </div>
-        <p className="text-sm text-gray-600">마지막 백업: {s.lastBackupLabel}</p>
+        {!s.isDesktop ? <p className="text-sm text-gray-600">자동 백업은 PC(데스크톱 앱)에서만 작동합니다. 브라우저에서는 [백업 파일 저장]으로 직접 백업하세요.</p> : null}
         {s.backupBlocked ? <p className="text-sm font-semibold text-red-700">시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다. [시연 데이터 제거] 후 다시 쓸 수 있습니다.</p> : null}
       </section>
 
@@ -80,7 +79,7 @@ export function SettingsPage() {
         </h3>
         <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{s.backupHelp}</p>
         <div className="flex gap-2">
-          {/* 백업은 연도를 골라서 하므로 헌금 내역이 있는 연도가 없으면 누를 수 없습니다. */}
+          {/* 백업은 연도를 선택해서 하므로 헌금 내역이 있는 연도가 없으면 누를 수 없습니다. */}
           <button
             className="btn-primary"
             onClick={s.openBackup}
@@ -94,6 +93,11 @@ export function SettingsPage() {
             <input type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
           </label>
         </div>
+        {/* 전체 백업(앱 종료 때 자동 백업, 모든 연도를 담은 직접 백업)이 성공했을 때만 갱신됩니다. */}
+        <p className="text-sm text-gray-600">마지막 전체 백업: {s.lastBackupLabel}</p>
+        {/* 종료 백업은 데스크톱 앱에만 있습니다. 정상적으로 성공한 것만 기록됩니다. */}
+        {s.isDesktop ? <p className="text-sm text-gray-600">마지막 종료 자동 백업: {s.lastCloseBackupLabel}</p> : null}
+        <p className="text-sm text-gray-600">연도별 수동 백업: {s.manualBackupLabels.length ? s.manualBackupLabels.join(' · ') : '없음'}</p>
       </section>
 
       {/* 데스크톱 앱에서만: 단추를 누를 때만 인터넷에 접속해 바뀐 부분을 받고, 앱을 닫을 때 설치합니다. */}
@@ -206,16 +210,30 @@ export function SettingsPage() {
       </section>
 
       <Modal
+        open={s.periodicBusyOpen}
+        onClose={s.closePeriodicBusy}
+        title="자동 백업 중입니다"
+        footer={
+          <button className="btn-primary" onClick={s.closePeriodicBusy} autoFocus>
+            확인
+          </button>
+        }
+      >
+        <p className="text-sm">지금 자동 백업을 저장하는 중이라 끌 수 없습니다. 오른쪽 아래에 '자동 백업 완료'가 뜬 뒤 다시 해제하세요.</p>
+      </Modal>
+
+      <Modal
         open={s.demoOpen}
         onClose={s.cancelDemo}
         title="시연 데이터를 생성할까요?"
-        description="가상의 시연 데이터가 만들어집니다. 시연이 끝나면 [시연 데이터 제거]로 빈 상태로 되돌립니다."
+        description="가상의 시연 데이터가 만들어집니다. 시연이 끝나면 [시연 데이터 제거]로 초기화 할 수 있습니다."
         footer={
           <ConfirmFooter
             onCancel={s.cancelDemo}
             onConfirm={s.confirmDemo}
             tone="danger"
             busy={s.busy}
+            confirmDisabled={s.hasMembersOrDonations}
             confirmLabel={s.demoProgress ? `만드는 중… ${s.demoProgress.done}/${s.demoProgress.total}` : '시연 데이터 생성'}
           />
         }
@@ -241,7 +259,7 @@ export function SettingsPage() {
       >
         <div className="space-y-2 text-sm">
           <p className="font-semibold text-red-700">시연 중에 새로 입력한 실제 데이터도 함께 삭제됩니다.</p>
-          <p>제거하면 앱이 빈 상태(기본 헌금 종류)로 돌아갑니다. 되돌릴 수 없습니다.</p>
+          <p>제거하면 데이터가 초기상태로 돌아갑니다.</p>
         </div>
       </Modal>
 
@@ -249,7 +267,6 @@ export function SettingsPage() {
         open={s.resetOpen}
         onClose={s.cancelReset}
         title="전체 데이터를 초기화할까요?"
-        description="성도, 헌금 내역, 수정·삭제 이력이 모두 삭제되고 헌금 종류는 기본값으로 돌아갑니다."
         footer={
           <ConfirmFooter
             onCancel={s.cancelReset}
@@ -257,14 +274,34 @@ export function SettingsPage() {
             tone="danger"
             busy={s.busy}
             confirmDisabled={s.resetLeft > 0}
-            confirmLabel={s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '긴급 백업 후 초기화'}
+            confirmLabel={s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '초기화'}
           />
         }
       >
-        <div className="space-y-2 text-sm">
-          <p className="font-semibold text-red-700">이 작업은 되돌릴 수 없습니다.</p>
-          <p>초기화 직전에 현재 데이터를 emergency_before_reset 파일로 백업 폴더에 저장합니다. 필요하면 나중에 [백업 파일 복원]으로 되살릴 수 있습니다.</p>
-          <p className="text-gray-600">테마·백업 주기 같은 환경 설정은 유지됩니다.</p>
+        <div className="space-y-3 text-sm">
+          <div className="rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900">
+            <p className="text-base font-bold">이 작업은 취소할 수 없습니다.</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li><b>성도</b>, <b>헌금 내역</b>, <b>수정·삭제 이력</b>이 모두 삭제됩니다.</li>
+              <li><b>헌금 종류</b>는 <b>기본값</b>으로 돌아갑니다. 환경 설정은 유지됩니다.</li>
+            </ul>
+          </div>
+          <div className="rounded-md border border-gray-300 p-3">
+            {s.hasFullBackup ? (
+              <>
+                <p>마지막 전체 백업: <b>{s.lastBackupLabel}</b></p>
+                <p className="mt-1">[백업 파일 복원]으로 <b>복구</b>할 수 있습니다. 단, 그 뒤에 입력한 내용은 <b className="text-red-700">복구할 수 없습니다</b>.</p>
+              </>
+            ) : (
+              <p><b className="text-red-700">전체 백업 파일이 없습니다.</b> 초기화하면 지금 데이터를 <b className="text-red-700">복구할 수 없습니다</b>. 먼저 [백업 파일 저장]으로 백업하세요.</p>
+            )}
+          </div>
+          {s.isDesktop ? (
+            <p className="text-xs text-gray-500">전체 백업은 마지막 전체 백업 이후 바뀐 내용이 있으면 앱을 닫을 때 자동으로 저장됩니다(이 PC에서만 복원 가능). 사용 중 10분마다 저장되는 자동 백업은 바뀐 연도만 담습니다.</p>
+          ) : null}
+          <p className="text-xs text-gray-500">
+            수동 백업([백업 파일 저장])은 해당 연도 하나와 성도·헌금 종류를 {s.isDesktop ? '직접 정한 암호로 잠근 파일로, 다른 PC에서도 복원할 수 있습니다' : '파일 하나로 내려받습니다'}. 헌금 내역이 여러 연도면 연도마다 저장해야 전체가 됩니다.
+          </p>
         </div>
       </Modal>
 
@@ -326,10 +363,25 @@ export function SettingsPage() {
               '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
             ) : (
               <>
-                <b className="text-red-700 underline">{singleRestoreYear ? `${s.restoreYear}년` : '선택한 연도'}</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.
+                <b className="text-red-700 underline">{singleRestoreYear ? `${s.restoreYear}년` : '선택한 연도'}</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다(아래에서 덮어쓰기를 고르면 같은 항목도 백업 내용으로 바뀝니다).
               </>
             )}
           </p>
+          {s.restoreYearOptions.length > 0 ? (
+            <div className="space-y-1">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={!!s.restoreOverwrite.members} disabled={s.busy} onChange={(e) => s.setRestoreOverwrite((o) => ({ ...o, members: e.target.checked }))} />
+                성도 정보도 백업 내용으로 덮어쓰기
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={!!s.restoreOverwrite.types} disabled={s.busy} onChange={(e) => s.setRestoreOverwrite((o) => ({ ...o, types: e.target.checked }))} />
+                헌금 종류도 백업 내용으로 덮어쓰기
+              </label>
+              {s.restoreOverwrite.members || s.restoreOverwrite.types ? (
+                <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">백업에도 있는 항목은 백업 파일을 만든 때의 내용으로 바뀝니다. 그 뒤에 고친 내용은 사라집니다. 백업에 없는 현재 항목은 지우지 않습니다.</p>
+              ) : null}
+            </div>
+          ) : null}
           {s.restore?.migratedFrom ? <p className="text-amber-700">구버전(v{s.restore.migratedFrom}) 백업입니다. v2 형식으로 자동 변환됩니다.</p> : null}
           <p className="text-gray-600">무결성 검증을 통과했습니다.</p>
         </div>

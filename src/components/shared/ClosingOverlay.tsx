@@ -28,7 +28,7 @@ export function ClosingOverlay({ onSkip }: { onSkip(): void }) {
         <p className="text-sm leading-relaxed text-gray-600">
           백업이 끝나면 앱이 자동으로 종료됩니다. 컴퓨터를 끄거나 전원을 뽑지 말고 잠시만 기다려 주세요. ({sec}초 경과)
         </p>
-        {sec >= 8 ? (
+        {sec >= 5 ? (
           <div className="space-y-1">
             <p className="text-xs text-gray-500">너무 오래 걸리면 백업 없이 종료할 수 있습니다. 데이터는 그대로 저장되어 있습니다.</p>
             <button className="btn" onClick={onSkip}>

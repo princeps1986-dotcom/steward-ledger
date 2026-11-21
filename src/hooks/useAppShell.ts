@@ -36,7 +36,7 @@ export type AutoSaveStatus = { state: 'saving' } | { state: 'done'; at: string }
 export function useAutoBackupBridge(): { failure: string | null; closing: boolean; skipBackup(): void; autoSave: AutoSaveStatus } {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
-  const { markBackupDone } = useSettingsActions();
+  const { markBackupDone, update } = useSettingsActions();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       // 백업 파일 확인·복원 중에는 창을 닫지 않습니다(main이 '복원하고 있습니다' 안내만 띄움).
       if (isRestoring()) return { blocked: true as const };
       setClosing(true);
-      return buildAutoBackup(settingsRef.current);
+      return buildAutoBackup();
     });
     const offCancel = api.onBackupCancelled(() => setClosing(false));
     return () => {
@@ -67,9 +67,10 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     const tick = async (): Promise<void> => {
       setAutoSave({ state: 'saving' });
       try {
-        const file = await runPeriodicBackup(settingsRef.current);
-        if (file) {
-          await markBackupDone();
+        const res = await runPeriodicBackup(settingsRef.current);
+        if (res) {
+          // 바뀐 연도만 담은 10분 백업은 '마지막 전체 백업' 시각을 바꾸지 않습니다. 바뀐 연도를 몰라 전체를 담았을 때만 갱신합니다.
+          if (res.full) await markBackupDone();
           setFailure((f) => (f?.startsWith('주기 백업') ? null : f));
           setAutoSave({ state: 'done', at: new Date().toISOString() });
           window.clearTimeout(hideTimer);
@@ -97,13 +98,14 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       if (!status) return;
       if (status.ok) {
         const last = settingsRef.current.lastBackupAt;
-        if (!last || status.at > last) await markBackupDone(status.at);
+        // 정상적으로 성공한 종료 백업 시각만 남깁니다(실패·백업 없이 종료는 ok가 아님). 종료 백업은 전체이므로 더 새로우면 전체 백업 시각도 함께, 한 번에 씁니다.
+        await update({ lastCloseBackupAt: status.at, ...(!last || status.at > last ? { lastBackupAt: status.at } : {}) });
       } else {
         setFailure(`지난 종료 시 자동 백업에 실패했습니다 (${formatDateTime(status.at)}): ${status.error ?? '알 수 없는 오류'}`);
       }
       await api.ackAutoBackupStatus();
     })();
-  }, [loaded, markBackupDone]);
+  }, [loaded, update]);
 
   // 지난 복원이 끝나지 않고 중단됐는지 시작할 때 한 번 알려 줍니다(같은 백업으로 다시 복원하면 됨).
   useEffect(() => {

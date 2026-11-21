@@ -10,13 +10,14 @@ import { formatAmountInput, formatNumber, parseAmount } from '../services/domain
 import { formatDateTime } from '../services/domain/dates';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
-import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
+import { isCompleteYearBackup, saveBackupFile, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { decryptedBackup, isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
 import { setRestoreProgress, withCheckingBackup, withRestoring } from '../services/backup/backupBusy';
+import { isPeriodicBackupRunning } from '../services/backup/autoBackupService';
 import { countYearDonations } from '../services/storage/storageService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop, type UpdateCheck } from '../services/desktopBridge';
-import type { MergePlan } from '../services/backup/mergeRules';
+import type { MergePlan, RestoreOverwrite } from '../services/backup/mergeRules';
 
 interface RestoreCandidate {
   /** 한 덩어리 JSON 백업(작은 파일)은 전체를 읽어 둔 내용, 줄 단위 백업은 null(복원할 때 파일을 다시 읽음) */
@@ -52,7 +53,7 @@ export function useSettingsPage() {
   const offeringActions = useOfferingActions();
   const donationActions = useDonationActions();
   const years = useDonationYears();
-  // 성도·헌금 내역이 없고 헌금 종류도 기본값 그대로면 되돌릴 것이 없으므로 전체 초기화를 쓸 수 없습니다.
+  // 성도·헌금 내역이 없고 헌금 종류도 기본값 그대로면 복구할 것이 없으므로 전체 초기화를 쓸 수 없습니다.
   const offeringTypes = useOfferingTypes();
   const typesChanged = useMemo(() => {
     const strip = (t: { name: string; displayArea: string; quickAmounts: number[]; sortOrder: number; isActive: boolean }) =>
@@ -60,12 +61,17 @@ export function useSettingsPage() {
     const cur = [...offeringTypes].sort((a, b) => a.sortOrder - b.sortOrder).map(strip);
     return cur.length !== DEFAULT_OFFERING_TYPES.length || cur.some((c, i) => c !== strip(DEFAULT_OFFERING_TYPES[i]));
   }, [offeringTypes]);
-  const hasData = useMembers().length > 0 || years.length > 0 || typesChanged;
+  const members = useMembers();
+  // 시연 데이터는 성도·헌금이 하나도 없을 때만 만들 수 있습니다(demoService의 hasAnyData와 같은 조건).
+  const hasMembersOrDonations = members.length > 0 || years.length > 0;
+  const hasData = hasMembersOrDonations || typesChanged;
 
   const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
-  const [defaultDir, setDefaultDir] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
+  // 복원 창의 '성도/헌금 종류도 백업 내용으로 덮어쓰기' 선택(창을 열 때마다 꺼진 상태로 시작)
+  const [restoreOverwrite, setRestoreOverwrite] = useState<RestoreOverwrite>({});
+  useEffect(() => setRestoreOverwrite({}), [restore]);
   // 백업·복원은 항상 연도 하나를 선택해서 합니다(셀렉트 박스, 헌금 내역이 있는 연도만).
   const [backupYearPick, setBackupYearPick] = useState('');
   const [restoreYearPick, setRestoreYearPick] = useState('');
@@ -79,7 +85,7 @@ export function useSettingsPage() {
   // 직접 백업 암호(데스크톱 앱). 앱은 암호를 저장하지 않으며, 창을 닫거나 저장하면 지웁니다.
   const [backupPassword, setBackupPassword] = useState('');
   const [backupPassword2, setBackupPassword2] = useState('');
-  // 암호가 필요한 백업 파일을 골랐을 때 암호 입력 창
+  // 암호가 필요한 백업 파일을 선택했을 때 암호 입력 창
   const [restorePw, setRestorePw] = useState<{ file: File; input: string; error: string } | null>(null);
   const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
   const [demoProgress, setDemoProgress] = useState<{ done: number; total: number } | null>(null);
@@ -99,11 +105,7 @@ export function useSettingsPage() {
     setThreshold(formatNumber(settings.largeAmountThreshold));
   }, [settings.largeAmountThreshold]);
 
-  useEffect(() => {
-    void desktop()?.getDefaultBackupDir().then(setDefaultDir);
-  }, []);
-
-  /** 저장하지 않은 입력을 버리고 저장된 값으로 되돌립니다. */
+  /** 저장하지 않은 입력을 버리고 저장된 값으로 복구합니다. */
   const cancelGeneral = useCallback(() => setThreshold(formatNumber(settings.largeAmountThreshold)), [settings.largeAmountThreshold]);
 
   const saveGeneral = useCallback(async () => {
@@ -119,14 +121,16 @@ export function useSettingsPage() {
     return t.kind !== 'ok' || t.value !== settings.largeAmountThreshold;
   }
 
-  const toggleAutoBackup = useCallback((v: boolean) => !backupBlocked && void update({ autoBackupEnabled: v }), [update, backupBlocked]);
-
-  const selectDir = useCallback(async () => {
-    if (backupBlocked) return;
-    const dir = await desktop()?.selectBackupDir();
-    if (dir) await update({ autoBackupDir: dir });
-  }, [update, backupBlocked]);
-  const resetDir = useCallback(() => void update({ autoBackupDir: '' }), [update]);
+  // 10분 백업이 저장 중일 때 끄려고 하면 끄지 않고 안내창을 띄웁니다(체크 상태는 그대로).
+  const [periodicBusyOpen, setPeriodicBusyOpen] = useState(false);
+  const toggleAutoBackup = useCallback(
+    (v: boolean) => {
+      if (backupBlocked) return;
+      if (!v && isPeriodicBackupRunning()) return setPeriodicBusyOpen(true);
+      void update({ autoBackupEnabled: v });
+    },
+    [update, backupBlocked],
+  );
 
   const backupNow = useCallback(async () => {
     if (backupBlocked) return;
@@ -139,6 +143,8 @@ export function useSettingsPage() {
       const name = await saveBackupFile('backup', [backupYear], (done, total) => setBackupProgress({ done, total }), isDesktop ? backupPassword : undefined);
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
+      // 기록 저장이 실패해도 파일은 저장됐으므로 '백업 실패'로 안내하지 않습니다.
+      await update({ manualBackupAt: { ...settings.manualBackupAt, [backupYear]: new Date().toISOString() } }).catch(() => undefined);
       closeBackup();
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {
@@ -147,7 +153,7 @@ export function useSettingsPage() {
       setBusy(false);
       setBackupProgress(null);
     }
-  }, [markBackupDone, years, backupYear, backupBlocked, isDesktop, backupPassword, backupPassword2]);
+  }, [markBackupDone, update, settings.manualBackupAt, years, backupYear, backupBlocked, isDesktop, backupPassword, backupPassword2]);
   const closeBackup = () => {
     setBackupOpen(false);
     setBackupPassword('');
@@ -256,7 +262,7 @@ export function useSettingsPage() {
   }, [resetOpen]);
 
   const confirmDemo = useCallback(async () => {
-    if (demoActive) return; // 시연 중에는 만들 수 없습니다(이미 시연 중).
+    if (demoActive || hasMembersOrDonations) return; // 시연 중이거나 성도·헌금 데이터가 있으면 만들 수 없습니다.
     setDemoOpen(false); // 누르는 즉시 레이어를 닫고, 진행은 최상단 안내 띠에 보입니다.
     setBusy(true);
     try {
@@ -277,7 +283,7 @@ export function useSettingsPage() {
       setDemoProgress(null);
       setBusy(false);
     }
-  }, [demoActive, memberActions, offeringActions, donationActions]);
+  }, [demoActive, hasMembersOrDonations, memberActions, offeringActions, donationActions]);
 
   const confirmRemoveDemo = useCallback(async () => {
     if (!demoActive || demoCreating) return; // 시연 데이터가 없거나 만드는 중이면 작동하지 않습니다.
@@ -285,7 +291,7 @@ export function useSettingsPage() {
     try {
       await removeDemoData();
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      setMessage({ kind: 'info', text: '시연 데이터를 제거했습니다.(빈 상태로 돌아갑니다)' });
+      setMessage({ kind: 'info', text: '시연 데이터를 제거했습니다.(초기 데이터로 돌아갑니다)' });
       setRemoveDemoOpen(false);
     } catch (err) {
       setMessage({ kind: 'error', text: `시연 데이터 제거 실패: ${(err as Error).message}` });
@@ -298,19 +304,21 @@ export function useSettingsPage() {
     if (resetLeft > 0 || demoActive || !hasData) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
     setBusy(true);
     try {
-      await saveEmergencyBackup('emergency_before_reset');
       await resetAllData();
+      // 지운 데이터의 백업 기록도 비웁니다(남아 있으면 새로 입력한 데이터에 '아직 백업한 적이 없습니다' 권고가 뜨지 않음). 백업 파일은 그대로 둡니다.
+      // 기록을 비우지 못해도 데이터는 이미 초기화됐으므로 '초기화 실패'로 알리지 않습니다.
+      await update({ lastBackupAt: null, lastCloseBackupAt: null, manualBackupAt: {} }).catch(() => undefined);
       await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      setMessage({ kind: 'info', text: '전체 데이터를 초기화했습니다. 초기화 전 데이터는 emergency_before_reset 파일로 저장되었습니다.' });
+      setMessage({ kind: 'info', text: '전체 데이터를 초기화했습니다.' });
       setResetOpen(false);
     } catch (err) {
       setMessage({ kind: 'error', text: `초기화 실패: ${(err as Error).message}` });
     } finally {
       setBusy(false);
     }
-  }, [resetLeft, demoActive, hasData, memberActions, offeringActions, donationActions]);
+  }, [resetLeft, demoActive, hasData, update, memberActions, offeringActions, donationActions]);
 
-  // 확인 창에 보여 줄 현재 데이터의 그 연도 건수(잘못된 파일을 골랐는지 알아보기 쉽게). 세는 동안 null
+  // 확인 창에 보여 줄 현재 데이터의 그 연도 건수(잘못된 파일을 선택했는지 알아보기 쉽게). 세는 동안 null
   const [currentYearCount, setCurrentYearCount] = useState<number | null>(null);
   useEffect(() => {
     setCurrentYearCount(null);
@@ -338,7 +346,7 @@ export function useSettingsPage() {
       const result = await withRestoring(async () => {
         const [r] = await Promise.all([
           (async () => {
-            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS' });
+            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked, restoreOverwrite) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS', overwrite: restoreOverwrite });
             await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
             return res;
           })(),
@@ -349,7 +357,7 @@ export function useSettingsPage() {
       log?.({ stage: 'done', file: restore.fileName, years: picked, count, addedMembers: result.addedMembers, addedTypes: result.addedTypes });
       setMessage({
         kind: 'info',
-        text: `${restoreYear}년 헌금 ${count.toLocaleString('ko-KR')}건을 복원했습니다. 다른 연도는 그대로입니다. 새로 추가된 성도 ${result.addedMembers}명·헌금 종류 ${result.addedTypes}개.${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}`,
+        text: `${restoreYear}년 헌금 ${count.toLocaleString('ko-KR')}건을 복원했습니다. 다른 연도는 그대로입니다. 새로 추가된 성도 ${result.addedMembers}명·헌금 종류 ${result.addedTypes}개.${result.updatedMembers + result.updatedTypes > 0 ? ` 백업 내용으로 덮어쓴 성도 ${result.updatedMembers}명·헌금 종류 ${result.updatedTypes}개.` : ''}${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}`,
       });
     } catch (err) {
       log?.({ stage: 'fail', file: restore.fileName, years: picked, error: (err as Error).message });
@@ -357,7 +365,7 @@ export function useSettingsPage() {
     } finally {
       setBusy(false);
     }
-  }, [restore, restoreYear, currentYearCount, memberActions, offeringActions, donationActions]);
+  }, [restore, restoreYear, restoreOverwrite, currentYearCount, memberActions, offeringActions, donationActions]);
 
   // 프로그램 업데이트: 단추를 누를 때만 인터넷에 접속합니다(데스크톱 앱 전용).
   const [appUpdate, setAppUpdate] = useState<
@@ -411,11 +419,17 @@ export function useSettingsPage() {
     ],
     backupHelp:
       '특정 연도를 선택해야 합니다. (성도·헌금 종류는 항상 포함)\n복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀝니다.',
-    backupDir: settings.autoBackupDir || defaultDir || '(데스크톱 앱에서만 사용 가능)',
-    isCustomDir: !!settings.autoBackupDir,
-    selectDir,
-    resetDir,
+    openBackupDir: () => void desktop()?.openBackupDir(),
+    periodicBusyOpen,
+    closePeriodicBusy: () => setPeriodicBusyOpen(false),
     lastBackupLabel: settings.lastBackupAt ? formatDateTime(settings.lastBackupAt) : '없음',
+    hasFullBackup: !!settings.lastBackupAt,
+    lastCloseBackupLabel: settings.lastCloseBackupAt ? formatDateTime(settings.lastCloseBackupAt) : '없음',
+    // 최근 연도부터: '2026년 2026-11-21 10:00'
+    manualBackupLabels: Object.entries(settings.manualBackupAt)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([y, at]) => `${y}년 ${formatDateTime(at)}`),
+    hasMembersOrDonations,
     backupNow,
     backupOpen,
     openBackup: () => !backupBlocked && setBackupOpen(true),
@@ -432,6 +446,8 @@ export function useSettingsPage() {
     restore,
     confirmRestore,
     cancelRestore: () => setRestore(null),
+    restoreOverwrite,
+    setRestoreOverwrite,
     // 연도별 백업·복원 선택
     backupYearOptions: years,
     backupYear,

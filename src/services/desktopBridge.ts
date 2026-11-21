@@ -12,14 +12,12 @@ export interface AutoBackupPayload {
   file: string;
 }
 
-/** close = 종료 때 · periodic = 앱을 쓰는 동안 · emergency = 초기화 직전(name 필요) · manual = 저장 위치를 고름(name 필요) */
+/** close = 종료 때 · periodic = 앱을 쓰는 동안 · manual = 저장 위치를 고름(name 필요) */
 export interface BackupSessionSpec {
-  kind: 'close' | 'periodic' | 'emergency' | 'manual';
-  /** close·periodic에서 사용자가 선택한 폴더(설정값). main이 허용한 폴더가 아니면 무시됩니다. */
-  dir?: string;
-  /** emergency·manual의 파일 이름(영문·숫자·_- 와 .slbk) */
+  kind: 'close' | 'periodic' | 'manual';
+  /** manual의 파일 이름(영문·숫자·_- 와 .slbk) */
   name?: string;
-  /** manual: 사용자가 정한 암호(6자 이상). 자동·긴급 백업은 이 PC의 키로 잠그므로 필요 없음 */
+  /** manual: 사용자가 정한 암호(6자 이상). 자동 백업은 이 PC의 키로 잠그므로 필요 없음 */
   password?: string;
 }
 
@@ -56,14 +54,14 @@ export interface DesktopApi {
   savePdf(name: string): Promise<boolean>;
   /** PDF 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
   onDownloadDone(handler: (info: SavedFileInfo) => void): () => void;
-  getDefaultBackupDir(): Promise<string>;
-  selectBackupDir(): Promise<string | null>;
+  /** 자동 백업 폴더(기본 폴더로 고정)를 탐색기로 엽니다. 성공 시 빈 문자열, 실패 시 오류 문구. */
+  openBackupDir(): Promise<string>;
   getAutoBackupStatus(): Promise<AutoBackupStatus | null>;
   ackAutoBackupStatus(): Promise<void>;
   /**
    * 백업을 줄 단위로 main에 보내 gzip 파일로 씁니다: begin(세션 번호, manual에서 사용자가 취소하면 null) → write(여러 번)
    * → end(검증 후 저장된 경로). 내역이 달을 넘어 옮겨져 다시 읽어야 하면 restart, 실패하면 abort. 다른 백업이 시작되면 이전 세션은 취소됩니다.
-   * 폴더는 main이 정합니다: close·periodic은 사용자가 선택한 폴더 또는 기본 폴더(그 밖의 dir은 무시), emergency는 기본 폴더, manual은 저장 대화상자.
+   * 폴더는 main이 정합니다: close·periodic은 기본 백업 폴더, manual은 저장 대화상자.
    */
   backupBegin(spec: BackupSessionSpec): Promise<number | null>;
   backupWrite(id: number, line: string): Promise<boolean>;

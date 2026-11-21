@@ -10,3 +10,4 @@ test-data/
 .env.production
 CLAUDE.local.md
 .claude/settings.local.json
+graphify-out/

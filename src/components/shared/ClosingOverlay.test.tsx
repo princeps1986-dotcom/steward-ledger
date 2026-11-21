@@ -15,7 +15,9 @@ describe('ClosingOverlay', () => {
     act(() => void vi.advanceTimersByTime(500));
     expect(dialog.className).not.toContain('invisible');
     expect(screen.queryByText('백업 없이 종료')).toBeNull();
-    act(() => void vi.advanceTimersByTime(8000));
+    act(() => void vi.advanceTimersByTime(4000)); // 4.5초: 아직 없음
+    expect(screen.queryByText('백업 없이 종료')).toBeNull();
+    act(() => void vi.advanceTimersByTime(1000)); // 5.5초: 나타남
     fireEvent.click(screen.getByText('백업 없이 종료'));
     expect(onSkip).toHaveBeenCalledTimes(1);
   });

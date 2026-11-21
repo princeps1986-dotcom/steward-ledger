@@ -30,7 +30,7 @@ export const DailyTotalsBar = memo(function DailyTotalsBar({ date, flashKey = 0 
         <label>
           <span className="label">현금 계수 금액</span>
           <input
-            className="input w-32 text-right text-base"
+            className="input w-32 text-right"
             inputMode="numeric"
             id="cash-count-input"
             value={t.cashInput}

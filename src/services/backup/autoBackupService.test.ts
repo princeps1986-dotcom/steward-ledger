@@ -4,8 +4,8 @@ import { DEFAULT_SETTINGS } from '../../contexts/types';
 import type { Donation } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
-import { isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
-import { backupLines, desktopSink, saveBackupFile, saveEmergencyBackup, streamBackup, type BackupSink } from './backupService';
+import { dirtyYearsSinceFullBackup, isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
+import { backupLines, desktopSink, saveBackupFile, streamBackup, type BackupSink } from './backupService';
 import { buildAutoBackup, runPeriodicBackup } from './autoBackupService';
 import { withBackupBusy } from './backupBusy';
 import { sha256Hex } from './validation';
@@ -35,7 +35,6 @@ function fakeSink(opts: { failAtLine?: number; cancel?: boolean; failMessage?: s
 function fakeDesktop(sink: BackupSink) {
   const specs: unknown[] = [];
   const api = {
-    getDefaultBackupDir: async () => 'C:/x',
     backupBegin: async (spec: unknown) => (specs.push(spec), sink.begin()),
     backupWrite: sink.write,
     backupRestart: sink.restart,
@@ -157,16 +156,12 @@ describe('streamBackup', () => {
 });
 
 describe('desktop save functions use the streaming sessions', () => {
-  it('emergency backup is a named .slbk session in the default folder; manual backup carries the years and the password, and the user may cancel', async () => {
+  it('manual backup carries the years and the password, and the user may cancel', async () => {
     const f = fakeSink();
     const specs = fakeDesktop(f.sink);
-    expect(await saveEmergencyBackup('emergency_before_restore')).toBe('C:/x/backup.json.gz');
-    expect(specs[0]).toMatchObject({ kind: 'emergency' });
-    expect((specs[0] as { name: string }).name).toMatch(/^emergency_before_restore_\d{8}_\d{6}\.slbk$/);
-
     expect(await saveBackupFile('backup', ['2026'], undefined, '교회암호123')).toBe('C:/x/backup.json.gz');
-    expect(specs[1]).toMatchObject({ kind: 'manual', password: '교회암호123' });
-    expect((specs[1] as { name: string }).name).toMatch(/^backup_2026_\d{8}_\d{6}\.slbk$/);
+    expect(specs[0]).toMatchObject({ kind: 'manual', password: '교회암호123' });
+    expect((specs[0] as { name: string }).name).toMatch(/^backup_2026_\d{8}_\d{6}\.slbk$/);
     expect(f.sessions().at(-1)!.filter((l) => l.includes('"t":"donations"'))).toHaveLength(2);
 
     const cancelled = fakeSink({ cancel: true });
@@ -204,10 +199,19 @@ describe('desktop save functions use the streaming sessions', () => {
     expect(await isDirtySinceBackup()).toBe(true);
   });
 
+  it('10분 백업 뒤(변경 표시 꺼짐) 직접 전체 백업을 취소하면 변경 표시를 켜지 않고 바뀐 연도 목록만 되돌린다', async () => {
+    fakeDesktop(fakeSink().sink);
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toMatchObject({ full: false });
+    fakeDesktop(fakeSink({ cancel: true }).sink);
+    await expect(saveBackupFile('backup', ['2026'], undefined, '교회암호123')).rejects.toThrow('저장을 취소');
+    expect(await isDirtySinceBackup()).toBe(false); // 바뀐 것이 없으니 다음 10분 백업은 건너뜀
+    expect(await dirtyYearsSinceFullBackup()).toEqual(['2026']); // 닫을 때 전체 백업은 그대로 함
+  });
+
   it('desktopSink forwards to the bridge', async () => {
     const f = fakeSink();
     fakeDesktop(f.sink);
-    const sink = desktopSink(window.desktop!, { kind: 'periodic', dir: 'C:/x' });
+    const sink = desktopSink(window.desktop!, { kind: 'periodic' });
     const id = await sink.begin();
     expect(id).toBe(1);
   });
@@ -226,10 +230,35 @@ describe('runPeriodicBackup', () => {
     const f = fakeSink();
     const specs = fakeDesktop(f.sink);
     expect(await isDirtySinceBackup()).toBe(true);
-    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBe('C:/x/backup.json.gz');
-    expect(specs[0]).toMatchObject({ kind: 'periodic', dir: 'C:/x' });
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toEqual({ file: 'C:/x/backup.json.gz', full: false }); // 2026년만 바뀜
+    expect(specs[0]).toMatchObject({ kind: 'periodic' });
     expect(f.final().some((l) => l.includes('"t":"donations"'))).toBe(true);
     expect(await isDirtySinceBackup()).toBe(false);
+  });
+
+  it('바뀐 연도를 모르면(목록이 비어 있으면) 전체를 담고 full: true를 돌려준다', async () => {
+    const f = fakeSink();
+    fakeDesktop(f.sink);
+    // 다른 연도(2025)도 있어야 일부 백업(2026년만)과 전체 백업이 구별됩니다.
+    await transact(async () => ({ writes: [monthWrite('2025-05', [d('c', '2025-05-04')])], result: 0 }));
+    await db.kv.delete('meta_dirty_years');
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toEqual({ file: 'C:/x/backup.json.gz', full: true });
+    expect(f.final().filter((l) => l.includes('"t":"donations"'))).toHaveLength(3); // 2025-05, 2026-01, 2026-02 모두
+  });
+
+  it('성도·헌금 종류만 바뀌었으면 헌금 내역이 있는 가장 최근 연도 하나만 담고, 종료 때는 전체 백업한다', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    await transact(async () => ({ writes: [rowWrite('2025-05', { puts: [d('old', '2025-05-01')], deletes: [] })], result: 0 }));
+    await db.kv.put([], 'meta_dirty_years'); // 전체 백업 뒤 성도만 바뀐 상태
+    await db.kv.put(true, 'meta_dirty_since_backup');
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toEqual({ file: 'C:/x/backup.json.gz', full: false });
+    const months = f.final().filter((l) => l.includes('"t":"donations"'));
+    expect(months).toHaveLength(2);
+    expect(months.every((l) => l.includes('"ym":"2026'))).toBe(true);
+    expect(await dirtyYearsSinceFullBackup()).toEqual(['2026']);
+    expect(await buildAutoBackup()).not.toBeNull();
+    expect(specs.at(-1)).toMatchObject({ kind: 'close' });
   });
 
   it('puts the changed flag back when the backup fails', async () => {
@@ -278,9 +307,47 @@ describe('buildAutoBackup (종료 때 백업)', () => {
     fakeDesktop(f.sink);
     let release!: () => void;
     const busy = withBackupBusy(() => new Promise<void>((r) => (release = r)));
-    await expect(buildAutoBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: true })).rejects.toThrow('진행 중');
+    await expect(buildAutoBackup()).rejects.toThrow('진행 중');
     expect(f.log).toEqual([]); // 진행 중인 세션을 건드리지 않음
     release();
     await busy;
+  });
+
+  it('설정과 상관없이 변경이 있으면 종료 때 백업을 한다(체크박스는 10분 백업만 끔)', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await buildAutoBackup()).not.toBeNull();
+    expect(specs[0]).toMatchObject({ kind: 'close' });
+  });
+
+  it('10분 백업이 일부 연도만 담았으면 변경 표시가 꺼졌어도 닫을 때 전체 백업하고, 그 뒤 바뀐 게 없으면 건너뛴다', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toMatchObject({ full: false });
+    expect(await isDirtySinceBackup()).toBe(false);
+    expect(await buildAutoBackup()).not.toBeNull();
+    expect(specs.at(-1)).toMatchObject({ kind: 'close' });
+    expect(await dirtyYearsSinceFullBackup()).toEqual([]);
+    expect(await buildAutoBackup()).toBeNull();
+  });
+
+  it('10분 백업이 일부 연도만 담은 뒤 직접 전체 백업을 하면, 닫을 때 같은 전체 백업을 다시 하지 않는다', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toMatchObject({ full: false });
+    await saveBackupFile('backup', ['2026'], undefined, '교회암호123'); // 데이터가 2026년뿐이라 전체 백업
+    expect(await dirtyYearsSinceFullBackup()).toEqual([]);
+    expect(await buildAutoBackup()).toBeNull();
+    expect(specs.map((s) => (s as { kind: string }).kind)).toEqual(['periodic', 'manual']);
+  });
+
+  it('성도·헌금이 하나도 없으면 바뀐 표시가 있어도 종료 백업을 만들지 않는다', async () => {
+    await db.kv.clear();
+    await db.donations.clear();
+    await db.kv.put(true, 'meta_dirty_since_backup');
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    expect(await buildAutoBackup()).toBeNull();
+    expect(specs).toEqual([]);
   });
 });

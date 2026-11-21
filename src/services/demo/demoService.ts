@@ -73,7 +73,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
 }
 
 /**
- * 시연 데이터 제거: 시연 중 수정·추가한 데이터까지 모두 지우고 빈 상태(기본 헌금 종류)로 되돌립니다.
+ * 시연 데이터 제거: 시연 중 수정·추가한 데이터까지 모두 지우고 빈 상태(기본 헌금 종류)로 복구합니다.
  * (이전 버전이 남긴 시연 복구 정보 키도 함께 지웁니다.)
  */
 export async function removeDemoData(): Promise<void> {

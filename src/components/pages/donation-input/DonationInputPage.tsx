@@ -23,7 +23,7 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
         <DailyTotalsBar date={c.date} flashKey={c.savedSeq} />
         {/* 저장 결과는 화면 아래로 밀려 가려지지 않도록 위쪽에 두고, 나타나도 입력 칸이 밀리지 않게 높이를 확보합니다. */}
         <div className="min-h-[2.75rem]" aria-live="polite">
-          <Notice key={c.message?.undoable ? `saved-${c.savedSeq}` : 'msg'} success={c.message?.undoable} message={c.message} action={c.message?.undoable && c.canUndo ? { label: '되돌리기', onClick: () => void c.undo() } : undefined} />
+          <Notice key={c.message?.undoable ? `saved-${c.savedSeq}` : 'msg'} success={c.message?.undoable} message={c.message} action={c.message?.undoable && c.canUndo ? { label: '복구하기', onClick: () => void c.undo() } : undefined} />
         </div>
         <section className="card space-y-4">
           <div className="grid grid-cols-[220px_minmax(0,26rem)] gap-3">
@@ -106,7 +106,7 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
               저장 (Enter)
             </button>
             <span className="text-xs text-gray-500">
-              Enter: 다음 칸 · F2: 무명/방문자 전환 · F4: 현금 계수 입력 · Ctrl+Enter: 어느 칸에서든 바로 저장 · 입력 칸이 비었을 때 Ctrl+Z: 직전 입력 되돌리기
+              Enter: 다음 칸 · F2: 무명/방문자 전환 · F4: 현금 계수 입력 · Ctrl+Enter: 어느 칸에서든 바로 저장 · 입력 칸이 비었을 때 Ctrl+Z: 직전 입력 복구하기
             </span>
           </div>
         </section>

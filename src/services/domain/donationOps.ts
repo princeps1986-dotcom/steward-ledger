@@ -63,7 +63,7 @@ export function makeAudit(
 }
 
 export const REASON_MERGE = '동일 내역 복수 헌금 합산';
-export const REASON_UNDO = '입력 직후 되돌리기';
+export const REASON_UNDO = '입력 직후 복구하기';
 
 /** 수정·삭제 사유에 들어가야 하는 한글 글자 수(공백·숫자·영문은 세지 않음) */
 const MIN_REASON_HANGUL = 4;

@@ -102,7 +102,7 @@ export function OfferingsPage() {
         open={!!p.confirming}
         onClose={p.cancelDelete}
         title={`'${p.confirming?.name ?? ''}' 헌금 종류를 삭제할까요?`}
-        description="입력된 헌금이 없는 헌금 종류입니다. 삭제하면 되돌릴 수 없습니다."
+        description="입력된 헌금이 없는 헌금 종류입니다. 삭제하면 복구할 수 없습니다."
         footer={
           <ConfirmFooter onCancel={p.cancelDelete} onConfirm={p.confirmDelete} tone="danger" autoFocus confirmLabel="삭제" />
         }

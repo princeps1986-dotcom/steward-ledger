@@ -10,9 +10,9 @@ export function usePaging(count: number, size: number, resetKey: string) {
   const pages = Math.max(1, Math.ceil(count / size));
   const page = clampPage(state.key === resetKey ? state.page : 1, pages);
   const from = (page - 1) * size;
-  // 스크롤되는 목록 영역에 붙이면, 쪽을 옮길 때 그 영역을 맨 위로 되돌리고 화면 밖으로 밀려난 영역 위쪽도 보이게 합니다.
+  // 스크롤되는 목록 영역에 붙이면, 쪽을 옮길 때 그 영역을 맨 위로 복구하고 화면 밖으로 밀려난 영역 위쪽도 보이게 합니다.
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 기간·검색어 등이 바뀌면(resetKey) 그 목록 영역도 맨 위로 되돌립니다.
+  // 기간·검색어 등이 바뀌면(resetKey) 그 목록 영역도 맨 위로 복구합니다.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [resetKey]);

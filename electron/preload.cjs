@@ -2,8 +2,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
-  getDefaultBackupDir: () => ipcRenderer.invoke('backup:default-dir'),
-  selectBackupDir: () => ipcRenderer.invoke('backup:select-dir'),
+  openBackupDir: () => ipcRenderer.invoke('backup:open-dir'),
   getAutoBackupStatus: () => ipcRenderer.invoke('backup:get-status'),
   ackAutoBackupStatus: () => ipcRenderer.invoke('backup:ack-status'),
   savePdf: (name) => ipcRenderer.invoke('report:save-pdf', name),
@@ -19,7 +18,7 @@ contextBridge.exposeInMainWorld('desktop', {
   backupRestart: (id) => ipcRenderer.invoke('backup:restart', id),
   backupAbort: (id) => ipcRenderer.invoke('backup:abort', id),
   backupEnd: (id) => ipcRenderer.invoke('backup:end', id),
-  // 고른 파일의 경로를 main에 넘겨 체크섬을 확인합니다(경로를 모르는 파일이면 null: 화면 쪽에서 확인).
+  // 선택한 파일의 경로를 main에 넘겨 체크섬을 확인합니다(경로를 모르는 파일이면 null: 화면 쪽에서 확인).
   verifyBackupFile: (file, password) => {
     const path = webUtils.getPathForFile(file);
     return path ? ipcRenderer.invoke('backup:verify-file', path, password) : Promise.resolve(null);

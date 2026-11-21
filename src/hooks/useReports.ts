@@ -7,7 +7,7 @@ import type { AuditLog, Donation } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { auditLogsForPeriod } from '../services/domain/auditFilter';
 import { ListPager } from '../services/domain/listPager';
-import { readMemberDonations, readMonth } from '../services/storage/storageService';
+import { AUDIT_KEY_RE, listAuditKeys, readMemberDonations, readMonth } from '../services/storage/storageService';
 import { sumMonth, type MonthSums } from '../services/domain/periodSummary';
 import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
 import { formatDateTime, isValidDateString, lastSunday, monthOf, seoulNow, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
@@ -135,7 +135,18 @@ export function useReportFilters(loadData = true) {
   const monthSums = useMonthSums(summaryMode ? neededMonths : NO_MONTHS);
   const listMonths = useMemo(() => [...neededMonths].sort().reverse(), [neededMonths]); // 전체 입력 내역 탭이 직접 읽는 달(최신 달부터)
 
-  const yearOptions = useMemo(() => [...new Set([...years, currentYear])].sort().reverse(), [years, currentYear]);
+  // 헌금을 모두 지운 해도 수정·삭제 이력은 남으므로, 이력이 있는 연도도 고를 수 있게 합니다(헌금 연도 목록이 바뀌면 다시 확인).
+  const [auditYears, setAuditYears] = useState<string[]>([]);
+  useEffect(() => {
+    let stop = false;
+    void listAuditKeys()
+      .then((keys) => !stop && setAuditYears(keys.map((k) => AUDIT_KEY_RE.exec(k)![1])))
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [years]);
+  const yearOptions = useMemo(() => [...new Set([...years, ...auditYears, currentYear])].sort().reverse(), [years, auditYears, currentYear]);
   // 월·분기·연도는 불러온 달이 곧 그 기간이므로 그대로 쓰고(다른 달에 저장해도 배열이 바뀌지 않음), 주별만 날짜로 거릅니다.
   const donations = useMemo(() => (isRange ? source.filter((d) => d.date >= week.start && d.date <= week.end) : source), [isRange, week, source]);
 
@@ -261,7 +272,10 @@ export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> =
         count += s.count;
       }
     }
-    const list = types.filter((t) => !hidden.has(t.id) && (t.isActive || used.has(t.id))).sort((a, b) => a.sortOrder - b.sortOrder);
+    const list: { id: string; name: string }[] = types.filter((t) => !hidden.has(t.id) && (t.isActive || used.has(t.id))).sort((a, b) => a.sortOrder - b.sortOrder);
+    // 장부에만 있는 알 수 없는 종류도 줄로 보여 줘야 줄 합계가 총합과 맞습니다(주별 표와 같은 방식).
+    const known = new Set(types.map((t) => t.id));
+    for (const id of used) if (!known.has(id)) list.push({ id, name: '(삭제된 종류)' });
     return {
       months: f.months,
       rows: list.map((t) => ({
@@ -450,7 +464,7 @@ export function usePersonalReport(f: ReportFilters) {
     selectedId,
     select: (id: string) => {
       setSelectedId(id || null);
-      // 선택을 풀면 조회 방식·세대 집계 기준도 처음 상태(개인 기준·현재 세대)로 되돌립니다.
+      // 선택을 풀면 조회 방식·세대 집계 기준도 처음 상태(개인 기준·현재 세대)로 복구합니다.
       if (!id) {
         setPickedMode('PERSON');
         f.setBasis('CURRENT');
@@ -499,6 +513,10 @@ export function useAuditLogTab(f: ReportFilters) {
   const tagOf = useNameTag(true);
   useEffect(() => {
     for (const y of years) void ensureAuditYear(y);
+    // 헌금을 모두 지운 해도 이력은 남으므로, 이력이 저장된 연도도 불러옵니다(헌금 연도 목록이 바뀌면 다시 확인).
+    void listAuditKeys()
+      .then((keys) => keys.forEach((k) => void ensureAuditYear(AUDIT_KEY_RE.exec(k)![1])))
+      .catch(() => undefined);
   }, [ensureAuditYear, years]);
 
   const { isRange, week, year, months } = f;

@@ -4,7 +4,7 @@ import { useMemberById, useMembers } from '../contexts/MemberContext';
 import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import type { Donation } from '../contexts/types';
 import { formatAmountInput, formatNumber, formatWon, parseAmount } from '../services/domain/amount';
-import { isValidDateString, withWeekday } from '../services/domain/dates';
+import { isDateInRange, isValidDateString, withWeekday } from '../services/domain/dates';
 import { validateReason } from '../services/domain/donationOps';
 import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
@@ -92,6 +92,7 @@ export function useDonationEditor() {
         await deleteDonation(target, reason);
       } else {
         if (!isValidDateString(draft.date)) return setError('날짜가 올바르지 않습니다.');
+        if (!isDateInRange(draft.date)) return setError('날짜의 연도를 확인하세요.');
         const p = parseAmount(draft.amount);
         if (p.kind !== 'ok') return setError(p.kind === 'invalid' ? p.reason : '금액을 입력하세요.');
         // 성도·표기명·세대 스냅샷은 그대로 두고 날짜·종류·금액·메모만 바꿉니다.

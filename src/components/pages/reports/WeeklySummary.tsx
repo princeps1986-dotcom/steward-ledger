@@ -23,7 +23,7 @@ export function WeeklySummary({ f, hidden }: { f: ReportFilters; hidden: Readonl
   const periodWord = isMonth ? '월간' : isDay ? '당일' : '주간';
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fit = useFitHeight(scrollRef);
-  // 보고서(기간·날짜)가 바뀌면 표를 맨 위로 되돌립니다.
+  // 보고서(기간·날짜)가 바뀌면 표를 맨 위로 복구합니다.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [f.label, f.personKind]);

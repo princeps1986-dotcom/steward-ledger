@@ -10,7 +10,7 @@ interface MemberActions {
   saveMember(draft: MemberDraft, editingId?: string): Promise<MemberSaveResult>;
   /** Soft Delete / 복구. 실패 시 오류 메시지 반환 */
   setActive(id: string, active: boolean): Promise<string | null>;
-  /** 일괄 가져오기 결과 전체 반영 */
+  /** 일괄 불러오기 결과 전체 반영 */
   replaceMembers(build: (latest: Member[]) => Member[]): Promise<void>;
   reload(): Promise<void>;
 }

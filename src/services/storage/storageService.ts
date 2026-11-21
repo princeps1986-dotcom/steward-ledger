@@ -33,7 +33,7 @@ export interface Write {
   auditPuts?: AuditLog[];
 }
 
-/** 그 해 이력에 몇 건만 덧붙입니다(저장·수정·삭제·되돌리기). 그 해 전체를 다시 쓰지 않습니다. */
+/** 그 해 이력에 몇 건만 덧붙입니다(저장·수정·삭제·복구하기). 그 해 전체를 다시 쓰지 않습니다. */
 export const auditAppend = (year: string, logs: AuditLog[]): Write => ({ key: auditKey(year), value: null, auditPuts: logs });
 
 /** 그 달 전체를 이 목록으로 교체합니다(비면 그 달의 내역을 모두 지움). 복원처럼 달 전체를 바꿀 때만 쓰세요. */
@@ -137,7 +137,7 @@ async function applyWrites(writes: Write[]): Promise<void> {
 }
 
 /**
- * 내역이 달을 넘어 옮겨졌거나(날짜 수정·되돌리기) 달 전체가 교체된(복원) 커밋의 누적 횟수.
+ * 내역이 달을 넘어 옮겨졌거나(날짜 수정·복구하기) 달 전체가 교체된(복원) 커밋의 누적 횟수.
  * 달마다 따로 읽는 주기 백업이 읽는 도중 이런 커밋이 있었는지 알아내, 옮겨진 내역이 두 번 담기거나 빠지지 않게 다시 읽도록 합니다.
  * 같은 달 안의 추가·수정·삭제는 어느 시점에 읽어도 일관되므로 세지 않습니다.
  */
@@ -243,6 +243,9 @@ export async function readMonth(ym: string): Promise<Donation[]> {
   return internDonations(await monthRange(ym).toArray()).sort(byEntryOrder);
 }
 
+/** 하루('YYYY-MM-DD')의 헌금만 기본키 범위로 읽습니다(달 전체를 읽지 않음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */
+export const readDay = (date: string): Promise<Donation[]> => db.donations.where('[date+id]').between([date, Dexie.minKey], [date, Dexie.maxKey], true, true).toArray();
+
 /** 기본키([날짜, id])로 한 건 읽기(없으면 null) */
 export const readRow = async (date: string, id: string): Promise<Donation | null> => (await db.donations.get([date, id])) ?? null;
 
@@ -327,27 +330,47 @@ export async function isDirtySinceBackup(): Promise<boolean> {
   return (await getItem<boolean>(KEYS.dirty)) === true;
 }
 
-/** 마지막 전체 백업 이후 헌금·이력이 바뀐 연도(오름차순). 비어 있으면 알 수 없거나 연도 변경이 없는 것입니다. */
-export async function dirtyYearsSinceFullBackup(): Promise<string[]> {
-  return (await getItem<string[]>(KEYS.dirtyYears)) ?? [];
+/** 마지막 전체 백업 이후 헌금·이력이 바뀐 연도(오름차순). []는 연도 변경 없음, null은 알 수 없음(전체 백업 기록 전). */
+export async function dirtyYearsSinceFullBackup(): Promise<string[] | null> {
+  return getItem<string[]>(KEYS.dirtyYears);
 }
 
 /**
- * '마지막 백업 이후 변경' 표시를 내립니다. full이면(모든 연도를 담은 백업) 바뀐 연도 목록도 지웁니다.
- * 일부 연도만 담는 주기 백업은 목록을 남겨, 다음 주기 백업도 마지막 전체 백업 이후 바뀐 연도를 모두 담게 합니다.
+ * '마지막 백업 이후 변경' 표시를 내립니다. full이면(모든 연도를 담은 백업) 바뀐 연도 목록을 []로 비웁니다.
+ * 일부 연도만 담는 주기 백업은 목록을 남겨(담은 연도 keepYears를 더해), 다음 주기 백업과 종료 백업이 마지막 전체 백업 이후 변경을 놓치지 않게 합니다.
  */
-export async function clearDirty(full = true): Promise<void> {
+export async function clearDirty(full = true, keepYears: readonly string[] = []): Promise<void> {
   await serialize(() =>
     db.transaction('rw', db.kv, async () => {
       await db.kv.put(false, KEYS.dirty);
-      if (full) await db.kv.delete(KEYS.dirtyYears);
+      if (full) await db.kv.put([], KEYS.dirtyYears);
+      else if (keepYears.length) {
+        const cur = ((await db.kv.get(KEYS.dirtyYears)) as string[] | undefined) ?? [];
+        await db.kv.put([...new Set([...cur, ...keepYears])].sort(), KEYS.dirtyYears);
+      }
     }),
   );
 }
 
-/** 백업에 실패했을 때 '마지막 백업 이후 변경됨' 표시를 되돌립니다. */
+/** 백업에 실패했을 때 '마지막 백업 이후 변경됨' 표시를 복구합니다. */
 export async function markDirty(): Promise<void> {
   await serialize(() => db.kv.put(true, KEYS.dirty).then(() => undefined));
+}
+
+/**
+ * 실패한 전체 백업이 내린 표시를 되돌립니다: flag면 '변경 있음'을 켜고, years를 바뀐 연도 목록에 더합니다.
+ * 표시를 내리지는 않으므로 백업하는 동안 생긴 변경 표시는 그대로 남습니다.
+ */
+export async function restoreDirty(flag: boolean, years: readonly string[]): Promise<void> {
+  await serialize(() =>
+    db.transaction('rw', db.kv, async () => {
+      if (flag) await db.kv.put(true, KEYS.dirty);
+      if (years.length) {
+        const cur = ((await db.kv.get(KEYS.dirtyYears)) as string[] | undefined) ?? [];
+        await db.kv.put([...new Set([...cur, ...years])].sort(), KEYS.dirtyYears);
+      }
+    }),
+  );
 }
 
 /** [날짜+성도+헌금 종류]가 같은 기존 내역을 색인으로 찾습니다(무명은 중복 없음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */

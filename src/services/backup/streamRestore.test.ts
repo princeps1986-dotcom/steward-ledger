@@ -89,7 +89,7 @@ describe('restoreFromFile', () => {
     const parse = vi.spyOn(JSON, 'parse');
     try {
       const r = await restoreFromFile(file, scan, ['2026']);
-      expect(r).toEqual({ addedMembers: 0, addedTypes: 0 });
+      expect(r).toEqual({ addedMembers: 0, addedTypes: 0, updatedMembers: 0, updatedTypes: 0 });
       const parsed = parse.mock.calls.map(([t]) => String(t));
       expect(parsed.some((t) => t.startsWith('{"t":"donations","ym":"2026'))).toBe(true);
       expect(parsed.some((t) => t.startsWith('{"t":"donations","ym":"2025'))).toBe(false);

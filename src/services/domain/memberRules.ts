@@ -82,7 +82,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
   const err = validateDraft(draft);
   if (err) return { ok: false, error: err };
   const now = nowIso();
-  // 배열만 복사하고, 바꾸는 성도만 그 자리에서 복사합니다(가져오기처럼 여러 번 부를 때 전체를 매번 복사하지 않도록).
+  // 배열만 복사하고, 바꾸는 성도만 그 자리에서 복사합니다(불러오기처럼 여러 번 부를 때 전체를 매번 복사하지 않도록).
   const list = [...members];
   const own = (i: number): Member => (list[i] = { ...list[i] });
   const headIdx = draft.headMemberId ? list.findIndex((m) => m.id === draft.headMemberId) : -1;

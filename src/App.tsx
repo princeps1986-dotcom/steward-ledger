@@ -29,7 +29,7 @@ const SettingsPage = lazy(loadSettings);
 
 export function App() {
   const nav = useAppNav();
-  // 메뉴(페이지)를 옮기면 본문 스크롤을 맨 위로 되돌립니다.
+  // 메뉴(페이지)를 옮기면 본문 스크롤을 맨 위로 복구합니다.
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;

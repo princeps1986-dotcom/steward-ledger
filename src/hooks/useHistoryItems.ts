@@ -50,7 +50,8 @@ export function useHistoryItems(): HistoryItem[] {
       b.mergedBefore.forEach((m) => push(m.id, true));
       // 대응하는 내역을 찾지 못하면(다른 경로로 삭제) 저장 당시 기록을 그대로 표시
       const fallback: HistoryLine[] = b.lines.map((l, i) => ({ key: `${b.batchId}-${i}`, typeName: name(l.offeringTypeId), amount: l.amount, merged: l.merged, donation: null }));
-      return { batchId: b.batchId, donorDisplayName: b.donorDisplayName, savedAt: b.savedAt, lines: lines.length ? lines : fallback };
+      // 이름도 현재 내역 기준(무명 내역을 다른 날로 옮기면 번호가 바뀔 수 있음). 찾지 못하면 저장 당시 이름
+      return { batchId: b.batchId, donorDisplayName: lines[0]?.donation?.donorDisplayName ?? b.donorDisplayName, savedAt: b.savedAt, lines: lines.length ? lines : fallback };
     });
   }, [history, months, typeById]);
 }

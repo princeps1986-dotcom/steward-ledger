@@ -64,9 +64,9 @@ describe('dirty years and periodic backup', () => {
     await transact(async () => ({ writes: [rowWrite('2026-01', { puts: [d('x', '2026-01-11')], deletes: [] })], result: 0 }));
     const lines: string[] = [];
     const sink: BackupSink = { begin: async () => 1, write: async (_id, l) => void lines.push(l), restart: async () => 1, abort: async () => undefined, end: async () => 'C:/x/a.gz' };
-    const api = { getDefaultBackupDir: async () => 'C:/x', backupBegin: sink.begin, backupWrite: sink.write, backupRestart: sink.restart, backupAbort: sink.abort, backupEnd: sink.end } as unknown as DesktopApi;
+    const api = { backupBegin: sink.begin, backupWrite: sink.write, backupRestart: sink.restart, backupAbort: sink.abort, backupEnd: sink.end } as unknown as DesktopApi;
     vi.stubGlobal('window', { desktop: api });
-    expect(await runPeriodicBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: true })).toBe('C:/x/a.gz');
+    expect(await runPeriodicBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: true })).toEqual({ file: 'C:/x/a.gz', full: false });
     const months = lines.filter((l) => l.includes('"t":"donations"')).map((l) => JSON.parse(l).ym);
     expect(months).toEqual(['2026-01']);
     expect(await dirtyYearsSinceFullBackup()).toEqual(['2026']); // 다음 주기 백업도 2026을 담음

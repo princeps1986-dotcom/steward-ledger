@@ -155,7 +155,7 @@ describe('DonationContext', () => {
     expect(result.current.months['2025-03']?.find((d) => d.id === 'y')?.offeringTypeId).toBe('t1');
   });
 
-  it('저장한 새 내역을 다른 달로 옮겼다면 되돌리기를 막아 그 수정이 사라지지 않는다', async () => {
+  it('저장한 새 내역을 다른 달로 옮겼다면 복구하기를 막아 그 수정이 사라지지 않는다', async () => {
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-06', '2025-07']));
     await act(async () => {
@@ -171,7 +171,7 @@ describe('DonationContext', () => {
     expect(result.current.history).toHaveLength(1);
   });
 
-  it('저장한 새 내역의 금액을 고쳤다면 되돌리기를 막는다', async () => {
+  it('저장한 새 내역의 금액을 고쳤다면 복구하기를 막는다', async () => {
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-06']));
     await act(async () => {
@@ -185,7 +185,7 @@ describe('DonationContext', () => {
     expect(result.current.months['2025-06']![0].amount).toBe(60000);
   });
 
-  it('저장한 새 내역을 고치지 않았다면 되돌리기로 지워진다', async () => {
+  it('저장한 새 내역을 고치지 않았다면 복구하기로 지워진다', async () => {
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-06']));
     await act(async () => {
@@ -198,7 +198,7 @@ describe('DonationContext', () => {
     expect(result.current.months['2025-06']).toHaveLength(0);
   });
 
-  it('합산한 내역을 저장 뒤 수정했다면 되돌리기를 막아 그 수정이 사라지지 않는다', async () => {
+  it('합산한 내역을 저장 뒤 수정했다면 복구하기를 막아 그 수정이 사라지지 않는다', async () => {
     await seed({ '2025-03': [don('a', '2025-03-02', 'm1', 't1', 50000)] });
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-03']));
@@ -214,7 +214,7 @@ describe('DonationContext', () => {
     expect(result.current.months['2025-03']!.find((x) => x.id === 'a')!.amount).toBe(65000);
   });
 
-  it('합산한 내역을 고치지 않았다면 되돌리기로 합산 전 금액이 된다', async () => {
+  it('합산한 내역을 고치지 않았다면 복구하기로 합산 전 금액이 된다', async () => {
     await seed({ '2025-03': [don('a', '2025-03-02', 'm1', 't1', 50000)] });
     const { result } = setup();
     await act(() => result.current.actions.ensureMonths(['2025-03']));
@@ -322,5 +322,31 @@ describe('monthVersions', () => {
     });
     expect(result.current.v['2025-09']).toBe(1);
     expect(result.current.v['2025-10']).toBeUndefined();
+  });
+});
+
+describe('무명 자동 번호', () => {
+  it('그 달을 메모리에 올리기 전에 저장해도 그날 저장소 내역과 겹치지 않는 번호로 저장한다', async () => {
+    const anon = (id: string, name: string): Donation => ({ ...don(id, '2025-03-02', null), donorDisplayName: name });
+    await seed({ '2025-03': [anon('a1', '무명1'), anon('a2', '무명2'), anon('a3', '무명3')] });
+    const { result } = setup(); // 2025-03은 불러오지 않아 화면의 자동 번호는 '무명1'
+    let batch!: Awaited<ReturnType<typeof result.current.actions.saveBatch>>;
+    await act(async () => {
+      batch = await result.current.actions.saveBatch([{ ...draft('2025-03-02'), memberId: null, donorDisplayName: '무명1' }], 'SEPARATE');
+    });
+    expect(batch.donorDisplayName).toBe('무명4');
+    expect(batch.createdAfter[0].donorDisplayName).toBe('무명4');
+  });
+
+  it('무명 내역의 날짜를 이미 같은 번호가 있는 날로 옮기면 그날의 다음 번호로 바꾼다', async () => {
+    const anon = (id: string, date: string, name: string): Donation => ({ ...don(id, date, null), donorDisplayName: name });
+    const moving = anon('m1', '2025-03-02', '무명1');
+    await seed({ '2025-03': [moving, anon('x1', '2025-03-09', '무명1'), anon('x2', '2025-03-09', '무명2')] });
+    const { result } = setup();
+    await act(() => result.current.actions.ensureMonths(['2025-03']));
+    await act(() => result.current.actions.updateDonation(moving, { ...moving, date: '2025-03-09' }, '날짜를 잘못 입력함'));
+    const moved = result.current.months['2025-03'].find((d) => d.id === 'm1')!;
+    expect(moved.date).toBe('2025-03-09');
+    expect(moved.donorDisplayName).toBe('무명3');
   });
 });
