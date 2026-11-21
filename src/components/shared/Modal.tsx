@@ -22,6 +22,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         <Dialog.Content
           className={`fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] ${widthClass} -translate-x-1/2 -translate-y-1/2 ${overflowVisible ? 'overflow-visible' : 'overflow-y-auto'} rounded-lg bg-white p-5 shadow-xl outline-none`}
           onCloseAutoFocus={onCloseAutoFocus}
+          onPointerDownOutside={(e) => e.preventDefault()}
         >
           <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
           {description ? (

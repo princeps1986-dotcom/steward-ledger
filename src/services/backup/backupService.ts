@@ -13,9 +13,10 @@ import {
   KEYS,
   auditKey,
   clearDirty,
+  dirtyYearsSinceFullBackup,
   getItem,
   isDirtySinceBackup,
-  markDirty,
+  restoreDirty,
   strayRowWrites,
   getMany,
   listAuditKeys,
@@ -29,7 +30,7 @@ import {
   transact,
   type Write,
 } from '../storage/storageService';
-import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
+import { planMerge, remapAudits, remapDonations, restoredLists, type MergePlan, type RestoreOverwrite } from './mergeRules';
 import { NDJSON_VERSION } from './validation';
 import { Sha256 } from './sha256';
 
@@ -126,23 +127,6 @@ const backupFileName = (prefix = 'backup', years?: readonly string[]): string =>
 };
 
 /**
- * 초기화·복원 직전 긴급 백업. 데스크톱 앱은 백업 폴더에 대화상자 없이 줄 단위로 저장하고(메모리는 한 달치) 실패하면 오류를 던지므로,
- * 이 함수가 끝났다면 백업이 실제로 저장된 것입니다(사용자가 취소할 수 없음). 저장된 위치(또는 파일 이름)를 돌려줍니다.
- */
-export const saveEmergencyBackup = (prefix: string): Promise<string> => withBackupBusy(() => saveEmergencyBackupNow(prefix));
-async function saveEmergencyBackupNow(prefix: string): Promise<string> {
-  const api = desktop();
-  if (api) {
-    const saved = await streamBackup(desktopSink(api, { kind: 'emergency', name: slbkName(backupFileName(prefix)) }));
-    if (!saved) throw new Error('긴급 백업을 저장하지 못했습니다.');
-    return saved;
-  }
-  const name = backupFileName(prefix);
-  downloadBlob(await createBackupBlob(), name);
-  return name;
-}
-
-/**
  * 웹 브라우저용 백업 파일(줄 단위 JSON). 달마다 만든 줄을 작은 Blob으로 이어 붙여 큰 문자열 하나를 만들지 않고,
  * 체크섬은 데스크톱 앱과 같은 끝 줄({"t":"end","sha256"})로 붙입니다. 읽는 도중의 저장은 막지 않습니다(데스크톱 주기 백업과 같은 기준).
  */
@@ -188,12 +172,16 @@ async function saveBackupFileNow(prefix: string, years?: readonly string[], onPr
   await assertNoDemo();
   // 전체가 담기는 백업이면 변경 표시를 읽기 전에 내립니다: 백업하는 동안 생긴 변경은 표시가 다시 올라가 다음 자동 백업에 담깁니다.
   const full = !years || (years.length === 1 && (await isCompleteYearBackup(years[0])));
-  const wasDirty = full && (await isDirtySinceBackup());
-  if (wasDirty) await clearDirty();
+  // 10분 백업이 일부 연도만 담으면 '변경 있음'은 꺼져도 바뀐 연도 목록이 남으므로, 그것도 비워 종료 때 같은 전체 백업을 다시 하지 않게 합니다.
+  const flag = full && (await isDirtySinceBackup());
+  const prevYears = (full && (await dirtyYearsSinceFullBackup())) || [];
+  const cleared = flag || prevYears.length > 0;
+  if (cleared) await clearDirty();
   try {
     return await saveBackupFileTo(prefix, years, onProgress, password);
   } catch (e) {
-    if (wasDirty) await markDirty();
+    // 지우기 전 상태로만 되돌립니다(꺼져 있던 '변경 있음'을 켜면 바뀐 것이 없는데 10분 백업이 돎).
+    if (cleared) await restoreDirty(flag, prevYears);
     throw e;
   }
 }
@@ -246,17 +234,17 @@ const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Rec
  * 백업에서 선택한 연도만 복원합니다(복원 전 자동 백업은 하지 않음).
  * - FULL: 현재 모든 데이터를 지우고 백업의 성도·헌금 종류와 선택한 연도 내역으로 교체합니다.
  * - YEARS: 선택한 연도의 헌금 내역·이력만 백업 내용으로 교체하고, 다른 연도는 그대로 둡니다.
- *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다.
+ *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다. overwrite를 고르면 같은 항목은 백업 내용으로 바꿉니다.
  */
-export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<RestoreResult> => withRestoring(() => restoreBackupNow(payload, opts));
-async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode }): Promise<RestoreResult> {
+export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode; overwrite?: RestoreOverwrite }): Promise<RestoreResult> => withRestoring(() => restoreBackupNow(payload, opts));
+async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode; overwrite?: RestoreOverwrite }): Promise<RestoreResult> {
   await assertNoDemo();
   const years = new Set(opts.years);
   const donationsByYear = pickYears(payload.donationsByYear, years);
   const auditLogsByYear = pickYears(payload.auditLogsByYear, years);
   if (opts.mode === 'FULL') {
     await replaceAllData({ members: payload.members, offeringTypes: payload.offeringTypes, donationsByYear, auditLogsByYear });
-    return { addedMembers: payload.members.length, addedTypes: payload.offeringTypes.length };
+    return { addedMembers: payload.members.length, addedTypes: payload.offeringTypes.length, updatedMembers: 0, updatedTypes: 0 };
   }
   const { result } = await transact(async (read) => {
     const writes: Write[] = [];
@@ -282,18 +270,19 @@ async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly 
       const mapped = remapAudits(list, plan);
       if (mapped.length) writes.push({ key: auditKey(y), value: mapped });
     }
-    if (plan.addMembers.length) writes.push({ key: KEYS.members, value: [...curMembers, ...plan.addMembers] });
-    if (plan.addTypes.length) writes.push({ key: KEYS.offeringTypes, value: [...curTypes, ...plan.addTypes] });
+    const lists = restoredLists({ members: curMembers, offeringTypes: curTypes }, payload, plan, opts.overwrite);
+    if (plan.addMembers.length || lists.updatedMembers) writes.push({ key: KEYS.members, value: lists.members });
+    if (plan.addTypes.length || lists.updatedTypes) writes.push({ key: KEYS.offeringTypes, value: lists.offeringTypes });
     // 같은 키에 대한 삭제→쓰기 순서가 보장되도록 마지막 쓰기만 남깁니다.
     const last = new Map<string, Write>();
     for (const w of writes) last.set(w.key, w);
-    return { writes: [...last.values()], result: { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length } };
+    return { writes: [...last.values()], result: { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length, updatedMembers: lists.updatedMembers, updatedTypes: lists.updatedTypes } };
   });
   return result;
 }
 
 /**
- * 백업으로 전체 데이터를 교체합니다. 호출 전에 반드시 긴급 백업을 저장해야 합니다(useSettingsPage).
+ * 백업으로 전체 데이터를 교체합니다. 교체 전에 현재 데이터를 자동으로 백업하지 않습니다.
  * 기존 연도 샤드 중 백업에 없는 연도는 삭제합니다. 하나의 원자적 트랜잭션으로 수행되어, 데이터가 아무리 커도
  * 도중에 실패하면 아무것도 바뀌지 않습니다(월별 키마다 값이 따로라 한 값의 크기 한도에 걸리지도 않습니다).
  */
@@ -322,8 +311,8 @@ export async function replaceAllData(payload: BackupPayload, extraWrites: Write[
 }
 
 /**
- * 전체 데이터 초기화(v2.15): 성도·헌금 내역·수정/삭제 이력을 모두 지우고 헌금 종류는 기본값으로 되돌립니다.
- * 환경 설정(테마·백업 주기 등)은 유지합니다. 호출 전에 긴급 백업을 저장아야 합니다.
+ * 전체 데이터 초기화(v2.15): 성도·헌금 내역·수정/삭제 이력을 모두 지우고 헌금 종류는 기본값으로 복구합니다.
+ * 환경 설정(테마·백업 주기 등)은 유지합니다.
  */
 export async function resetAllData(extraWrites: Write[] = []): Promise<void> {
   await replaceAllData({

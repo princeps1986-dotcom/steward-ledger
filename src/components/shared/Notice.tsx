@@ -1,6 +1,6 @@
 interface Props {
   message: { kind: 'error' | 'info'; text: string } | string | null;
-  /** 메시지 옆에 붙는 보조 동작 단추 (예: 되돌리기) */
+  /** 메시지 옆에 붙는 보조 동작 단추 (예: 복구하기) */
   action?: { label: string; onClick(): void };
   /** 여러 개의 보조 동작 단추 (예: 파일 열기, 폴더 열기) */
   actions?: { label: string; onClick(): void }[];

@@ -73,7 +73,7 @@ export function useMemberImport(onDone: () => void) {
       setStats(result);
       setPreview(null);
     } catch (err) {
-      setError(`가져오기 실패: ${(err as Error).message} (아무것도 반영되지 않았습니다)`);
+      setError(`불러오기 실패: ${(err as Error).message} (아무것도 반영되지 않았습니다)`);
     } finally {
       setBusy(false);
     }

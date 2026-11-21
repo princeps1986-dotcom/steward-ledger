@@ -4,7 +4,7 @@ import { setRestoreProgress, withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
 import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, type Write } from '../storage/storageService';
-import { planMerge, remapAudits, remapDonations, type MergePlan } from './mergeRules';
+import { planMerge, remapAudits, remapDonations, restoredLists, type MergePlan, type RestoreOverwrite } from './mergeRules';
 import { Sha256 } from './sha256';
 import type { DesktopApi } from '../desktopBridge';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
@@ -181,6 +181,9 @@ export const interruptedRestore = (): Promise<RestoreMarker | null> => getItem<R
 export interface RestoreResult {
   addedMembers: number;
   addedTypes: number;
+  /** 백업 내용으로 덮어쓴 성도·헌금 종류 수(덮어쓰기를 고르지 않으면 0) */
+  updatedMembers: number;
+  updatedTypes: number;
 }
 
 /** 헌금·이력 줄의 연도(backupLines가 쓰는 줄 머리 그대로). 형식이 다르면 null이라 그 줄은 해석해서 판단합니다. */
@@ -197,8 +200,8 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
  * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
-export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years));
-async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[]): Promise<RestoreResult> {
+export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years, overwrite));
+async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite): Promise<RestoreResult> {
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
@@ -206,6 +209,7 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   const total = years.reduce((n, y) => n + (scan.monthCounts[y] ?? 0), 0);
   // 복원한 연도의 헌금 id(한 해치 id만 메모리에 둠): 본문을 저장하며 모았다가, 마지막에 다른 연도로 옮겨진 같은 내역을 지웁니다.
   const ids = new Set<string>();
+  let updated = { members: 0, types: 0 };
   let done = 0;
   setRestoreProgress({ done, total });
   // 시작: 표시를 남기고, 선택한 연도의 기존 헌금·이력을 지우며, 백업에만 있는 성도·종류를 추가합니다(한 트랜잭션).
@@ -215,13 +219,15 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     for (const k of await listAuditKeys()) if (want.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
     const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
     const curTypes = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
-    if (plan.addMembers.length) writes.push({ key: KEYS.members, value: [...curMembers, ...plan.addMembers] });
-    if (plan.addTypes.length) writes.push({ key: KEYS.offeringTypes, value: [...curTypes, ...plan.addTypes] });
+    const lists = restoredLists({ members: curMembers, offeringTypes: curTypes }, scan, plan, overwrite);
+    updated = { members: lists.updatedMembers, types: lists.updatedTypes };
+    if (plan.addMembers.length || lists.updatedMembers) writes.push({ key: KEYS.members, value: lists.members });
+    if (plan.addTypes.length || lists.updatedTypes) writes.push({ key: KEYS.offeringTypes, value: lists.offeringTypes });
     return { writes, result: undefined };
   });
   // 본문: 달마다 따로 저장(한 달치만 메모리에 둠)
   for await (const line of readFileLines(file)) {
-    // 고르지 않은 연도의 달은 해석(JSON.parse)하지 않고 건너뜁니다(여러 해가 든 자동 백업에서 복원이 빨라짐).
+    // 선택하지 않은 연도의 달은 해석(JSON.parse)하지 않고 건너뜁니다(여러 해가 든 자동 백업에서 복원이 빨라짐).
     const lineYear = LINE_YEAR_RE.exec(line)?.[1];
     if (lineYear && !want.has(lineYear)) continue;
     const o = parse(line);
@@ -239,5 +245,5 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   }
   // 끝: 다른 연도에 남은 같은 내역을 지우고 '복원 중' 표시를 내립니다(한 트랜잭션). 중간에 꺼지면 표시가 남아 다시 복원하게 됩니다.
   await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }));
-  return { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length };
+  return { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length, updatedMembers: updated.members, updatedTypes: updated.types };
 }

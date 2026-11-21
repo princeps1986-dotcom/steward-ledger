@@ -88,7 +88,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
           닫기
         </button>
         <button className="btn-primary" onClick={() => void im.confirm()} disabled={!im.hasPreview || im.busy}>
-          가져오기 확정
+          불러오기 확정
         </button>
       </div>
     </div>
@@ -97,7 +97,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
 
 export function MemberImportModal({ open, onClose }: { open: boolean; onClose(): void }) {
   return (
-    <Modal open={open} onClose={onClose} title="성도 명단 가져오기" widthClass="max-w-5xl">
+    <Modal open={open} onClose={onClose} title="성도 명단 불러오기" widthClass="max-w-5xl">
       {open ? <ImportBody onClose={onClose} /> : null}
     </Modal>
   );

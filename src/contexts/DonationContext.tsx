@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
-import { nextAnonymousName } from '../services/domain/anonymous';
+import { nextAnonymousName, uniqueAnonymousName } from '../services/domain/anonymous';
 import { assertNotRestoring } from '../services/backup/backupBusy';
 import { yearOf } from '../services/domain/dates';
 import {
@@ -24,6 +24,7 @@ import {
   listDonationYears,
   monthOfDate,
   monthsOfYear,
+  readDay,
   readMonth,
   readRow,
   rowWrite,
@@ -344,13 +345,19 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   const findDuplicates = useCallback(async (drafts: DonationDraft[]) => Promise.all(drafts.map((d) => findDuplicateRow(d))), []);
 
   const saveBatch = useCallback(
-    async (drafts: DonationDraft[], resolution: DuplicateResolution) => {
+    async (input: DonationDraft[], resolution: DuplicateResolution) => {
       assertNotRestoring();
+      let drafts = input;
       if (drafts.length === 0) throw new Error('저장할 금액이 없습니다.');
       const date = drafts[0].date;
       const year = yearOf(date);
       const ym = monthOfDate(date);
       const { writes, result } = await transact(async () => {
+        // 무명 자동 번호는 저장소의 그날 내역으로 확정합니다(화면은 메모리 기준이라 달을 읽기 전이면 겹칠 수 있음). 한 묶음 = 한 사람이라 이름은 모두 같습니다.
+        if (input[0].memberId === null) {
+          const name = uniqueAnonymousName(await readDay(date), date, input[0].donorDisplayName);
+          drafts = name === input[0].donorDisplayName ? input : input.map((d) => ({ ...d, donorDisplayName: name }));
+        }
         const logs: AuditLog[] = [];
         const now = nowIso();
         const batch: SaveBatch = {
@@ -408,6 +415,8 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const before = await readRow(original.date, original.id);
         if (!before) throw new Error('수정할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
         const after: Donation = { ...next, id: before.id, createdAt: before.createdAt };
+        // 무명 내역을 다른 날로 옮기면 그날 이미 있는 같은 번호와 겹칠 수 있으므로, 옮긴 날의 내역으로 번호를 다시 정합니다.
+        if (after.memberId === null && after.date !== before.date) after.donorDisplayName = uniqueAnonymousName(await readDay(after.date), after.date, after.donorDisplayName);
         // 날짜나 종류를 바꿔 같은 날짜·성도·종류의 다른 내역과 겹치게 되면 막습니다(입력 때는 합산하므로 같은 규칙). 금액·메모만 고칠 때는 검사하지 않습니다.
         if (after.date !== before.date || after.offeringTypeId !== before.offeringTypeId) {
           const dup = await findDuplicateRow(after);
@@ -461,10 +470,10 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       };
       // 저장한 날짜에서 먼저 찾고, 저장 후 [수정]으로 날짜가 바뀌었다면 id로 찾습니다(드문 경우라 전체를 훑음).
       const locate = async (id: string, date: string): Promise<Donation | null> => (await readRow(date, id)) ?? (await findDonationById(id));
-      // 저장 뒤에 [수정]한 내역을 되돌리면 그 수정이 조용히 사라지므로 막습니다(새 내역·합산 내역 모두).
+      // 저장 뒤에 [수정]한 내역을 복구하면 그 수정이 조용히 사라지므로 막습니다(새 내역·합산 내역 모두).
       const assertUnchanged = (current: Donation, after: Donation | undefined) => {
         if (after && (current.amount !== after.amount || current.date !== after.date || current.offeringTypeId !== after.offeringTypeId || current.memo !== after.memo)) {
-          throw new Error('저장한 뒤 수정된 내역이 있어 되돌릴 수 없습니다. 내역 화면에서 직접 수정하거나 삭제하세요.');
+          throw new Error('저장한 뒤 수정된 내역이 있어 복구할 수 없습니다. 내역 화면에서 직접 수정하거나 삭제하세요.');
         }
       };
       for (const [i, id] of batch.createdIds.entries()) {

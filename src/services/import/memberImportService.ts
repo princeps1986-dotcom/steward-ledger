@@ -151,7 +151,7 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     const existingHeads = existingHeadsByName.get(row.headName) ?? [];
     // 이미 등록된 세대주와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
     const fileHeads = (fileHeadsByName.get(row.headName) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
-    // 파일의 세대주가 이미 등록된 성도인데 세대주가 아니면, 가져오기는 그 성도를 세대주로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
+    // 파일의 세대주가 이미 등록된 성도인데 세대주가 아니면, 불러오기는 그 성도를 세대주로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
     // 그대로 연결하면 그 성도가 속한 다른 세대에 들어가거나 세대주 없는 세대가 생깁니다. 연결하지 않고 알립니다.
     if (fileHeads.length === 1 && existingHeads.length === 0 && existingByName.get(row.headName)?.some((m) => isSamePerson(m, fileHeads[0]))) {
       row.status = 'ERROR';

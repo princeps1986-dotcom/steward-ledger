@@ -87,3 +87,37 @@ export function remapAudits(list: readonly AuditLog[], plan: MergePlan): AuditLo
     afterSnapshot: a.afterSnapshot ? remapDonation(a.afterSnapshot, plan) : a.afterSnapshot,
   }));
 }
+
+/** 복원할 때 현재 성도·헌금 종류를 백업 내용으로 덮어쓸지(기본: 덮어쓰지 않고 백업에만 있는 항목만 추가) */
+export interface RestoreOverwrite {
+  members?: boolean;
+  types?: boolean;
+}
+
+/**
+ * 복원 후의 성도·헌금 종류 목록: 백업에만 있는 항목을 추가하고, 덮어쓰기를 고른 쪽은 백업과 같은 항목(id 또는 대응 규칙)을
+ * 백업 내용으로 바꿉니다(id는 현재 것 유지 → 다른 연도 헌금의 연결이 그대로). 백업에 없는 현재 항목은 지우지 않습니다.
+ */
+export function restoredLists(
+  current: { members: readonly Member[]; offeringTypes: readonly OfferingType[] },
+  backup: Pick<BackupPayload, 'members' | 'offeringTypes'>,
+  plan: MergePlan,
+  overwrite: RestoreOverwrite = {},
+): { members: Member[]; offeringTypes: OfferingType[]; updatedMembers: number; updatedTypes: number } {
+  const replace = <T extends { id: string }>(cur: readonly T[], from: readonly T[], idMap: Map<string, string>, fix: (x: T) => T): [T[], number] => {
+    const byCurId = new Map(from.map((b) => [idMap.get(b.id) ?? b.id, b]));
+    let n = 0;
+    const list = cur.map((c) => {
+      const b = byCurId.get(c.id);
+      if (!b) return c;
+      n++;
+      return fix({ ...b, id: c.id });
+    });
+    return [list, n];
+  };
+  const [members, updatedMembers] = overwrite.members
+    ? replace(current.members, backup.members, plan.memberIdMap, (m) => (m.familyGroupId ? { ...m, familyGroupId: plan.memberIdMap.get(m.familyGroupId) ?? m.familyGroupId } : m))
+    : [[...current.members], 0];
+  const [offeringTypes, updatedTypes] = overwrite.types ? replace(current.offeringTypes, backup.offeringTypes, plan.typeIdMap, (t) => t) : [[...current.offeringTypes], 0];
+  return { members: [...members, ...plan.addMembers], offeringTypes: [...offeringTypes, ...plan.addTypes], updatedMembers, updatedTypes };
+}

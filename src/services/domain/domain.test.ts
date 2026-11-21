@@ -66,6 +66,12 @@ describe('search', () => {
     expect(matchMember(m, '1234')).toBe(true);
     expect(matchMember(m, 'ㅇㅇ')).toBe(false);
   });
+  it('이름 가운데 띄어쓰기가 있어도 띄어 쓰든 붙여 쓰든 찾는다', () => {
+    const m = member({ name: 'John Smith' });
+    expect(matchMember(m, 'John Smith')).toBe(true);
+    expect(matchMember(m, 'JohnS')).toBe(true);
+    expect(matchMember(member({ name: '김 철수' }), '김철')).toBe(true);
+  });
   it('label shows only the position and phone that exist, without dashes or empty parentheses', () => {
     expect(memberLabel(member({ phoneLast4: '1234' }))).toBe('김철수 (집사 / 1234)');
     expect(memberLabel(member({}))).toBe('김철수 (집사)');

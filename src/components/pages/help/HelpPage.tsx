@@ -43,7 +43,7 @@ export function HelpPage() {
       <input
         type="search"
         className="input min-w-0 flex-1"
-        placeholder="설명서 검색 (예: 백업, 복원, 되돌리기)"
+        placeholder="설명서 검색 (예: 백업, 복원, 복구하기)"
         aria-label="설명서 검색"
         value={h.query}
         onChange={(e) => h.setQuery(e.target.value)}

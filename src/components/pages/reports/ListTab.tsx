@@ -61,7 +61,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
         </p>
         {r.failed ? (
           <p role="alert" className="pb-2 text-sm text-red-600">
-            일부 달의 내역을 불러오지 못해 건수·합계에서 빠졌을 수 있습니다. 다른 기간을 골랐다가 다시 열어 주세요.
+            일부 달의 내역을 불러오지 못해 건수·합계에서 빠졌을 수 있습니다. 다른 기간을 선택했다가 다시 열어 주세요.
           </p>
         ) : null}
       </div>

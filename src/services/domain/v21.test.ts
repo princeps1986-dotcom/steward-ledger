@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, OfferingType } from '../../contexts/types';
-import { nextAnonymousName } from './anonymous';
+import { nextAnonymousName, uniqueAnonymousName } from './anonymous';
 import { buildMonthGrid, shiftMonth, shiftWeek, weekRangeOf } from './calendar';
+import { isDateInRange } from './dates';
 import { DEFAULT_OFFERING_TYPES } from './offeringDefaults';
 import { positionOptions, POSITIONS } from './positions';
 import { buildWeeklyMatrix } from './weekly';
@@ -75,6 +76,22 @@ describe('nextAnonymousName', () => {
     const list = [don({ memberId: null, donorDisplayName: '무명1' }), don({ memberId: null, donorDisplayName: '무명2' })];
     expect(nextAnonymousName(list, '2026-11-15')).toBe('무명3');
     expect(nextAnonymousName(list.slice(0, 1), '2026-11-15')).toBe('무명2');
+  });
+});
+
+describe('uniqueAnonymousName', () => {
+  const list = [
+    don({ memberId: null, donorDisplayName: '무명1' }),
+    don({ memberId: null, donorDisplayName: '무명3' }),
+    don({ memberId: null, donorDisplayName: '방문자-홍길동' }),
+    don({ memberId: 'm1', donorDisplayName: '무명5' }),
+  ];
+  it('겹치는 자동 번호만 그날의 다음 번호로 바꾼다', () => {
+    expect(uniqueAnonymousName(list, '2026-11-15', '무명1')).toBe('무명4');
+    expect(uniqueAnonymousName(list, '2026-11-15', '무명2')).toBe('무명2'); // 안 겹치면 그대로
+    expect(uniqueAnonymousName(list, '2026-11-15', '무명5')).toBe('무명5'); // 등록 성도의 이름은 겹침 아님
+    expect(uniqueAnonymousName(list, '2026-11-15', '방문자-홍길동')).toBe('방문자-홍길동'); // 직접 입력한 이름은 그대로
+    expect(uniqueAnonymousName(list, '2026-11-08', '무명1')).toBe('무명1'); // 다른 날짜
   });
 });
 
@@ -164,5 +181,16 @@ describe('offering defaults v2.1', () => {
       expect(t.displayArea).toBe('PRIMARY');
       expect(t.quickAmounts.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('isDateInRange', () => {
+  it('올해 100년 전부터 내년까지만 받아 연도 오타를 막는다', () => {
+    const today = new Date(2026, 10, 22);
+    expect(isDateInRange('2026-11-22', today)).toBe(true);
+    expect(isDateInRange('2027-12-31', today)).toBe(true);
+    expect(isDateInRange('1926-01-01', today)).toBe(true);
+    expect(isDateInRange('2028-01-01', today)).toBe(false); // 2062처럼 너무 먼 미래
+    expect(isDateInRange('0226-11-22', today)).toBe(false); // 앞자리 오타
   });
 });

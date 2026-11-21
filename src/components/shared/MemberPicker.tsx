@@ -1,7 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { Member } from '../../contexts/types';
-import { matchMember } from '../../services/domain/search';
+import { compactName, matchMember } from '../../services/domain/search';
 
 export interface PickerOption {
   id: string;
@@ -46,7 +46,7 @@ export function MemberPicker({ options, value, onChange, disabledText = '', disa
     if (!q) return options;
     const key = q.replace(/\s/g, '');
     const found = options.filter((o) => matchMember(o.member, q));
-    return [...found.filter((o) => o.member.name.startsWith(key)), ...found.filter((o) => !o.member.name.startsWith(key))];
+    return [...found.filter((o) => compactName(o.member).startsWith(key)), ...found.filter((o) => !compactName(o.member).startsWith(key))];
   }, [options, q]);
 
   const virtualizer = useVirtualizer({

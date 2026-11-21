@@ -192,7 +192,7 @@ describe('backups are blocked while demo data exists', () => {
     expect(await isDemoBusy()).toBe(false);
     await createDemoData({ spec: SMALL, today: NOW });
     expect(await isDemoBusy()).toBe(true);
-    expect(await buildAutoBackup(settings)).toBeNull();
+    expect(await buildAutoBackup()).toBeNull();
     expect(await runPeriodicBackup(settings)).toBeNull();
     await expect(saveBackupFile('backup')).rejects.toThrow('시연 데이터를 쓰는 동안');
     await expect(restoreBackup({ members: [], offeringTypes: [], donationsByYear: {}, auditLogsByYear: {} }, { years: [], mode: 'FULL' })).rejects.toThrow('시연 데이터를 쓰는 동안');

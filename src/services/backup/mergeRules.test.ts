@@ -4,7 +4,7 @@ import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '..
 import { KEYS, getItem, transact } from '../storage/storageService';
 import { previewMerge, restoreBackup } from './backupService';
 import { payloadNow } from './testPayload';
-import { planMerge, remapAudits, remapDonations } from './mergeRules';
+import { planMerge, remapAudits, remapDonations, restoredLists } from './mergeRules';
 
 const m = (id: string, name: string, phoneLast4?: string, extra: Partial<Member> = {}): Member =>
   ({ id, name, position: '', phoneLast4, isFamilyHead: true, isActive: true, createdAt: '', updatedAt: '', ...extra }) as Member;
@@ -100,5 +100,25 @@ describe('restoreBackup(YEARS) — 다른 PC 백업', () => {
     expect(byId.d1).toMatchObject({ memberId: 'c1', offeringTypeId: 'ct1' });
     expect(byId.d2).toMatchObject({ memberId: 'b2', offeringTypeId: 'bt2' });
     expect(await getItem(KEYS.members)).toHaveLength(2);
+  });
+});
+
+describe('restoredLists (복원 시 덮어쓰기 선택)', () => {
+  const cur = { members: [m('c1', '김영수', '1234', { position: '집사' }), m('c2', '이철수')], offeringTypes: [t('ct1', '십일조')] };
+  const backup = { members: [m('b1', '김영수', '1234', { position: '권사', familyGroupId: 'b1' }), m('b3', '박민수')], offeringTypes: [{ ...t('ct1', '십일조'), isActive: false }] };
+  const plan = planMerge(cur, backup);
+
+  it('고르지 않으면 현재 항목은 그대로 두고 백업에만 있는 항목만 추가한다', () => {
+    const r = restoredLists(cur, backup, plan);
+    expect(r.members.map((x) => [x.id, x.position])).toEqual([['c1', '집사'], ['c2', ''], ['b3', '']]);
+    expect(r.offeringTypes[0].isActive).toBe(true);
+    expect(r.updatedMembers + r.updatedTypes).toBe(0);
+  });
+
+  it('덮어쓰기를 고르면 같은 항목을 백업 내용으로 바꾸되 현재 id를 유지하고, 백업에 없는 항목은 남긴다', () => {
+    const r = restoredLists(cur, backup, plan, { members: true, types: true });
+    expect(r.members.map((x) => [x.id, x.position, x.familyGroupId])).toEqual([['c1', '권사', 'c1'], ['c2', '', undefined], ['b3', '', undefined]]);
+    expect(r.offeringTypes).toEqual([{ ...t('ct1', '십일조'), isActive: false }]);
+    expect([r.updatedMembers, r.updatedTypes]).toEqual([1, 1]);
   });
 });

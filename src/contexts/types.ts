@@ -46,7 +46,7 @@ export interface AuditLog {
   action: 'UPDATE' | 'DELETE';
   beforeSnapshot: Donation;
   afterSnapshot: Donation | null;
-  /** 필수. 사용자 입력 또는 시스템 자동 기입(합산·되돌리기) */
+  /** 필수. 사용자 입력 또는 시스템 자동 기입(합산·복구하기) */
   reason: string;
   timestamp: string;
 }
@@ -73,9 +73,11 @@ export interface AppSettings {
   /** 이 금액을 초과하면 저장 전 확인창 */
   largeAmountThreshold: number;
   autoBackupEnabled: boolean;
-  /** 빈 문자열이면 기본 폴더(문서\StewardLedgerBackup) */
-  autoBackupDir: string;
   lastBackupAt: string | null;
+  /** 마지막으로 정상 성공한 종료 자동 백업 시각(다음 실행 때 반영) */
+  lastCloseBackupAt: string | null;
+  /** 연도별 마지막 수동 백업([백업 파일 저장]) 시각. 키는 연도('2026') */
+  manualBackupAt: Record<string, string>;
   /** 화면 글자 크기 (보통/크게/매우 크게) */
   fontScale: FontScale;
   theme: AppTheme;
@@ -92,8 +94,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   recipientEmail: '',
   largeAmountThreshold: 10_000_000,
   autoBackupEnabled: true,
-  autoBackupDir: '',
   lastBackupAt: null,
+  lastCloseBackupAt: null,
+  manualBackupAt: {},
   fontScale: 'NORMAL',
   theme: 'BLUE',
   printTheme: 'MONO',
@@ -110,17 +113,17 @@ export interface DonationDraft {
   memo?: string;
 }
 
-/** 한 번의 저장 묶음 (입력 이력 패널·되돌리기 단위, 메모리 전용) */
+/** 한 번의 저장 묶음 (입력 이력 패널·복구하기 단위, 메모리 전용) */
 export interface SaveBatch {
   batchId: string;
   savedAt: string;
   date: string;
   donorDisplayName: string;
   createdIds: string[];
-  /** 저장 직후의 새 내역(createdIds와 같은 순서). 되돌리기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
+  /** 저장 직후의 새 내역(createdIds와 같은 순서). 복구하기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
   createdAfter: Donation[];
   mergedBefore: Donation[];
-  /** 합산 직후의 내역(mergedBefore와 같은 id). 되돌리기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
+  /** 합산 직후의 내역(mergedBefore와 같은 id). 복구하기 전에 그 뒤로 수정됐는지 확인하는 데 씁니다. */
   mergedAfter: Donation[];
   lines: { offeringTypeId: string; amount: number; merged: boolean }[];
 }

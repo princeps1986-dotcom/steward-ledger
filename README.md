@@ -13,7 +13,7 @@
 
 ## 주요 기능
 
-- **빠른 입력:** 키보드만으로 헌금 입력, 같은 헌금 합산, 되돌리기(Ctrl+Z), 현금 계수 대조
+- **빠른 입력:** 키보드만으로 헌금 입력, 같은 헌금 합산, 복구하기(Ctrl+Z), 현금 계수 대조
 - **보고서:** 일별·주별·월별·분기별·연도별, 인쇄(A4 가로), PDF 저장(저장 후 폴더 자동 열기)
 - **개인별·세대별 내역:** 개인 기준 조회, 연도별 보고서에서는 세대 합산 조회(현재 세대 / 납부 당시 세대 기준)
 - **회계 정합성:** 수정·삭제 이력 자동 기록, 납부 당시 세대 보존, 표기명 옆에 직분 표기
@@ -27,19 +27,7 @@
 npm install
 npm run dev        # 개발 서버 http://localhost:5173
 npm test           # 자동 테스트
-npm run typecheck  # 타입 검사
 npm run build      # 타입 검사 + 웹 빌드
-npm run smoke      # 빌드한 앱(Electron) 스모크 시험 (npm run build 후)
-npm run dist       # Windows 설치 파일 (release/)
 ```
 
-시험용 데이터는 `npm run testdata`로 백업 파일을 만든 뒤 [백업 파일 복원]으로 불러옵니다. 자세한 명령, 릴리스 절차, 시연 페이지 배포는 [ARCHITECTURE.md §18](ARCHITECTURE.md#18-빌드--실행--배포)을 보세요.
-
-## 폴더
-
-| 폴더 | 내용 |
-| :--- | :--- |
-| `src/` | 화면(`components`)·화면 로직(`hooks`)·상태(`contexts`)·규칙과 저장·백업(`services`) |
-| `electron/` | 데스크톱 셸(창, 자동 백업 쓰기, 업데이트) |
-| `scripts/` | 시험 데이터 생성, 스모크 시험 |
-| `.github/workflows/` | 시연 페이지 자동 배포 |
+나머지 명령(타입 검사, 스모크 시험, 설치 파일 빌드 등)은 `package.json`의 `scripts`를 보세요. 시험용 데이터는 `npm run testdata`로 백업 파일을 만든 뒤 [백업 파일 복원]으로 불러옵니다. 폴더 구조, 릴리스 절차, 시연 페이지 배포는 [ARCHITECTURE.md §4](ARCHITECTURE.md#4-코드-구조)와 [§18](ARCHITECTURE.md#18-빌드--실행--배포)을 보세요.

@@ -86,8 +86,8 @@ export function useOfferingsPage() {
     if (!form) return;
     const quick = parseQuickAmounts(form.quickAmountsText);
     if (typeof quick === 'string') return setError(quick);
-    const order = Number(form.sortOrder);
-    if (!Number.isFinite(order)) return setError('정렬 순서는 숫자입니다.');
+    const order = Number(form.sortOrder.trim() || NaN); // 빈칸이 0(맨 앞)으로 저장되지 않도록
+    if (!Number.isSafeInteger(order) || order < 0) return setError('정렬 순서는 0 이상의 정수입니다.');
     const draft: OfferingTypeDraft = {
       name: form.name,
       displayArea: form.displayArea,
