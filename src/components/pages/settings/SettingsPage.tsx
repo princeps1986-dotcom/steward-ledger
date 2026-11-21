@@ -6,6 +6,7 @@ import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 export function SettingsPage() {
   const s = useSettingsPage();
+  const singleRestoreYear = s.restoreYearOptions.length === 1;
   return (
     <div className="max-w-3xl space-y-4">
       <Notice message={s.message} />
@@ -270,10 +271,16 @@ export function SettingsPage() {
       <Modal
         open={!!s.restore}
         onClose={s.cancelRestore}
-        title="백업 파일 복원할까요?"
-        description="복원할 연도를 선택하세요."
+        title={singleRestoreYear ? `${s.restoreYear}년 백업 파일을 복원할까요?` : '백업 파일 복원할까요?'}
+        description={singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다.` : '복원할 연도를 선택하세요.'}
         footer={
-          <ConfirmFooter onCancel={s.cancelRestore} onConfirm={s.confirmRestore} tone="danger" confirmDisabled={s.busy || !s.restoreYear} confirmLabel="복원" />
+          <ConfirmFooter
+            onCancel={s.cancelRestore}
+            onConfirm={s.confirmRestore}
+            tone="danger"
+            confirmDisabled={s.busy || !s.restoreYear}
+            confirmLabel={singleRestoreYear ? `${s.restoreYear}년 복원` : '복원'}
+          />
         }
       >
         <div className="space-y-2 text-sm">
@@ -282,6 +289,12 @@ export function SettingsPage() {
           </p>
           <p>{s.restore?.summary}</p>
           {s.restore?.mergeNotice ? <p className="rounded bg-blue-50 p-2 text-xs text-blue-800">{s.restore.mergeNotice}</p> : null}
+          {/* 연도가 하나뿐인 파일(직접 만든 연도 백업)은 고를 것이 없으므로 선택 상자 대신 그 연도를 보여 줍니다. */}
+          {singleRestoreYear ? (
+            <p className="rounded border border-gray-200 p-2">
+              복원할 연도: <b>{s.restoreYear}년</b> ({s.restoreYearOptions[0].count.toLocaleString('ko-KR')}건)
+            </p>
+          ) : (
           <div className="flex flex-wrap items-center gap-2 rounded border border-gray-200 p-2">
             <label className="text-gray-600" htmlFor="restore-year">
               복원할 연도
@@ -295,12 +308,25 @@ export function SettingsPage() {
               ))}
             </select>
           </div>
+          )}
+          {s.restoreYear ? (
+            <p>
+              {s.currentYearCount === null ? (
+                '현재 건수 확인 중…'
+              ) : (
+                <>
+                  현재 {s.restoreYear}년 <b>{s.currentYearCount.toLocaleString('ko-KR')}건</b> → 백업{' '}
+                  <b>{(s.restoreYearOptions.find((r) => r.year === s.restoreYear)?.count ?? 0).toLocaleString('ko-KR')}건</b>으로 바뀝니다.
+                </>
+              )}
+            </p>
+          ) : null}
           <p className="text-gray-600">
             {s.restoreYearOptions.length === 0 ? (
               '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
             ) : (
               <>
-                <b className="text-red-700 underline">선택한 연도</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.
+                <b className="text-red-700 underline">{singleRestoreYear ? `${s.restoreYear}년` : '선택한 연도'}</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.
               </>
             )}
           </p>

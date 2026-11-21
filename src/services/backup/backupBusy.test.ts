@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { runPeriodicBackup, buildAutoBackup } from './autoBackupService';
-import { assertNotRestoring, isBackupBusy, isRestoring, withBackupBusy, withRestoring } from './backupBusy';
+import { assertNotRestoring, getRestoreStage, isBackupBusy, isRestoring, withBackupBusy, withCheckingBackup, withRestoring } from './backupBusy';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -23,6 +23,18 @@ describe('backup/restore lock', () => {
     ).rejects.toThrow('boom');
     expect(isBackupBusy()).toBe(false);
     expect(isRestoring()).toBe(false);
+  });
+
+  it('locks like a restore while checking a file, and goes back to the restore stage even after a failure', async () => {
+    await expect(
+      withCheckingBackup(async () => {
+        expect(isRestoring()).toBe(true);
+        expect(getRestoreStage()).toBe('check');
+        throw new Error('bad file');
+      }),
+    ).rejects.toThrow('bad file');
+    expect(isRestoring()).toBe(false);
+    expect(getRestoreStage()).toBe('restore');
   });
 
   it('makes automatic backups (periodic and on close) stand aside without touching main', async () => {

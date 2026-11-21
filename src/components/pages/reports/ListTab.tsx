@@ -59,6 +59,11 @@ export function ListTab({ f }: { f: ReportFilters }) {
           <b>{f.label}</b> · {formatNumber(r.count)}건 · 합계 <b>{formatWon(r.total)}</b>
           {r.loading ? <span className="ml-2 text-xs text-gray-400">불러오는 중…</span> : null}
         </p>
+        {r.failed ? (
+          <p role="alert" className="pb-2 text-sm text-red-600">
+            일부 달의 내역을 불러오지 못해 건수·합계에서 빠졌을 수 있습니다. 다른 기간을 골랐다가 다시 열어 주세요.
+          </p>
+        ) : null}
       </div>
 
       <div ref={paging.scrollRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>

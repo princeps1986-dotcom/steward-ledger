@@ -61,4 +61,22 @@ function pickBackupDir(requested, chosen, fallback) {
   return path.resolve(requested).toLowerCase() === path.resolve(chosen).toLowerCase() ? chosen : fallback;
 }
 
-module.exports = { pickBackupDir, resolveUserDataDir, resolveBackupDir, USER_DATA_NAME, BACKUP_DIR_NAME };
+// 자동 백업 파일 이름. 지금 자동 백업은 암호화한 .slbk로만 만듭니다. 예전 .json(.gz)는 직접 백업과 이름이 같았으므로
+// (연도 표시가 생기기 전 직접 백업 = backup_YYYYMMDD_HHMMSS.json) 보관 개수 정리에서 세지도 지우지도 않습니다.
+const AUTO_BACKUP_KEEP = 10;
+const PERIODIC_BACKUP_KEEP = 3;
+const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.slbk$/;
+const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.slbk$/;
+const TEMP_BACKUP_FILE_RE = /^(backup|autosave)_\d{8}_\d{6}\.(slbk|json(\.gz)?)\.tmp$/;
+
+/** 백업 폴더의 파일 이름 중 지울 것: 쓰다 중단된 임시 파일, 종료 백업은 최근 10개·주기 백업은 최근 3개를 넘는 오래된 것 */
+function backupsToPrune(names) {
+  const out = names.filter((n) => TEMP_BACKUP_FILE_RE.test(n));
+  for (const [re, keep] of [[AUTO_BACKUP_FILE_RE, AUTO_BACKUP_KEEP], [PERIODIC_BACKUP_FILE_RE, PERIODIC_BACKUP_KEEP]]) {
+    const matched = names.filter((n) => re.test(n)).sort();
+    out.push(...matched.slice(0, Math.max(0, matched.length - keep)));
+  }
+  return out;
+}
+
+module.exports = { pickBackupDir, resolveUserDataDir, resolveBackupDir, backupsToPrune, USER_DATA_NAME, BACKUP_DIR_NAME };

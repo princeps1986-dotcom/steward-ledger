@@ -11,20 +11,15 @@ const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { pickBackupDir, resolveUserDataDir } = require('./dataPaths.cjs');
+const { pickBackupDir, resolveUserDataDir, backupsToPrune } = require('./dataPaths.cjs');
+const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, keyIdOf, createEncryptStream } = require('./backupCrypto.cjs');
 
 const DEV_URL = process.env.ELECTRON_DEV_URL;
 const DIST = path.join(__dirname, '..', 'dist');
-const AUTO_BACKUP_KEEP = 10;
 // 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
-// 백업 파일은 암호화한 .slbk입니다. 예전 형식(.json, .json.gz)도 보관 개수 정리에 함께 셉니다.
-const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.(slbk|json(\.gz)?)$/;
-// 앱을 쓰는 동안 주기적으로 만드는 백업(autosave_*)은 종료 때 백업(backup_*)과 따로 최근 3개만 보관합니다.
-const PERIODIC_BACKUP_KEEP = 3;
-const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.(slbk|json\.gz)$/;
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -85,13 +80,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function pruneBackups(dir) {
-    const all = await fs.readdir(dir);
-    // 쓰다 중단된 임시 파일은 지웁니다.
-    for (const n of all.filter((x) => /^(backup|autosave)_\d{8}_\d{6}\.(slbk|json(\.gz)?)\.tmp$/.test(x))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
-    for (const [re, keep] of [[AUTO_BACKUP_FILE_RE, AUTO_BACKUP_KEEP], [PERIODIC_BACKUP_FILE_RE, PERIODIC_BACKUP_KEEP]]) {
-      const names = all.filter((n) => re.test(n)).sort();
-      for (const n of names.slice(0, Math.max(0, names.length - keep))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
-    }
+    for (const n of backupsToPrune(await fs.readdir(dir))) await fs.unlink(path.join(dir, n)).catch(() => undefined);
   }
 
   // 자동 백업 폴더: 화면이 임의의 경로를 보내도 쓰지 않도록, 사용자가 [폴더 선택]으로 지정한 폴더(또는 기본 폴더)만 씁니다.
@@ -287,6 +276,12 @@ if (!app.requestSingleInstanceLock()) {
           return resolve(true);
         }
         if (!payload) return resolve(true); // 비활성 또는 변경 없음
+        // 백업 파일 확인·복원 중: 반쯤 복원된 채 닫히지 않도록 안내만 하고 닫지 않습니다(자동 백업 상태도 남기지 않음).
+        if (payload.blocked === true) {
+          await dialog.showMessageBox(win, { type: 'info', buttons: ['확인'], message: '백업을 복원하고 있습니다.', detail: '끝날 때까지 기다린 뒤 닫아 주세요.' });
+          if (!win.isDestroyed()) win.webContents.send('backup:cancelled');
+          return resolve(false);
+        }
         try {
           if (typeof payload.file !== 'string') throw new Error(payload.error || '잘못된 백업 내용');
           await writeStatus({ ok: true, at: new Date().toISOString(), file: payload.file });
@@ -518,6 +513,15 @@ if (!app.requestSingleInstanceLock()) {
   });
   ipcMain.handle('backup:ack-status', async () => {
     await fs.unlink(statusFile()).catch(() => undefined);
+  });
+
+  // 복원 기록(시작·완료·실패)을 오류 로그에 남깁니다. 개인정보 없이 파일 이름·연도·건수만, 형식이 틀리면 무시합니다.
+  ipcMain.on('restore:log', (event, e) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) return;
+    const r = parseRestoreLog(e);
+    if (!r) return;
+    if (r.stage === 'fail') log.warn('restore fail', r.entry);
+    else log.info(`restore ${r.stage}`, r.entry);
   });
 
   // 저장한 파일을 기본 프로그램으로 열기 / 탐색기에서 위치 보기. 성공 시 빈 문자열, 실패 시 오류 문구를 반환합니다.

@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('desktop', {
   readBackup: (id) => ipcRenderer.invoke('backup:read', id),
   closeBackupReader: (id) => ipcRenderer.invoke('backup:close-reader', id),
   skipBackup: () => ipcRenderer.send('backup:skip'),
+  logRestore: (entry) => ipcRenderer.send('restore:log', entry),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   onUpdateProgress: (handler) => {

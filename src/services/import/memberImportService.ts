@@ -145,12 +145,18 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   // 세대주 연결 확인
   const fileHeadsByName = groupBy(preview, (p) => p.isHead && p.status !== 'ERROR', (p) => p.name);
   const existingHeadsByName = groupBy(existing, (m) => m.isActive && m.isFamilyHead, (m) => m.name);
+  const existingByName = groupBy(existing, () => true, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR' || row.isHead || !row.headName) continue;
     const existingHeads = existingHeadsByName.get(row.headName) ?? [];
     // 이미 등록된 세대주와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
     const fileHeads = (fileHeadsByName.get(row.headName) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
-    if (fileHeads.length === 1 && existingHeads.length === 0) row.headRef = { kind: 'FILE', rowNo: fileHeads[0].rowNo };
+    // 파일의 세대주가 이미 등록된 성도인데 세대주가 아니면, 가져오기는 그 성도를 세대주로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
+    // 그대로 연결하면 그 성도가 속한 다른 세대에 들어가거나 세대주 없는 세대가 생깁니다. 연결하지 않고 알립니다.
+    if (fileHeads.length === 1 && existingHeads.length === 0 && existingByName.get(row.headName)?.some((m) => isSamePerson(m, fileHeads[0]))) {
+      row.status = 'ERROR';
+      row.messages.push(`세대주 '${row.headName}'은(는) 이미 등록된 성도지만 세대주가 아닙니다. 성도 화면에서 세대주로 바꾼 뒤 다시 가져오세요.`);
+    } else if (fileHeads.length === 1 && existingHeads.length === 0) row.headRef = { kind: 'FILE', rowNo: fileHeads[0].rowNo };
     else if (fileHeads.length === 0 && existingHeads.length === 1) row.headRef = { kind: 'EXISTING', memberId: existingHeads[0].id };
     else if (fileHeads.length + existingHeads.length === 0) {
       row.status = 'ERROR';
@@ -162,7 +168,6 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   }
 
   // 기존 성도와 중복
-  const existingByName = groupBy(existing, () => true, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR') continue;
     const dup = existingByName.get(row.name)?.find((m) => isSamePerson(m, row));

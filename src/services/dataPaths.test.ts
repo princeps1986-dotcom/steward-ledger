@@ -4,11 +4,39 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
-const { resolveUserDataDir, resolveBackupDir, pickBackupDir } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
+const { resolveUserDataDir, resolveBackupDir, pickBackupDir, backupsToPrune } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
   resolveUserDataDir(appData: string): string;
   resolveBackupDir(documents: string): string;
   pickBackupDir(requested: unknown, chosen: string | null, fallback: string): string;
+  backupsToPrune(names: string[]): string[];
 };
+const { parseRestoreLog } = createRequire(import.meta.url)('../../electron/restoreLog.cjs') as {
+  parseRestoreLog(e: unknown): { stage: string; entry: Record<string, unknown> } | null;
+};
+
+describe('자동 백업 보관 개수 정리', () => {
+  it('지우는 것은 임시 파일과 개수를 넘은 오래된 .slbk뿐이고, 예전 직접 백업(.json)과 연도 백업은 남긴다', () => {
+    const close = Array.from({ length: 12 }, (_, i) => `backup_202601${String(i + 1).padStart(2, '0')}_000000.slbk`);
+    const periodic = Array.from({ length: 5 }, (_, i) => `autosave_2026010${i + 1}_000000.slbk`);
+    const keep = ['backup_20200101_000000.json', 'backup_20200102_000000.json.gz', 'backup_2025_20260101_000000.slbk', 'emergency_before_reset_20260101_000000.slbk'];
+    const out = backupsToPrune([...keep, ...close, ...periodic, 'autosave_20260101_000000.slbk.tmp']);
+    expect(out.sort()).toEqual(['autosave_20260101_000000.slbk', 'autosave_20260101_000000.slbk.tmp', 'autosave_20260102_000000.slbk', close[0], close[1]].sort());
+  });
+});
+
+describe('복원 기록 검사', () => {
+  it('파일 이름·연도·건수만 받아 넘기고, 형식이 틀리면 버린다', () => {
+    expect(parseRestoreLog({ stage: 'done', file: 'b.slbk', years: ['2025'], count: 3, addedMembers: 1, addedTypes: 0, extra: '이름' })).toEqual({
+      stage: 'done',
+      entry: { file: 'b.slbk', years: ['2025'], count: 3, current: undefined, addedMembers: 1, addedTypes: 0, error: undefined },
+    });
+    expect(parseRestoreLog({ stage: 'hack', file: 'b', years: [] })).toBeNull();
+    expect(parseRestoreLog({ stage: 'start', file: 'b', years: ['25'] })).toBeNull();
+    expect(parseRestoreLog({ stage: 'start', file: 'b', years: ['2025'], count: -1 })).toBeNull();
+    expect(parseRestoreLog({ stage: 'fail', file: 'b', years: ['2025'], error: 'x'.repeat(501) })).toBeNull();
+    expect(parseRestoreLog(null)).toBeNull();
+  });
+});
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'steward-'));
 

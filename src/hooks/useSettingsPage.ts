@@ -12,6 +12,8 @@ import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
 import { isCompleteYearBackup, saveBackupFile, saveEmergencyBackup, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
 import { decryptedBackup, isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
+import { setRestoreProgress, withCheckingBackup, withRestoring } from '../services/backup/backupBusy';
+import { countYearDonations } from '../services/storage/storageService';
 import { parseAndValidateBackup } from '../services/backup/validation';
 import { desktop, type UpdateCheck } from '../services/desktopBridge';
 import type { MergePlan } from '../services/backup/mergeRules';
@@ -30,7 +32,8 @@ interface RestoreCandidate {
   yearRows: { year: string; count: number }[];
 }
 
-const CHECKING_FILE = { kind: 'info' as const, text: '백업 파일을 확인하고 있습니다… 파일이 크면 수십 초 걸릴 수 있습니다.' };
+/** 복원이 아무리 빨리 끝나도 덮개(조작 막기)를 보여 두는 최소 시간 */
+const RESTORE_MIN_MS = 5000;
 const RESET_WAIT_SECONDS = 10;
 
 /** 성도·헌금 종류 합치기 결과 안내문(다른 PC의 백업이면 같은 성도·종류를 현재 데이터와 대응시킴) */
@@ -164,7 +167,7 @@ export function useSettingsPage() {
     try {
       const checked = (await desktop()?.verifyBackupFile?.(file, password)) ?? null;
       if (checked) return checked;
-      const scan = await scanBackupFile(source, { hashChecked: checked === '' });
+      const scan = await scanBackupFile(source, { hashChecked: checked === '', onMonth: (n) => setRestoreProgress({ done: n, total: 0 }) });
       if (!scan.ok) return scan.error;
       setMessage(null);
       const years = Object.keys(scan.yearCounts).sort();
@@ -190,8 +193,10 @@ export function useSettingsPage() {
     e.target.value = '';
     if (!file || backupBlocked) return;
     try {
+      // 확인하는 동안 화면 전체를 덮어 막고 진행(확인한 달 수)을 보여 줍니다. 암호를 물어야 하면 여기서 끝나 덮개가 닫힙니다.
+      await withCheckingBackup(async () => {
       setRestoreYearPick('');
-      setMessage(CHECKING_FILE); // 큰 파일은 검사(체크섬·형식)에 수십 초가 걸리므로 멈춘 것으로 보이지 않게 알립니다.
+      setMessage(null);
       // 암호화한 백업(.slbk): 자동 백업은 이 PC의 키로 바로 풀고, 직접 백업은 암호를 물어봅니다. 화면은 키를 모르고 main이 풀어 줍니다.
       const api = desktop();
       const info = api ? await api.inspectBackupFile(file) : null;
@@ -225,6 +230,7 @@ export function useSettingsPage() {
         summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${p.members.length}명 · 헌금 종류 ${p.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
         yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
       });
+      });
     } catch (err) {
       // 손상된 압축 파일 등 읽는 중의 오류: '확인하고 있습니다' 문구가 남지 않게 사유를 알립니다.
       setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
@@ -236,9 +242,9 @@ export function useSettingsPage() {
     const api = desktop();
     if (!api || !restorePw || !restorePw.input) return;
     const { file, input } = restorePw;
-    const fail = await checkStreamBackup(file, decryptedBackup(api, file, input), input);
-    if (fail) return setRestorePw({ file, input: '', error: fail.replace(/^백업 파일 검증 실패: /, '') });
-    setRestorePw(null);
+    setRestorePw(null); // 확인하는 동안은 암호 창을 닫고 덮개만 보여 줍니다(틀리면 사유와 함께 다시 엶).
+    const fail = await withCheckingBackup(() => checkStreamBackup(file, decryptedBackup(api, file, input), input));
+    if (fail) setRestorePw({ file, input: '', error: fail.replace(/^백업 파일 검증 실패: /, '') });
   }, [restorePw]);
 
   // 초기화 확인창이 열리면 10초 카운트다운 후에만 [초기화]를 누를 수 있습니다.
@@ -304,26 +310,54 @@ export function useSettingsPage() {
     }
   }, [resetLeft, demoActive, hasData, memberActions, offeringActions, donationActions]);
 
+  // 확인 창에 보여 줄 현재 데이터의 그 연도 건수(잘못된 파일을 골랐는지 알아보기 쉽게). 세는 동안 null
+  const [currentYearCount, setCurrentYearCount] = useState<number | null>(null);
+  useEffect(() => {
+    setCurrentYearCount(null);
+    if (!restore || !restoreYear) return;
+    let alive = true;
+    void countYearDonations(restoreYear)
+      .then((n) => alive && setCurrentYearCount(n))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [restore, restoreYear]);
+
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
     if (!restoreYear) return setMessage({ kind: 'error', text: '이 백업 파일에는 복원할 헌금 내역(연도)이 없습니다.' });
     const picked = [restoreYear];
+    const count = restore.yearRows.find((r) => r.year === restoreYear)?.count ?? 0;
+    const log = desktop()?.logRestore;
+    log?.({ stage: 'start', file: restore.fileName, years: picked, count, current: currentYearCount ?? undefined });
+    setRestore(null); // 복원 창을 먼저 닫아 덮개만 남깁니다(Esc로 창이 닫히거나 포커스가 창에 갇히지 않게).
     setBusy(true);
     try {
-      if (restore.stream) await restoreFromFile(restore.stream.file, restore.stream.scan, picked);
-      else await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS' });
-      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+      // 복원과 화면 다시 불러오기를 모두 덮개 아래에서 하고, 빨리 끝나도 덮개는 최소 5초 보여 줍니다(실패하면 바로 알림).
+      const result = await withRestoring(async () => {
+        const [r] = await Promise.all([
+          (async () => {
+            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS' });
+            await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
+            return res;
+          })(),
+          new Promise((resolve) => window.setTimeout(resolve, RESTORE_MIN_MS)),
+        ]);
+        return r;
+      });
+      log?.({ stage: 'done', file: restore.fileName, years: picked, count, addedMembers: result.addedMembers, addedTypes: result.addedTypes });
       setMessage({
         kind: 'info',
-        text: `복원 완료 (${restoreYear}년, 다른 연도는 유지)${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}.`,
+        text: `${restoreYear}년 헌금 ${count.toLocaleString('ko-KR')}건을 복원했습니다. 다른 연도는 그대로입니다. 새로 추가된 성도 ${result.addedMembers}명·헌금 종류 ${result.addedTypes}개.${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}`,
       });
-      setRestore(null);
     } catch (err) {
+      log?.({ stage: 'fail', file: restore.fileName, years: picked, error: (err as Error).message });
       setMessage({ kind: 'error', text: `복원 실패: ${(err as Error).message}` });
     } finally {
       setBusy(false);
     }
-  }, [restore, restoreYear, memberActions, offeringActions, donationActions]);
+  }, [restore, restoreYear, currentYearCount, memberActions, offeringActions, donationActions]);
 
   // 프로그램 업데이트: 단추를 누를 때만 인터넷에 접속합니다(데스크톱 앱 전용).
   const [appUpdate, setAppUpdate] = useState<
@@ -405,6 +439,7 @@ export function useSettingsPage() {
     restoreYearOptions: restore?.yearRows ?? [],
     restoreYear,
     setRestoreYear: setRestoreYearPick,
+    currentYearCount,
     demoOpen,
     openDemo: () => setDemoOpen(true),
     cancelDemo: () => setDemoOpen(false),

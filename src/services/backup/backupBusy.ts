@@ -32,6 +32,19 @@ async function track<T>(kind: 'backups' | 'restores', fn: () => Promise<T>): Pro
 export const withBackupBusy = <T>(fn: () => Promise<T>): Promise<T> => track('backups', fn);
 export const withRestoring = <T>(fn: () => Promise<T>): Promise<T> => track('restores', fn);
 
+/** 복원 덮개가 보여 줄 단계: 파일 확인 중('check') 또는 복원 중('restore') */
+let restoreStage: 'check' | 'restore' = 'restore';
+/** 복원할 파일을 확인하는 동안도 복원 중처럼 화면·저장·자동 백업을 막습니다(덮개 문구만 '확인 중'). */
+export async function withCheckingBackup<T>(fn: () => Promise<T>): Promise<T> {
+  restoreStage = 'check';
+  try {
+    return await track('restores', fn);
+  } finally {
+    restoreStage = 'restore';
+    notify();
+  }
+}
+
 /** 복원 중에는 헌금 저장·수정·삭제를 막습니다(복원이 지우고 다시 쓰는 달과 섞이지 않도록). */
 export function assertNotRestoring(): void {
   if (isRestoring()) throw new Error('복원하는 중에는 저장할 수 없습니다. 복원이 끝난 뒤 다시 시도하세요.');
@@ -47,4 +60,6 @@ export function setRestoreProgress(p: { done: number; total: number } | null): v
   restoreProgress = p;
   notify();
 }
-export const useRestoreProgress = (): { done: number; total: number } | null => useSyncExternalStore(subscribe, () => restoreProgress);
+export const getRestoreStage = (): 'check' | 'restore' => restoreStage;
+export const useRestoreStage = (): 'check' | 'restore' => useSyncExternalStore(subscribe, getRestoreStage);
+export const useRestoreProgress =(): { done: number; total: number } | null => useSyncExternalStore(subscribe, () => restoreProgress);
