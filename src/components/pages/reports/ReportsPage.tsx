@@ -28,19 +28,23 @@ export function ReportsPage() {
     const flipped = new Set(flippedIds);
     return new Set(typeOptions.filter((o) => o.isActive === flipped.has(o.id)).map((o) => o.id));
   }, [typeOptions, flippedIds]);
+  // 비활성 성도 포함(종합 보고서의 성도 행 표 전용). 처음엔 포함이고, 보고서·탭이 바뀌면 다시 포함으로 돌아갑니다.
+  const [includeInactive, setIncludeInactive] = useState(true);
   const ex = useReportExport(f);
   // 노출할 내역이 없으면(모든 종류를 숨겼거나 기간에 내역이 없음) 인쇄·PDF 저장을 막습니다.
-  const hasData = useHasExportableData(f, hidden);
+  const hasData = useHasExportableData(f, hidden, includeInactive);
   const exportDisabled = f.pending || f.loadFailed || !hasData;
   // 보고서(기간 종류·연도·분기/월·주)가 바뀌면 항상 [종합 보고서] 탭부터 보여 줍니다.
   const reportKey = f.isRange ? `${f.periodType}:${f.week.start}` : `${f.periodType}:${f.year}:${f.periodValue}`;
   useEffect(() => {
     setTab('SUMMARY');
     setFlippedIds([]);
+    setIncludeInactive(true);
   }, [reportKey]);
   const changeTab = (t: ReportTab) => {
     setTab(t);
     setFlippedIds([]);
+    setIncludeInactive(true);
   };
   const toggleType = (id: string) => setFlippedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   // 모두 표시: 활성 종류는 기본 그대로, 비활성 종류는 뒤집어 체크합니다.
@@ -162,11 +166,18 @@ export function ReportsPage() {
             </button>
           ) : null}
         </div>
+        {/* 성도 행이 있는 표(주별·월별·일별)에만 있습니다. 분기·연도별은 헌금 종류 × 월 합계표라 해당 없음. */}
+        {f.personRange ? (
+          <label className="flex w-fit cursor-pointer items-center gap-1 text-sm">
+            <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+            비활성 성도 포함
+          </label>
+        ) : null}
         <p className="text-xs text-gray-500">[헌금 종류]에서 활성 상태인 헌금만 기본으로 체크됩니다.</p>
         </div>
       ) : null}
       <div className={f.pending ? 'opacity-50 transition-opacity' : 'transition-opacity'} aria-busy={f.pending}>
-        {tab === 'SUMMARY' ? <SummaryTab f={f} hidden={hidden} /> : null}
+        {tab === 'SUMMARY' ? <SummaryTab f={f} hidden={hidden} includeInactive={includeInactive} /> : null}
         {tab === 'LIST' ? <ListTab f={f} /> : null}
         {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
         {tab === 'AUDIT' ? <AuditTab f={f} /> : null}

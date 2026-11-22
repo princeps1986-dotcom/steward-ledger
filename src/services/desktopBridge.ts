@@ -54,8 +54,6 @@ export interface DesktopApi {
   savePdf(name: string): Promise<boolean>;
   /** PDF 저장이 끝나면 저장된 경로를 알려 줍니다. 구독 해제 함수를 반환합니다. */
   onDownloadDone(handler: (info: SavedFileInfo) => void): () => void;
-  /** 자동 백업 폴더(기본 폴더로 고정)를 탐색기로 엽니다. 성공 시 빈 문자열, 실패 시 오류 문구. */
-  openBackupDir(): Promise<string>;
   getAutoBackupStatus(): Promise<AutoBackupStatus | null>;
   ackAutoBackupStatus(): Promise<void>;
   /**
@@ -69,11 +67,13 @@ export interface DesktopApi {
   backupAbort(id: number): Promise<boolean>;
   backupEnd(id: number): Promise<string>;
   /** 복원할 백업 파일의 체크섬을 main이 확인합니다(암호화한 파일은 풀어서). ''=통과, 문구=실패 사유, null=확인하지 않음(경로를 모르는 파일 등) */
-  verifyBackupFile?(file: File, password?: string): Promise<string | null>;
-  /** 백업 파일이 암호화됐는지·암호가 필요한지(null = 경로를 모르는 파일) */
-  inspectBackupFile(file: File): Promise<BackupFileInfo | null>;
+  verifyBackupFile?(file: File | string, password?: string): Promise<string | null>;
+  /** 백업 파일이 암호화됐는지·암호가 필요한지(null = 경로를 모르는 파일). 파일 대신 경로 문자열도 받음 */
+  inspectBackupFile(file: File | string): Promise<BackupFileInfo | null>;
+  /** 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null) */
+  latestAutoBackup(): Promise<SavedFileInfo | null>;
   /** 암호화한 백업을 main이 풀어 줄 단위 평문 조각으로 건넵니다: open → read(끝이면 null) → close */
-  openBackupReader(file: File, password?: string): Promise<number>;
+  openBackupReader(file: File | string, password?: string): Promise<number>;
   readBackup(id: number): Promise<Uint8Array | null>;
   closeBackupReader(id: number): Promise<boolean>;
   /** 종료 직전 main이 요청하면 handler가 백업을 저장하고 결과를 반환합니다(null = 백업 생략, blocked = 복원 중이라 닫지 않음). */

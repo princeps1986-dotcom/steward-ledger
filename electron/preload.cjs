@@ -1,8 +1,9 @@
 // contextBridge로 렌더러에 최소 API만 노출합니다 (src/services/desktopBridge.ts의 DesktopApi).
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+const pathOf = (file) => (typeof file === 'string' ? file : webUtils.getPathForFile(file));
+
 contextBridge.exposeInMainWorld('desktop', {
-  openBackupDir: () => ipcRenderer.invoke('backup:open-dir'),
   getAutoBackupStatus: () => ipcRenderer.invoke('backup:get-status'),
   ackAutoBackupStatus: () => ipcRenderer.invoke('backup:ack-status'),
   savePdf: (name) => ipcRenderer.invoke('report:save-pdf', name),
@@ -19,15 +20,17 @@ contextBridge.exposeInMainWorld('desktop', {
   backupAbort: (id) => ipcRenderer.invoke('backup:abort', id),
   backupEnd: (id) => ipcRenderer.invoke('backup:end', id),
   // 선택한 파일의 경로를 main에 넘겨 체크섬을 확인합니다(경로를 모르는 파일이면 null: 화면 쪽에서 확인).
+  // file은 선택한 File 또는 경로 문자열(전체 복원이 main이 알려 준 경로를 그대로 씀)
   verifyBackupFile: (file, password) => {
-    const path = webUtils.getPathForFile(file);
+    const path = pathOf(file);
     return path ? ipcRenderer.invoke('backup:verify-file', path, password) : Promise.resolve(null);
   },
   inspectBackupFile: (file) => {
-    const path = webUtils.getPathForFile(file);
+    const path = pathOf(file);
     return path ? ipcRenderer.invoke('backup:inspect-file', path) : Promise.resolve(null);
   },
-  openBackupReader: (file, password) => ipcRenderer.invoke('backup:open-reader', webUtils.getPathForFile(file), password),
+  latestAutoBackup: () => ipcRenderer.invoke('backup:latest-auto'),
+  openBackupReader: (file, password) => ipcRenderer.invoke('backup:open-reader', pathOf(file), password),
   readBackup: (id) => ipcRenderer.invoke('backup:read', id),
   closeBackupReader: (id) => ipcRenderer.invoke('backup:close-reader', id),
   skipBackup: () => ipcRenderer.send('backup:skip'),

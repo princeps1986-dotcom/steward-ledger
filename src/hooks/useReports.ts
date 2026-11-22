@@ -11,7 +11,7 @@ import { AUDIT_KEY_RE, listAuditKeys, readMemberDonations, readMonth } from '../
 import { sumMonth, type MonthSums } from '../services/domain/periodSummary';
 import { monthRangeOf, shiftDay, shiftWeek, weekRangeOf } from '../services/domain/calendar';
 import { formatDateTime, isValidDateString, lastSunday, monthOf, seoulNow, monthsOfPeriod, periodLabel, withWeekday, type PeriodType } from '../services/domain/dates';
-import { buildWeeklyMatrix } from '../services/domain/weekly';
+import { buildWeeklyMatrix, withoutInactiveMembers } from '../services/domain/weekly';
 import { familyKeyOf, familyKeyOfMember, type FamilyBasis } from '../services/domain/family';
 import { currentHeadOf } from '../services/domain/memberRules';
 import { memberLabel } from '../services/domain/search';
@@ -292,28 +292,36 @@ export function useSummaryReport(f: ReportFilters, hidden: ReadonlySet<string> =
   }, [types, f.monthSums, f.months, hidden]);
 }
 
+/** 비활성 성도의 내역을 뺍니다(무명/방문자는 성도가 없으므로 항상 남김). includeInactive면 그대로 돌려줍니다. */
+function useDonationsForSummary(donations: readonly Donation[], includeInactive: boolean): readonly Donation[] {
+  const members = useMembers();
+  return useMemo(() => (includeInactive ? donations : withoutInactiveMembers(donations, members)), [donations, members, includeInactive]);
+}
+
 /** 주별 보고서(종합 보고서의 기간 '주별'): 선택 주(일~토)를 헌금 종류 × 성도명 교차표로 집계 */
-export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN) {
+export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN, includeInactive = true) {
   const types = useOfferingTypes();
   const orderKey = useMemberOrderKey();
   const range = f.personRange!;
+  const donations = useDonationsForSummary(f.donations, includeInactive);
   return useMemo(() => {
-    const matrix = buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), range, orderKey);
+    const matrix = buildWeeklyMatrix(withoutTypes(donations, hidden), typesWithout(types, hidden), range, orderKey);
     // 주별은 "시작 ~ 종료", 월별은 "YYYY-MM"으로 표시
     const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : f.personKind === 'DAY' ? withWeekday(range.start) : `${withWeekday(range.start)} ~ ${withWeekday(range.end)}`;
     return { matrix, rangeLabel, hasData: matrix.count > 0 };
-  }, [f.donations, types, range, orderKey, hidden, f.personKind]);
+  }, [donations, types, range, orderKey, hidden, f.personKind]);
 }
 
 /** 종합 보고서에 노출할 내역(숨김 종류 제외)이 하나라도 있는지. 인쇄·PDF 저장 버튼의 활성 조건으로 씁니다. */
-export function useHasExportableData(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN): boolean {
+export function useHasExportableData(f: ReportFilters, hidden: ReadonlySet<string> = NO_HIDDEN, includeInactive = true): boolean {
   const types = useOfferingTypes();
   const orderKey = useMemberOrderKey();
+  const donations = useDonationsForSummary(f.donations, includeInactive);
   return useMemo(() => {
-    if (f.personRange) return buildWeeklyMatrix(withoutTypes(f.donations, hidden), typesWithout(types, hidden), f.personRange, orderKey).count > 0;
+    if (f.personRange) return buildWeeklyMatrix(withoutTypes(donations, hidden), typesWithout(types, hidden), f.personRange, orderKey).count > 0;
     for (const sums of f.monthSums?.values() ?? []) for (const [t, s] of sums) if (!hidden.has(t) && s.count > 0) return true;
     return false;
-  }, [f.donations, f.monthSums, f.personRange, types, orderKey, hidden]);
+  }, [donations, f.monthSums, f.personRange, types, orderKey, hidden]);
 }
 
 /**

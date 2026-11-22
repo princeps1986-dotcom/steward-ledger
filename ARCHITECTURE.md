@@ -239,6 +239,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * 열 = 활성 종류 + 기간에 쓰인 비활성 종류(`sortOrder` 순) + 장부에만 있는 종류(`(삭제된 종류)`, 합계 일치 보장). 행 키는 `memberId`(동명이인 분리) 또는 `anon:표기명`(같은 무명 합산).
 * 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 PDF가 같은 `useMemberOrderKey()`를 씁니다.
 * **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·PDF가 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
+* **[비활성 성도 포함]:** `ReportsPage`의 `includeInactive`(기본 true)를 `useWeeklyMatrix`·`useHasExportableData`에 넘기고, 끄면 `useDonationsForSummary`가 비활성 성도의 내역을 먼저 뺍니다(성도 행이 있는 주별·월별·일별 표 전용). `WeeklySummary`는 화면에서 `usePaging`으로 100명씩 그리고, 인쇄·PDF(`useIsPrinting`)는 모든 행을 그립니다.
 * **세대 합산 조회는 연도별 보고서에서만 가능합니다.** `usePersonalReport`는 `f.periodType`이 `YEAR`가 아니면 선택값과 상관없이 개인 기준(`PERSON`)으로 조회하고, 개인 기준/세대 합산 선택 단추는 연도별에서만 보이며 다른 기간에는 안내 문구만 나옵니다.
 * **세대 집계 기준**(현재/납부 당시)은 세대 합산 조회에서만 쓰이며 개인별·세대별 탭이 직접 토글을 보여 줍니다(상태 `f.basis`는 `useReportFilters`). 종합 보고서와 PDF 파일명에는 쓰이지 않습니다. 세대 합산 결과 위에는 `currentHeadOf`로 구한 현재 세대주를 표시합니다.
 * 탭은 `reportKey`(주별·일별은 `기간:시작일`, 그 외 `기간:연도:값`)가 바뀌면 [종합 보고서]로 돌아갑니다.
@@ -370,7 +371,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **프로그램 업데이트(`electron-updater`):** 설정 화면의 [업데이트 확인]을 누를 때만 main이 `update:check`로 GitHub 릴리스(`build.publish`)의 `latest.yml`을 읽습니다(평소에는 네트워크를 쓰지 않음, 포장된 앱에서만). [내려받기]는 `update:download`로 `.blockmap`을 비교해 바뀐 블록만 받고(`update:progress`로 진행률), `autoInstallOnAppQuit`로 앱을 닫을 때 종료 백업이 끝난 뒤 설치합니다(강제 재시작 없음). 내려받은 파일은 `latest.yml`의 sha512로 확인합니다. 오류는 경로가 섞이지 않은 고정 문구로 바꿔 보냅니다. 화면용 라이브러리는 vite가 `dist`에 묶으므로 `devDependencies`에 두고, 설치 파일에는 `electron-updater`와 그 의존성만 들어갑니다.
   * **릴리스 절차:** `package.json`의 `version`을 올리고 `npm run dist` → `release/`의 `StewardLedger Setup x.y.z.exe`, 같은 이름의 `.blockmap`, `latest.yml` 세 파일을 GitHub 릴리스(태그 `vx.y.z`)에 올립니다(`GH_TOKEN`을 설정하면 `npx electron-builder --win nsis --publish always`로도 가능).
 * **화면 멈춤 대응:** `render-process-gone`(비정상 종료)이면 창을 다시 불러오고(1분에 3번 넘으면 안내 후 중단), `unresponsive`이면 [기다리기 / 다시 불러오기]를 묻습니다. 데이터는 IndexedDB에 있어 다시 불러와도 이어서 쓸 수 있습니다. React 화면 오류는 `ErrorBoundary`가 화면 단위로 잡아 앱 전체가 하얗게 되지 않고 메뉴를 계속 쓸 수 있습니다(메뉴를 옮기면 새로 시작).
-* **preload**(`electron/preload.cjs`)는 `contextBridge`로 최소 API만 노출합니다: 백업 폴더 열기·자동 백업 쓰기·정리, 백업 파일 검사·풀어 읽기, 저장 파일 열기/폴더 보기, 다운로드 완료 알림, 업데이트.
+* **preload**(`electron/preload.cjs`)는 `contextBridge`로 최소 API만 노출합니다: 자동 백업 쓰기·정리, 백업 파일 검사·풀어 읽기(파일 또는 경로 문자열), 가장 최근 종료 전체 백업 찾기(`latestAutoBackup`, 전체 복원용), 저장 파일 열기/폴더 보기, 다운로드 완료 알림, 업데이트.
 * **종료 시 자동 백업:** 데이터가 렌더러에 있으므로 종료 요청 시 main이 렌더러에 `backup:request`를 보냅니다. 렌더러는 줄 단위 백업 세션(`backupBegin`·`backupWrite`·`backupEnd`)으로 한 달치씩 main에 보내고, main이 gzip 파일로 씁니다(10장). main은 **끝날 때까지 기다린 뒤 종료**합니다(상한 5분).
   * 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 5초 후 [백업 없이 종료] → `backup:skip`)를 띄웁니다.
   * 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다).

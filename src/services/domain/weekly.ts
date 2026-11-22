@@ -34,6 +34,12 @@ const byName = compareKoNumeric;
  * - 행: 등록 성도(가나다순, 동명이인은 보조 키 순) → 무명/방문자(날짜순, 같은 날은 번호순).
  *   무명 번호는 날짜마다 1부터 다시 매기므로 같은 날짜·같은 표기명끼리만 한 행이고, 여러 날 범위면 이름 옆에 요일을 붙입니다(무명1 (수); 한 주보다 길면 무명1 (11/18 수)).
  */
+/** 비활성 성도의 내역을 뺍니다(무명/방문자는 성도가 없으므로 남김). 종합 보고서의 [비활성 성도 포함] 해제용 */
+export function withoutInactiveMembers(donations: readonly Donation[], members: readonly { id: string; isActive: boolean }[]): readonly Donation[] {
+  const inactive = new Set(members.filter((m) => !m.isActive).map((m) => m.id));
+  return inactive.size === 0 ? donations : donations.filter((d) => !d.memberId || !inactive.has(d.memberId));
+}
+
 export function buildWeeklyMatrix(
   donations: readonly Donation[],
   types: readonly OfferingType[],

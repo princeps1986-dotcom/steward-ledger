@@ -31,7 +31,12 @@ interface RestoreCandidate {
   mergeNotice: string;
   /** 백업 파일에 들어 있는 연도와 그 연도의 헌금 건수 */
   yearRows: { year: string; count: number }[];
+  /** 전체 복원(가장 최근 자동 백업으로 현재 데이터를 모두 지우고 교체) */
+  full?: boolean;
 }
+
+/** 'backup_20261121_153045.slbk' → '2026-11-21 15:30:45' */
+const autoBackupLabel = (name: string): string => name.replace(/^backup_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.slbk$/, '$1-$2-$3 $4:$5:$6');
 
 /** 복원이 아무리 빨리 끝나도 덮개(조작 막기)를 보여 두는 최소 시간 */
 const RESTORE_MIN_MS = 5000;
@@ -168,7 +173,7 @@ export function useSettingsPage() {
    * 줄 단위 백업 검사: 파일째 읽지 않고 흘려 읽으며 검증합니다(큰 백업도 메모리가 작음). source는 읽을 내용(암호화한 파일이면 main이 풀어 주는 래퍼).
    * 데스크톱 앱은 체크섬을 main의 내장 기능으로 먼저 확인합니다(큰 파일에서 화면 쪽 계산보다 훨씬 빠름). 실패 사유를 돌려주고, 통과하면 복원 창을 엽니다.
    */
-  const checkStreamBackup = async (file: File, source: ReadableBackup, password?: string): Promise<string | null> => {
+  const checkStreamBackup = async (file: File | string, source: ReadableBackup, password?: string, fileName = typeof file === 'string' ? file : file.name, full = false): Promise<string | null> => {
     setBusy(true);
     try {
       const checked = (await desktop()?.verifyBackupFile?.(file, password)) ?? null;
@@ -178,10 +183,11 @@ export function useSettingsPage() {
       setMessage(null);
       const years = Object.keys(scan.yearCounts).sort();
       setRestore({
-        mergeNotice: mergeNoticeOf(await planFor(scan)),
+        mergeNotice: full ? '' : mergeNoticeOf(await planFor(scan)),
         envelope: null,
         stream: { file: source, scan },
-        fileName: file.name,
+        fileName,
+        full,
         migratedFrom: null,
         summary: `백업 일시 ${formatDateTime(scan.exportedAt ?? '')} · 성도 ${scan.members.length}명 · 헌금 종류 ${scan.offeringTypes.length}개 · 헌금 내역 ${Object.values(scan.yearCounts).reduce((s, n) => s + n, 0)}건`,
         yearRows: years.map((year) => ({ year, count: scan.yearCounts[year] })),
@@ -242,6 +248,31 @@ export function useSettingsPage() {
       setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
     }
   }, []);
+
+  // [백업 파일 복원]을 누르면 먼저 복원 방식(전체/연도별)을 고릅니다. 전체 복원은 데스크톱 앱의 최신 종료 전체 백업을 씁니다.
+  const [restoreChoiceOpen, setRestoreChoiceOpen] = useState(false);
+  const [latestAuto, setLatestAuto] = useState<{ path: string; name: string } | null | undefined>(undefined); // undefined = 확인 중
+  const openRestoreChoice = useCallback(() => {
+    if (backupBlocked) return;
+    setRestoreChoiceOpen(true);
+    setLatestAuto(undefined);
+    void (desktop()?.latestAutoBackup() ?? Promise.resolve(null)).then(setLatestAuto, () => setLatestAuto(null));
+  }, [backupBlocked]);
+  const startFullRestore = useCallback(async () => {
+    const api = desktop();
+    if (!api || !latestAuto || backupBlocked) return;
+    setRestoreChoiceOpen(false);
+    try {
+      await withCheckingBackup(async () => {
+        setMessage(null);
+        const info = await api.inspectBackupFile(latestAuto.path);
+        const fail = info?.error ? info.error.replace(/^백업 파일 검증 실패: /, '') : await checkStreamBackup(latestAuto.path, decryptedBackup(api, latestAuto.path), undefined, latestAuto.name, true);
+        if (fail) setMessage({ kind: 'error', text: `복원 불가: ${fail}` });
+      });
+    } catch (err) {
+      setMessage({ kind: 'error', text: `복원 불가: ${(err as Error).message}` });
+    }
+  }, [latestAuto, backupBlocked]);
 
   /** 암호 입력 창의 [확인]: 틀리면 창에 사유를 보여 주고, 맞으면 복원 창으로 넘어갑니다(암호는 복원할 때 파일을 다시 읽으려고 래퍼 안에만 둡니다). */
   const confirmRestorePassword = useCallback(async () => {
@@ -334,9 +365,10 @@ export function useSettingsPage() {
 
   const confirmRestore = useCallback(async () => {
     if (!restore) return;
-    if (!restoreYear) return setMessage({ kind: 'error', text: '이 백업 파일에는 복원할 헌금 내역(연도)이 없습니다.' });
-    const picked = [restoreYear];
-    const count = restore.yearRows.find((r) => r.year === restoreYear)?.count ?? 0;
+    const full = !!restore.full;
+    if (!full && !restoreYear) return setMessage({ kind: 'error', text: '이 백업 파일에는 복원할 헌금 내역(연도)이 없습니다.' });
+    const picked = full ? restore.yearRows.map((r) => r.year) : [restoreYear];
+    const count = restore.yearRows.filter((r) => picked.includes(r.year)).reduce((n, r) => n + r.count, 0);
     const log = desktop()?.logRestore;
     log?.({ stage: 'start', file: restore.fileName, years: picked, count, current: currentYearCount ?? undefined });
     setRestore(null); // 복원 창을 먼저 닫아 덮개만 남깁니다(Esc로 창이 닫히거나 포커스가 창에 갇히지 않게).
@@ -346,7 +378,7 @@ export function useSettingsPage() {
       const result = await withRestoring(async () => {
         const [r] = await Promise.all([
           (async () => {
-            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked, restoreOverwrite) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS', overwrite: restoreOverwrite });
+            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked, restoreOverwrite, full) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS', overwrite: restoreOverwrite });
             await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
             return res;
           })(),
@@ -355,6 +387,7 @@ export function useSettingsPage() {
         return r;
       });
       log?.({ stage: 'done', file: restore.fileName, years: picked, count, addedMembers: result.addedMembers, addedTypes: result.addedTypes });
+      if (full) return setMessage({ kind: 'info', text: `전체 복원을 마쳤습니다. (${autoBackupLabel(restore.fileName)} 백업 · 성도 ${result.addedMembers}명 · 헌금 ${count.toLocaleString('ko-KR')}건)` });
       setMessage({
         kind: 'info',
         text: `${restoreYear}년 헌금 ${count.toLocaleString('ko-KR')}건을 복원했습니다. 다른 연도는 그대로입니다. 새로 추가된 성도 ${result.addedMembers}명·헌금 종류 ${result.addedTypes}개.${result.updatedMembers + result.updatedTypes > 0 ? ` 백업 내용으로 덮어쓴 성도 ${result.updatedMembers}명·헌금 종류 ${result.updatedTypes}개.` : ''}${restore.migratedFrom ? ` (v${restore.migratedFrom} → v2 자동 변환)` : ''}`,
@@ -419,7 +452,6 @@ export function useSettingsPage() {
     ],
     backupHelp:
       '특정 연도를 선택해야 합니다. (성도·헌금 종류는 항상 포함)\n복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀝니다.',
-    openBackupDir: () => void desktop()?.openBackupDir(),
     periodicBusyOpen,
     closePeriodicBusy: () => setPeriodicBusyOpen(false),
     lastBackupLabel: settings.lastBackupAt ? formatDateTime(settings.lastBackupAt) : '없음',
@@ -439,6 +471,12 @@ export function useSettingsPage() {
     backupPassword2,
     setBackupPassword2,
     onRestoreFile,
+    restoreChoiceOpen,
+    openRestoreChoice,
+    closeRestoreChoice: () => setRestoreChoiceOpen(false),
+    /** 전체 복원에 쓸 최신 자동 백업 날짜(undefined = 확인 중, null = 없음) */
+    latestAutoLabel: latestAuto === undefined ? undefined : latestAuto && autoBackupLabel(latestAuto.name),
+    startFullRestore,
     restorePw,
     setRestorePwInput: (input: string) => setRestorePw((r) => (r ? { ...r, input } : r)),
     confirmRestorePassword,

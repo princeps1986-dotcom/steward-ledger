@@ -11,7 +11,7 @@ const fsSync = require('node:fs');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { resolveUserDataDir, backupsToPrune } = require('./dataPaths.cjs');
+const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./dataPaths.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, keyIdOf, createEncryptStream } = require('./backupCrypto.cjs');
@@ -487,11 +487,11 @@ if (!app.requestSingleInstanceLock()) {
     r.stream.destroy();
     return true;
   });
-  // 자동 백업 폴더는 기본 폴더로 고정합니다(화면이 경로를 보내지 않음). 없으면 만들어서 탐색기로 엽니다.
-  ipcMain.handle('backup:open-dir', async () => {
+  // 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null)
+  ipcMain.handle('backup:latest-auto', async () => {
     const d = defaultBackupDir();
-    await fs.mkdir(d, { recursive: true });
-    return shell.openPath(d);
+    const name = latestFullBackup(await fs.readdir(d).catch(() => []));
+    return name ? { path: path.join(d, name), name } : null;
   });
   ipcMain.handle('backup:get-status', async () => {
     try {

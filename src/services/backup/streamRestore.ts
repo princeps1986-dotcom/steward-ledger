@@ -3,7 +3,7 @@ import { assertNoDemo } from '../demo/demoState';
 import { setRestoreProgress, withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
 import { AUDIT_KEY_RE, auditKey, KEYS } from '../storage/keys';
-import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, type Write } from '../storage/storageService';
+import { getItem, listAuditKeys, listDonationMonths, monthWrite, strayRowWrites, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
 import { planMerge, remapAudits, remapDonations, restoredLists, type MergePlan, type RestoreOverwrite } from './mergeRules';
 import { Sha256 } from './sha256';
 import type { DesktopApi } from '../desktopBridge';
@@ -29,7 +29,7 @@ const MONTH_RE = /^\d{4}-\d{2}$/;
  * 암호화한 백업(.slbk)을 줄 단위로 읽을 수 있는 파일처럼 감쌉니다: 화면은 키를 모르므로 main이 풀어서(압축도 풀어서) 조각으로 건넵니다.
  * 검사·복원이 파일을 여러 번 읽으므로 stream()을 부를 때마다 새로 엽니다. 이름이 .json이라 readFileLines는 압축을 다시 풀지 않습니다.
  */
-export function decryptedBackup(api: Pick<DesktopApi, 'openBackupReader' | 'readBackup' | 'closeBackupReader'>, file: File, password?: string): ReadableBackup {
+export function decryptedBackup(api: Pick<DesktopApi, 'openBackupReader' | 'readBackup' | 'closeBackupReader'>, file: File | string, password?: string): ReadableBackup {
   return {
     name: 'backup.json',
     stream() {
@@ -200,8 +200,9 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
  * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
-export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years, overwrite));
-async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite): Promise<RestoreResult> {
+export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite, full = false): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years, overwrite, full));
+/** full: 현재 성도·헌금 종류·모든 헌금·이력을 지우고 백업 내용으로 완전히 교체합니다(years는 백업의 모든 연도). */
+async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite, full = false): Promise<RestoreResult> {
   await assertNoDemo();
   const want = new Set(years);
   const plan = await planFor(scan);
@@ -215,6 +216,12 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
   // 시작: 표시를 남기고, 선택한 연도의 기존 헌금·이력을 지우며, 백업에만 있는 성도·종류를 추가합니다(한 트랜잭션).
   await transact(async (read) => {
     const writes: Write[] = [{ key: KEYS.restoreMarker, value: { startedAt: new Date().toISOString(), years: [...years] } satisfies RestoreMarker }];
+    if (full) {
+      writes.push(...(await wipeDonationsWrites()));
+      for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
+      writes.push({ key: KEYS.members, value: scan.members }, { key: KEYS.offeringTypes, value: scan.offeringTypes });
+      return { writes, result: undefined };
+    }
     for (const ym of await listDonationMonths()) if (want.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
     for (const k of await listAuditKeys()) if (want.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
     const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
@@ -234,16 +241,17 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     if (!o) continue;
     if (o.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) {
       for (const d of o.data as Donation[]) ids.add(d.id);
-      const write = monthWrite(o.ym, remapDonations(o.data as Donation[], plan));
+      const write = monthWrite(o.ym, full ? (o.data as Donation[]) : remapDonations(o.data as Donation[], plan));
       await transact(async () => ({ writes: [write], result: undefined }));
       setRestoreProgress({ done: ++done, total });
     } else if (o.t === 'audit' && typeof o.year === 'string' && want.has(o.year)) {
-      const mapped = remapAudits(fillReason(o.data as AuditLog[]), plan);
+      const mapped = full ? fillReason(o.data as AuditLog[]) : remapAudits(fillReason(o.data as AuditLog[]), plan);
       const key = auditKey(o.year);
       if (mapped.length) await transact(async () => ({ writes: [{ key, value: mapped }], result: undefined }));
     }
   }
   // 끝: 다른 연도에 남은 같은 내역을 지우고 '복원 중' 표시를 내립니다(한 트랜잭션). 중간에 꺼지면 표시가 남아 다시 복원하게 됩니다.
   await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }));
+  if (full) return { addedMembers: scan.members.length, addedTypes: scan.offeringTypes.length, updatedMembers: 0, updatedTypes: 0 };
   return { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length, updatedMembers: updated.members, updatedTypes: updated.types };
 }

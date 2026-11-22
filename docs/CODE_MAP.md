@@ -26,7 +26,7 @@
 
 ## 설정 정보(백업·복원·시연 데이터·초기화·업데이트)
 - 화면·로직: `src/components/pages/settings/SettingsPage.tsx`, `src/hooks/useSettingsPage.ts`, `src/contexts/SettingsContext.tsx`
-- 백업·복원: `src/services/backup/backupService.ts`(줄 단위 백업), `streamRestore.ts`(줄 단위 복원), `mergeRules.ts`(다른 PC 백업 병합), `validation.ts`(체크섬·버전 변환), `sha256.ts`, `autoBackupService.ts`(종료·10분 자동 백업), `backupBusy.ts`(동시 실행 방지)
+- 백업·복원: `src/services/backup/backupService.ts`(줄 단위 백업), `streamRestore.ts`(줄 단위 복원: 연도별 수동 복원과 전체 복원 `full`), `mergeRules.ts`(다른 PC 백업 병합), `validation.ts`(체크섬·버전 변환), `sha256.ts`, `autoBackupService.ts`(종료·10분 자동 백업), `backupBusy.ts`(동시 실행 방지)
 - 시연 데이터: `src/services/demo/demoService.ts`, `demoData.ts`, `demoState.ts`, `src/hooks/useAutoDemo.ts`
 - 업데이트 안내: `src/hooks/useNewVersion.ts`(웹), main의 `update:check`(데스크톱)
 

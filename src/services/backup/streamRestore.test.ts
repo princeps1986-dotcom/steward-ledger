@@ -81,6 +81,19 @@ describe('restoreFromFile', () => {
     expect(await listDonationMonths()).toEqual(['2025-03', '2026-01']);
   });
 
+  it('full restore wipes the current data (including years not in the backup) and replaces it with the backup', async () => {
+    const file = await makeBackup();
+    // 백업 뒤에 현재 데이터가 바뀜: 2026 내역 교체, 백업에 없는 2027 추가
+    await transact(async () => ({ writes: [monthWrite('2026-01', [d('z', '2026-01-25')]), monthWrite('2027-05', [d('w', '2027-05-01')])], result: 0 }));
+    const scan = await scanBackupFile(file);
+    if (!scan.ok) throw new Error(scan.error);
+    await restoreFromFile(file, scan, Object.keys(scan.yearCounts), undefined, true);
+    expect((await readMonth('2026-01')).map((x) => x.id).sort()).toEqual(['b', 'c']);
+    expect((await readMonth('2025-03')).map((x) => x.id)).toEqual(['a']);
+    expect(await listDonationMonths()).toEqual(['2025-03', '2026-01']); // 2027은 삭제
+    expect(await interruptedRestore()).toBeNull();
+  });
+
   it('does not parse months of years that were not chosen, and reports added members/types', async () => {
     const file = await makeBackup();
     const scan = await scanBackupFile(file);

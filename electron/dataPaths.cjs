@@ -54,4 +54,9 @@ function backupsToPrune(names) {
   return out;
 }
 
-module.exports = { resolveUserDataDir, backupsToPrune, USER_DATA_NAME };
+/** 백업 폴더의 파일 이름 중 가장 최근 종료 전체 백업(backup_*.slbk). 없으면 null. 10분 주기 autosave_*는 바뀐 연도만 담으므로 제외 */
+function latestFullBackup(names) {
+  return names.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort().pop() ?? null;
+}
+
+module.exports = { resolveUserDataDir, backupsToPrune, latestFullBackup, USER_DATA_NAME };

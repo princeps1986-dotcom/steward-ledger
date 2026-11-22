@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useSettingsPage } from '../../../hooks/useSettingsPage';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
@@ -6,6 +7,7 @@ import { ConfirmFooter } from '../../shared/ConfirmFooter';
 
 export function SettingsPage() {
   const s = useSettingsPage();
+  const fileRef = useRef<HTMLInputElement>(null);
   const singleRestoreYear = s.restoreYearOptions.length === 1;
   return (
     <div className="max-w-3xl space-y-4">
@@ -54,21 +56,16 @@ export function SettingsPage() {
         <h3 className="font-semibold">
           자동 로컬 백업 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
         </h3>
+        {/* 자동 백업은 데스크톱 앱에서만 동작하므로 브라우저에서는 꺼진 상태로 보여 주고 바꿀 수 없습니다. */}
+        <label className={`flex flex-wrap items-center gap-3 rounded-lg border-2 p-3 ${s.isDesktop && s.autoBackupEnabled ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'}`}>
+          <input type="checkbox" className="h-5 w-5 cursor-pointer" checked={s.isDesktop && s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
+          <span className="text-base font-semibold text-gray-900">변경 사항이 있으면 해당 연도 자동 백업: 10분마다(최근 3개 보관)</span>
+        </label>
         <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm font-semibold text-amber-900">
           자동 백업 파일은 이 PC의 키로 잠겨 있어, PC를 바꾸거나 Windows를 다시 설치하면 자동 백업 파일로 복원할 수 없습니다. 아래 [백업 파일 저장]으로 수동 백업을 하고, 메일·USB 같은 별도 저장소에 보관하세요.
         </p>
-        <label className="flex items-center gap-2 text-sm">
-          {/* 자동 백업은 데스크톱 앱에서만 동작하므로 브라우저에서는 꺼진 상태로 보여 주고 바꿀 수 없습니다. */}
-          <input type="checkbox" checked={s.isDesktop && s.autoBackupEnabled} disabled={!s.isDesktop || s.backupBlocked} onChange={(e) => s.toggleAutoBackup(e.target.checked)} />
-          변경 사항이 있으면 해당 연도 자동 백업: 10분마다(최근 3개 보관)
-        </label>
         {s.isDesktop && !s.autoBackupEnabled ? <p className="text-sm font-semibold text-red-700">10분 자동 백업이 꺼져 있습니다. 앱이 비정상 종료되면 마지막 백업 이후 입력한 내용을 잃을 수 있습니다.</p> : null}
         <p className="text-sm text-gray-600">앱을 닫을 때는 체크와 상관없이, 마지막 전체 백업 이후 바뀐 내용이 있으면 항상 전체 백업합니다(최근 10개 보관).</p>
-        <div>
-          <button className="btn" onClick={s.openBackupDir} disabled={!s.isDesktop}>
-            백업 폴더 열기
-          </button>
-        </div>
         {!s.isDesktop ? <p className="text-sm text-gray-600">자동 백업은 PC(데스크톱 앱)에서만 작동합니다. 브라우저에서는 [백업 파일 저장]으로 직접 백업하세요.</p> : null}
         {s.backupBlocked ? <p className="text-sm font-semibold text-red-700">시연 데이터를 쓰는 동안에는 백업·복원과 자동 백업을 쓸 수 없습니다. [시연 데이터 제거] 후 다시 쓸 수 있습니다.</p> : null}
       </section>
@@ -88,10 +85,10 @@ export function SettingsPage() {
           >
             백업 파일 저장
           </button>
-          <label className={`btn ${s.backupBlocked ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`} aria-disabled={s.backupBlocked}>
+          <button className="btn" onClick={s.openRestoreChoice} disabled={s.busy || s.backupBlocked}>
             백업 파일 복원
-            <input type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
-          </label>
+          </button>
+          <input ref={fileRef} type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
         </div>
         {/* 전체 백업(앱 종료 때 자동 백업, 모든 연도를 담은 직접 백업)이 성공했을 때만 갱신됩니다. */}
         <p className="text-sm text-gray-600">마지막 전체 백업: {s.lastBackupLabel}</p>
@@ -290,7 +287,7 @@ export function SettingsPage() {
             {s.hasFullBackup ? (
               <>
                 <p>마지막 전체 백업: <b>{s.lastBackupLabel}</b></p>
-                <p className="mt-1">[백업 파일 복원]으로 <b>복구</b>할 수 있습니다. 단, 그 뒤에 입력한 내용은 <b className="text-red-700">복구할 수 없습니다</b>.</p>
+                <p className="mt-1">[백업 파일 복원]으로 <b>복구</b>할 수 있습니다.</p>
               </>
             ) : (
               <p><b className="text-red-700">전체 백업 파일이 없습니다.</b> 초기화하면 지금 데이터를 <b className="text-red-700">복구할 수 없습니다</b>. 먼저 [백업 파일 저장]으로 백업하세요.</p>
@@ -306,17 +303,58 @@ export function SettingsPage() {
       </Modal>
 
       <Modal
+        open={s.restoreChoiceOpen}
+        onClose={s.closeRestoreChoice}
+        title="복원 방법을 선택하세요"
+        description="전체 복원 또는 연도별 수동 복원 중 하나를 고릅니다."
+        footer={
+          <button className="btn" onClick={s.closeRestoreChoice}>
+            취소
+          </button>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <div className="flex items-start gap-3">
+          <button className="btn-primary w-28 shrink-0" onClick={() => void s.startFullRestore()} disabled={!s.isDesktop || !s.latestAutoLabel}>
+            전체 복원
+          </button>
+          <p className="text-gray-600">
+            {!s.isDesktop
+              ? '자동 백업은 PC(데스크톱 앱)에서만 쓸 수 있습니다.'
+              : s.latestAutoLabel === undefined
+                ? '자동 백업 파일을 찾는 중…'
+                : s.latestAutoLabel
+                  ? <>백업 일시 <b>{s.latestAutoLabel}</b>. 현재 성도·헌금·이력을 <b className="text-red-700">모두 지우고</b> 이 백업으로 바꿉니다.</>
+                  : '앱을 닫을 때 저장된 전체 자동 백업 파일이 없습니다.'}
+          </p>
+          </div>
+          <div className="flex items-start gap-3">
+          <button
+            className="btn w-28 shrink-0"
+            onClick={() => {
+              s.closeRestoreChoice();
+              fileRef.current?.click();
+            }}
+          >
+            연도별 복원
+          </button>
+          <p className="text-gray-600">파일 안의 연도 하나만 복원합니다.</p>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         open={!!s.restore}
         onClose={s.cancelRestore}
-        title={singleRestoreYear ? `${s.restoreYear}년 백업 파일을 복원할까요?` : '백업 파일 복원할까요?'}
-        description={singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다.` : '복원할 연도를 선택하세요.'}
+        title={s.restore?.full ? '전체 복원할까요?' : singleRestoreYear ? `${s.restoreYear}년 백업 파일을 복원할까요?` : '백업 파일 복원할까요?'}
+        description={s.restore?.full ? '현재 모든 데이터가 백업 시점으로 바뀝니다.' : singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다.` : '복원할 연도를 선택하세요.'}
         footer={
           <ConfirmFooter
             onCancel={s.cancelRestore}
             onConfirm={s.confirmRestore}
             tone="danger"
-            confirmDisabled={s.busy || !s.restoreYear}
-            confirmLabel={singleRestoreYear ? `${s.restoreYear}년 복원` : '복원'}
+            confirmDisabled={s.busy || (!s.restore?.full && !s.restoreYear)}
+            confirmLabel={s.restore?.full ? '전체 복원' : singleRestoreYear ? `${s.restoreYear}년 복원` : '복원'}
           />
         }
       >
@@ -326,6 +364,13 @@ export function SettingsPage() {
           </p>
           <p>{s.restore?.summary}</p>
           {s.restore?.mergeNotice ? <p className="rounded bg-blue-50 p-2 text-xs text-blue-800">{s.restore.mergeNotice}</p> : null}
+          {s.restore?.full ? (
+            <div className="rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900">
+              <p className="font-bold">현재 성도·헌금 종류·헌금 내역·수정·삭제 이력이 모두 삭제되고, 이 백업 시점의 내용으로 바뀝니다.</p>
+              <p className="mt-1">백업 이후에 입력한 내용은 <b>복구할 수 없습니다</b>. 백업에 없는 연도도 삭제됩니다.</p>
+            </div>
+          ) : null}
+          {!s.restore?.full ? (<>
           {/* 연도가 하나뿐인 파일(직접 만든 연도 백업)은 고를 것이 없으므로 선택 상자 대신 그 연도를 보여 줍니다. */}
           {singleRestoreYear ? (
             <p className="rounded border border-gray-200 p-2">
@@ -363,7 +408,7 @@ export function SettingsPage() {
               '이 백업 파일에는 복원할 헌금 내역(연도)이 없어 복원할 수 없습니다.'
             ) : (
               <>
-                <b className="text-red-700 underline">{singleRestoreYear ? `${s.restoreYear}년` : '선택한 연도'}</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다(아래에서 덮어쓰기를 고르면 같은 항목도 백업 내용으로 바뀝니다).
+                <b className="text-red-700 underline">{singleRestoreYear ? `${s.restoreYear}년` : '선택한 연도'}</b>의 헌금과 수정·삭제 이력만 백업 내용으로 바뀝니다.<br/>다른 연도는 그대로이며, 성도·헌금 종류는 지우지 않고 백업에만 있는 항목을 추가합니다.<br/>(아래에서 덮어쓰기를 고르면 같은 항목도 백업 내용으로 바뀝니다).
               </>
             )}
           </p>
@@ -382,6 +427,7 @@ export function SettingsPage() {
               ) : null}
             </div>
           ) : null}
+          </>) : null}
           {s.restore?.migratedFrom ? <p className="text-amber-700">구버전(v{s.restore.migratedFrom}) 백업입니다. v2 형식으로 자동 변환됩니다.</p> : null}
           <p className="text-gray-600">무결성 검증을 통과했습니다.</p>
         </div>
