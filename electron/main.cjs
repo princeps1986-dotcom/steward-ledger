@@ -395,7 +395,11 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   // 화면이 선택한 백업 파일 경로: 정규화한 뒤 드라이브 문자 경로만 읽는다. UNC(\\서버\공유, \/서버/공유 같은 혼합 구분자)·장치 경로는 막는다(원격 인증 정보가 나가는 것을 막음)
+  // 전체 복원: 화면은 경로를 모르고 이 표식만 주고받습니다(화면이 임의 경로를 넘기지 못하게). 실제 경로는 backup:latest-auto가 정해 둡니다.
+  const AUTO_LATEST = 'auto:latest';
+  let latestAutoPath = null;
   const backupFilePath = (file) => {
+    if (file === AUTO_LATEST) return latestAutoPath;
     if (typeof file !== 'string' || !/\.(json|gz|slbk)$/i.test(file)) return null;
     const resolved = path.resolve(file);
     return /^[A-Za-z]:[\\/]/.test(resolved) ? resolved : null;
@@ -491,7 +495,8 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:latest-auto', async () => {
     const d = defaultBackupDir();
     const name = latestFullBackup(await fs.readdir(d).catch(() => []));
-    return name ? { path: path.join(d, name), name } : null;
+    latestAutoPath = name ? path.join(d, name) : null;
+    return name ? { path: AUTO_LATEST, name } : null;
   });
   ipcMain.handle('backup:get-status', async () => {
     try {

@@ -1,7 +1,8 @@
 // contextBridge로 렌더러에 최소 API만 노출합니다 (src/services/desktopBridge.ts의 DesktopApi).
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const pathOf = (file) => (typeof file === 'string' ? file : webUtils.getPathForFile(file));
+// 문자열은 main이 알려 준 전체 복원 표식('auto:latest')만 받습니다. 임의 경로 문자열은 넘기지 못합니다.
+const pathOf = (file) => (file === 'auto:latest' ? file : webUtils.getPathForFile(file));
 
 contextBridge.exposeInMainWorld('desktop', {
   getAutoBackupStatus: () => ipcRenderer.invoke('backup:get-status'),

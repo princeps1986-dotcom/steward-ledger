@@ -68,9 +68,9 @@ export interface DesktopApi {
   backupEnd(id: number): Promise<string>;
   /** 복원할 백업 파일의 체크섬을 main이 확인합니다(암호화한 파일은 풀어서). ''=통과, 문구=실패 사유, null=확인하지 않음(경로를 모르는 파일 등) */
   verifyBackupFile?(file: File | string, password?: string): Promise<string | null>;
-  /** 백업 파일이 암호화됐는지·암호가 필요한지(null = 경로를 모르는 파일). 파일 대신 경로 문자열도 받음 */
+  /** 백업 파일이 암호화됐는지·암호가 필요한지(null = 경로를 모르는 파일). 파일 대신 latestAutoBackup이 준 표식도 받음 */
   inspectBackupFile(file: File | string): Promise<BackupFileInfo | null>;
-  /** 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null) */
+  /** 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null). path는 실제 경로가 아니라 main이 해석하는 표식 */
   latestAutoBackup(): Promise<SavedFileInfo | null>;
   /** 암호화한 백업을 main이 풀어 줄 단위 평문 조각으로 건넵니다: open → read(끝이면 null) → close */
   openBackupReader(file: File | string, password?: string): Promise<number>;
