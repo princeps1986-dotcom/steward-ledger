@@ -1,0 +1,50 @@
+# 청지기 장부 — 코드 지도 (기능 → 파일)
+
+기능을 고칠 때 **어느 파일부터 보면 되는지**를 한곳에 모았습니다. 그래프(`graphify query`)가 기능 이름에서 파일을 바로 찾도록, 기능마다 제목 아래에 실제 경로를 적었습니다. 설계 이유는 [ARCHITECTURE.md](../ARCHITECTURE.md), 요구사항은 [PRD.md](../PRD.md)를 보세요. 파일을 옮기거나 이름을 바꾸면 이 문서도 함께 고칩니다.
+
+계층은 화면(`components`) → 화면 로직(`hooks`) → 상태(`contexts`) → 순수 규칙(`services/domain`) · 저장(`services/storage`) 순으로 아래를 호출합니다. 데스크톱 전용 기능은 `src/services/desktopBridge.ts`를 거쳐 `electron/`으로 갑니다.
+
+## 헌금 입력
+- 화면: `src/components/pages/donation-input/DonationInputPage.tsx` (성도 찾기 `MemberSearchBox.tsx`, 금액 `AmountRow.tsx`, 합계 대조 `DailyTotalsBar.tsx`, 최근 입력 `HistoryPanel.tsx`, 중복 확인 `DuplicateModal.tsx`, 큰 금액 확인 `LargeAmountModal.tsx`, 빠른 등록 `QuickRegisterModal.tsx`, 처음 안내 `FirstRunGuide.tsx`)
+- 로직: `src/hooks/useDonationInput.ts`, `useDailyTotals.ts`, `useHistoryItems.ts`, `useDatePicker.ts`
+- 규칙: `src/services/domain/amount.ts`(금액), `search.ts`(찾기), `anonymous.ts`(무명·방문자), `donationOps.ts`(같은 헌금 합산·복구하기), `offeringDefaults.ts`
+- 저장: `src/contexts/DonationContext.tsx` → `src/services/storage/storageService.ts`
+
+## 보고서(일별·주별·월별·분기별·연도별·개인별)
+- 화면: `src/components/pages/reports/ReportsPage.tsx`, 탭 `SummaryTab.tsx`·`ListTab.tsx`·`PersonalTab.tsx`·`AuditTab.tsx`, 수정 `DonationEditModal.tsx`, 인쇄 머리글 `PrintHeader.tsx`
+- 로직: `src/hooks/useReports.ts`(기간 선택·250ms 지연의 `useReportFilters` 포함), `useDonationEditor.ts`, `usePaging.ts`, `useIsPrinting.ts`, `useNameTag.ts`
+- 규칙: `src/services/domain/periodSummary.ts`(집계), `weekly.ts`, `donationList.ts`, `listPager.ts`, `auditFilter.ts`(수정·삭제 이력), `family.ts`(세대 합산), `memberName.ts`(동명이인 표기), `positions.ts`(직분), `monthCache.ts`(월 캐시), `compare.ts`
+- PDF 저장: `useReports.ts` → `desktopBridge.savePdf` → `electron/main.cjs`의 `report:save-pdf`
+
+## 성도 정보
+- 화면: `src/components/pages/members/MembersPage.tsx`, `MemberEditModal.tsx`, 명단 불러오기 `MemberImportModal.tsx`
+- 로직: `src/hooks/useMembersPage.ts`, `useMemberForm.ts`, `useMemberImport.ts`
+- 규칙·상태: `src/services/domain/memberRules.ts`, `memberSort.ts`, `src/contexts/MemberContext.tsx`, CSV `src/services/import/memberImportService.ts`
+
+## 헌금 종류
+- `src/components/pages/offerings/OfferingsPage.tsx`, `src/hooks/useOfferingsPage.ts`, `src/contexts/OfferingTypeContext.tsx`
+
+## 설정 정보(백업·복원·시연 데이터·초기화·업데이트)
+- 화면·로직: `src/components/pages/settings/SettingsPage.tsx`, `src/hooks/useSettingsPage.ts`, `src/contexts/SettingsContext.tsx`
+- 백업·복원: `src/services/backup/backupService.ts`(줄 단위 백업), `streamRestore.ts`(줄 단위 복원), `mergeRules.ts`(다른 PC 백업 병합), `validation.ts`(체크섬·버전 변환), `sha256.ts`, `autoBackupService.ts`(종료·10분 자동 백업), `backupBusy.ts`(동시 실행 방지)
+- 시연 데이터: `src/services/demo/demoService.ts`, `demoData.ts`, `demoState.ts`, `src/hooks/useAutoDemo.ts`
+- 업데이트 안내: `src/hooks/useNewVersion.ts`(웹), main의 `update:check`(데스크톱)
+
+## 저장소(IndexedDB)
+- `src/services/storage/db.ts`(Dexie 정의), `storageService.ts`(원자적 트랜잭션·월 키), `keys.ts`, `storageErrors.ts`, `tabSyncChannel.ts`(창 간 동기화)
+- 상태 보관: `src/contexts/DonationContext.tsx`(달 단위 메모리 모델), `AppProviders.tsx`, 데이터 모델 `types.ts`
+
+## 데스크톱 셸(Electron)
+- `electron/main.cjs`(창, 백업·복원·PDF·업데이트 IPC, CSP, 종료 시 자동 백업), `preload.cjs`(노출 API, 타입은 `src/services/desktopBridge.ts`의 `DesktopApi`)
+- `electron/backupCrypto.cjs`(백업 암호화), `backupVerify.cjs`(백업 검증), `restoreLog.cjs`(복원 기록), `dataPaths.cjs`(데이터·백업 폴더)
+- 브라우저와 PC앱의 기능 차이는 `desktop()`(`desktopBridge.ts`)이 있는지로 갈립니다(`BrowserNotice.tsx`, `useAutoDemo.ts` 등).
+
+## 앱 뼈대·공통 화면
+- 시작: `src/main.tsx` → `src/App.tsx`, `src/hooks/useAppShell.ts`(메뉴·종료 백업 처리)
+- 공통 부품: `src/components/shared/` (`Modal.tsx`, `DatePicker.tsx`, `Notice.tsx`, `ErrorBoundary.tsx`, `ClosingOverlay.tsx`, `RestoringOverlay.tsx` 등), 테마 `src/services/theme.ts`
+- 설명서: `src/components/pages/help/helpContent.ts`(기능이 바뀌면 함께 고침), `HelpPage.tsx`, `src/hooks/useHelpPage.ts`
+
+## 개발 도구
+- 실행: `npm run dev`(브라우저 모드), `npm run dev:app`(`scripts/dev-app.mjs`, 개발 서버 + Electron 창)
+- 시험 데이터: `scripts/generate-test-data.mjs`, `testdata-core.mjs` · 스모크 시험: `scripts/smoke.mjs`
+- 배포: `.github/workflows/pages.yml`(시연 페이지), `npm run dist`(설치 파일)
