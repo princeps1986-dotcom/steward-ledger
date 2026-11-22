@@ -429,7 +429,8 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 | 명령 | 용도 |
 | :--- | :--- |
-| `npm run dev` | 개발 서버 (http://localhost:5173) |
+| `npm run dev` | 개발 서버 (http://localhost:5173), 브라우저 모드 |
+| `npm run dev:app` | 개발 서버 + Electron 창(PC앱 모드). 창을 닫으면 서버도 종료 |
 | `npm run build` | 타입 검사 + 웹 빌드 |
 | `npm test` | 전체 테스트 |
 | `npm run testdata` | 시험 데이터 백업 파일 생성 |

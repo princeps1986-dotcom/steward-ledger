@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:app": "node scripts/dev-app.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

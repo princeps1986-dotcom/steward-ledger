@@ -25,7 +25,8 @@
 
 ```bash
 npm install
-npm run dev        # 개발 서버 http://localhost:5173
+npm run dev        # 개발 서버 http://localhost:5173 (브라우저 모드)
+npm run dev:app    # 개발 서버 + Electron 창 (PC앱 모드)
 npm test           # 자동 테스트
 npm run build      # 타입 검사 + 웹 빌드
 ```
