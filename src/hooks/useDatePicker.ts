@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { buildMonthGrid, shiftMonth, weekdayLabelOf, WEEKDAY_LABELS } from '../services/domain/calendar';
+import { buildMonthGrid, shiftMonth, WEEKDAY_LABELS } from '../services/domain/calendar';
 import { isValidDateString, seoulNow, todayString } from '../services/domain/dates';
 
 const CELL_BASE = 'h-8 w-full rounded text-sm';
@@ -81,12 +81,9 @@ export function useDatePicker({ value, onChange }: { value: string; onChange(v: 
 
   const weekdays = WEEKDAY_LABELS.map((label, i) => ({ label, className: `h-7 w-full text-center text-xs font-medium leading-7 ${i === 0 ? 'text-red-600' : 'text-gray-500'}` }));
 
-  const weekday = weekdayLabelOf(value);
-
   return {
     open,
     openCalendar,
-    weekday,
     popupClassName: POPUP,
     toggle,
     rootRef,
