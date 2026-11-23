@@ -64,6 +64,13 @@ describe('remap', () => {
     expect(out[1]).toMatchObject({ memberId: null, offeringTypeId: 'ct1' });
   });
 
+  it('연결된 성도가 다른 세대 번호(세대주를 바꾼 세대)에 있으면 헌금의 세대 스냅샷도 그 번호를 쓴다', () => {
+    const here = { members: [m('c0', '김부친', undefined, { familyGroupId: 'c0' }), m('c1', '김영수', '1234', { familyGroupId: 'c0' })], offeringTypes: [] };
+    const p = planMerge(here, { members: [m('b1', '김영수', '1234', { familyGroupId: 'b1' })], offeringTypes: [] });
+    const out = remapDonations([{ ...d('1', '2025-01-05', 'b1', 'x'), familyGroupIdSnapshot: 'b1' }], p);
+    expect(out[0]).toMatchObject({ memberId: 'c1', familyGroupIdSnapshot: 'c0' });
+  });
+
   it('수정/삭제 이력의 이전·이후 스냅샷도 바꾼다', () => {
     const a: AuditLog = { id: 'a', targetId: '1', action: 'UPDATE', beforeSnapshot: d('1', '2025-01-05', 'b1', 'bt1'), afterSnapshot: null, reason: 'r', timestamp: '' };
     expect(remapAudits([a], plan)[0].beforeSnapshot).toMatchObject({ memberId: 'c1', offeringTypeId: 'ct1' });

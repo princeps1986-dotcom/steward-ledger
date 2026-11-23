@@ -18,7 +18,7 @@ export function Notice({ message, action, actions, success }: Props) {
   const buttons = actions ?? (action ? [action] : []);
   const m = typeof message === 'string' ? { kind: 'info' as const, text: message } : message;
   return (
-    <div role="status" className={`flex items-center gap-3 rounded border px-3 py-2 text-sm ${STYLE[m.kind]} ${success && m.kind === 'info' ? 'pop-in font-semibold' : ''}`}>
+    <div role={m.kind === 'error' ? 'alert' : 'status'} className={`flex items-center gap-3 rounded border px-3 py-2 text-sm ${STYLE[m.kind]} ${success && m.kind === 'info' ? 'pop-in font-semibold' : ''}`}>
       {success && m.kind === 'info' ? (
         <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs text-white">
           ✓

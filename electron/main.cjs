@@ -220,6 +220,8 @@ if (!app.requestSingleInstanceLock()) {
    */
   function runAutoBackup(win) {
     return new Promise((resolve) => {
+      // 화면이 이미 죽어 있으면 응답도, render-process-gone 알림도 오지 않아 제한 시간(5분)까지 닫히지 않습니다. 데이터는 IndexedDB에 그대로 있습니다.
+      if (win.webContents.isCrashed()) return resolve(true);
       const requestId = `${Date.now()}-${Math.random()}`;
       let done = false;
       const cleanup = () => {

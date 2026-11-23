@@ -217,7 +217,6 @@ export async function openStorage(): Promise<void> {
 const byEntryOrder = (a: Donation, b: Donation): number =>
   a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
-/** 한 달('YYYY-MM')의 헌금을 입력한 순서(만든 시각)대로 읽습니다. 날짜 범위만 읽습니다. */
 /**
  * 한 달치를 읽을 때 같은 값의 문자열(성도 번호·헌금 종류·날짜·표기명)을 한 개로 합쳐 메모리를 줄입니다.
  * IndexedDB는 행마다 문자열을 새로 만들어 주므로, 합치지 않으면 같은 값이 수만 번 따로 메모리를 차지합니다.
@@ -239,6 +238,7 @@ export function internDonations(rows: Donation[]): Donation[] {
   return rows;
 }
 
+/** 한 달('YYYY-MM')의 헌금을 입력한 순서(만든 시각)대로 읽습니다. 날짜 범위만 읽습니다. */
 export async function readMonth(ym: string): Promise<Donation[]> {
   return internDonations(await monthRange(ym).toArray()).sort(byEntryOrder);
 }

@@ -51,9 +51,10 @@ export function App() {
   return (
     <>
       {restoring ? <RestoringOverlay /> : null}
-      {/* 확인·복원 중에는 덮개 뒤의 앱 전체를 inert로 막아 클릭뿐 아니라 Tab·Enter로도 조작할 수 없게 합니다. */}
-    <div className="flex h-full flex-col" inert={restoring}>
+      {/* 종료 백업 중에는 앱이 저장하지 않는다고 보고 백업이 끝나면 변경 표시를 내리므로, 덮개는 inert 밖에 두어 [백업 없이 종료]는 누를 수 있게 합니다. */}
       {backup.closing ? <ClosingOverlay onSkip={backup.skipBackup} /> : null}
+      {/* 확인·복원·종료 백업 중에는 덮개 뒤의 앱 전체를 inert로 막아 클릭뿐 아니라 Tab·Enter로도 조작할 수 없게 합니다. */}
+    <div className="flex h-full flex-col" inert={restoring || backup.closing}>
       <AutoSaveToast status={backup.autoSave} />
       <BrowserNotice />
       <DemoBanner />
