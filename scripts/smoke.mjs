@@ -64,6 +64,8 @@ try {
   // 권한 단계에서 답이 없으면 timeout 옵션이 적용되지 않으므로 5초 타이머와 경쟁시킵니다.
   const perm = await ev('new Promise((res) => { setTimeout(() => res("시간 초과"), 5000); navigator.geolocation.getCurrentPosition(() => res("허용됨"), (e) => res(e.code === 1 ? "거부" : "오류" + e.code)); })');
   check('보안: 위치 권한 요청이 거부됨', perm === '거부', perm);
+  check('저장소: 영구 저장소 권한이 허용됨', (await ev('navigator.storage.persisted()')) === true);
+  check('보안: 오른쪽 버튼 메뉴가 막힘', (await ev('(() => { const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented; })()')) === true);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');

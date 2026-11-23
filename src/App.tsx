@@ -10,6 +10,7 @@ import { DemoBanner } from './components/shared/DemoBanner';
 import { DemoPreparing } from './components/shared/DemoPreparing';
 import { GlobalErrorBanner } from './components/shared/GlobalErrorBanner';
 import { NewVersionBanner } from './components/shared/NewVersionBanner';
+import { WhatsNewModal } from './components/shared/WhatsNewModal';
 import { DonationInputPage } from './components/pages/donation-input/DonationInputPage';
 import { useAutoDemo } from './hooks/useAutoDemo';
 import { refreshDemoState } from './services/demo/demoState';
@@ -74,6 +75,7 @@ export function App() {
       </header>
       <GlobalErrorBanner />
       <NewVersionBanner />
+      <WhatsNewModal />
       <BackupReminderBanner {...reminder} />
       <main ref={mainRef} className="flex-1 overflow-y-auto p-4 print:overflow-visible print:px-[8mm] print:py-[5mm]">
         {/* 한 화면에서 오류가 나도 앱 전체가 멈추지 않도록 화면마다 경계를 둡니다. 메뉴를 옮기면 새로 시작합니다. */}

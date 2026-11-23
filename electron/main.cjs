@@ -1,7 +1,7 @@
 // Electron main 프로세스 (Windows 전용 데스크톱 셸)
 // - 단일 인스턴스 잠금
 // - app:// 커스텀 프로토콜로 dist 서빙 + CSP 헤더 강제
-// - 종료 시 자동 로컬 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
+// - 종료 시 자동 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
 process.env.TZ = 'Asia/Seoul'; // 날짜·시각은 PC 설정과 상관없이 서울 기준(화면 프로세스도 상속)
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
@@ -282,7 +282,7 @@ if (!app.requestSingleInstanceLock()) {
             message: '자동 백업에 실패했습니다.',
             detail: `${msg}
 
-백업 폴더(설정 정보 > 자동 로컬 백업)를 확인하세요. 데이터는 앱 안에 그대로 있습니다. 종료를 취소하면 앱을 계속 쓸 수 있습니다.`,
+백업 폴더(설정 정보 > 자동 백업)를 확인하세요. 데이터는 앱 안에 그대로 있습니다. 종료를 취소하면 앱을 계속 쓸 수 있습니다.`,
           });
           if (r.response === 1) {
             if (!win.isDestroyed()) win.webContents.send('backup:cancelled');
@@ -322,6 +322,8 @@ if (!app.requestSingleInstanceLock()) {
         nodeIntegration: false,
         sandbox: true,
         spellcheck: false,
+        // 설치한 앱에서는 개발자 도구(F12·Ctrl+Shift+I 등)를 열 수 없게 해 저장소 열람·조작을 막습니다. 개발 실행에서만 열림.
+        devTools: !app.isPackaged,
       },
     });
 
@@ -597,9 +599,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
-    // 이 앱은 카메라·위치·알림 같은 권한이 필요 없으므로 모든 권한 요청을 거부합니다.
-    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    // 카메라·위치·알림 같은 권한은 모두 거부하고, 저장소가 자동 정리되지 않게 하는 영구 저장소(persistent-storage)만 허용합니다.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'persistent-storage'));
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'persistent-storage');
     protocol.handle('app', async (request) => {
       const { pathname } = new URL(request.url);
       let rel;

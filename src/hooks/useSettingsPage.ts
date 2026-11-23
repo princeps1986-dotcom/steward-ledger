@@ -446,21 +446,20 @@ export function useSettingsPage() {
     fontScale: settings.fontScale,
     changeFontScale: (v: FontScale) => void update({ fontScale: v }),
     fontScaleOptions: [
+      { value: 'SMALL' as const, label: '작게' },
       { value: 'NORMAL' as const, label: '보통' },
       { value: 'LARGE' as const, label: '크게' },
       { value: 'XLARGE' as const, label: '매우 크게' },
     ],
-    backupHelp:
-      '특정 연도를 선택해야 합니다. (성도·헌금 종류는 항상 포함)\n복원하면 선택한 연도의 헌금과 수정·삭제 이력이 백업 내용으로 바뀝니다.',
     periodicBusyOpen,
     closePeriodicBusy: () => setPeriodicBusyOpen(false),
     lastBackupLabel: settings.lastBackupAt ? formatDateTime(settings.lastBackupAt) : '없음',
     hasFullBackup: !!settings.lastBackupAt,
     lastCloseBackupLabel: settings.lastCloseBackupAt ? formatDateTime(settings.lastCloseBackupAt) : '없음',
-    // 최근 연도부터: '2026년 2026-11-21 10:00'
-    manualBackupLabels: Object.entries(settings.manualBackupAt)
+    // 최근 연도부터: { year: '2026', at: '2026-11-21 10:00' }
+    manualBackups: Object.entries(settings.manualBackupAt)
       .sort(([a], [b]) => b.localeCompare(a))
-      .map(([y, at]) => `${y}년 ${formatDateTime(at)}`),
+      .map(([year, at]) => ({ year, at: formatDateTime(at) })),
     hasMembersOrDonations,
     backupNow,
     backupOpen,

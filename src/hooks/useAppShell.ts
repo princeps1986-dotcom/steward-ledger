@@ -140,7 +140,7 @@ export function useBackupReminder(autoBackupFailure: string | null, goSettings: 
     tone = 'error';
   } else if (demoBlocked) {
     text = null;
-  } else if (loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
+  } else if (desktop() && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
     text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
   }
 

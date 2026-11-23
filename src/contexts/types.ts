@@ -78,13 +78,15 @@ export interface AppSettings {
   lastCloseBackupAt: string | null;
   /** 연도별 마지막 수동 백업([백업 파일 저장]) 시각. 키는 연도('2026') */
   manualBackupAt: Record<string, string>;
-  /** 화면 글자 크기 (보통/크게/매우 크게) */
+  /** 화면 글자 크기 (작게/보통/크게/매우 크게) */
   fontScale: FontScale;
   theme: AppTheme;
   printTheme: PrintTheme;
+  /** 변경 내역 창을 마지막으로 확인한 데스크톱 앱 버전(업데이트 후 첫 실행에 한 번 보여 주기용) */
+  seenVersion?: string;
 }
 
-export type FontScale = 'NORMAL' | 'LARGE' | 'XLARGE';
+export type FontScale = 'SMALL' | 'NORMAL' | 'LARGE' | 'XLARGE';
 /** 화면 테마: 차분한 블루(기본) / 밝고 따뜻한 / 눈이 편안한 / 어두운 */
 export type AppTheme = 'BLUE' | 'WARM' | 'CALM' | 'DARK';
 /** 인쇄 양식 색상: 흑백(기본) + 밝은 화면 테마 3종(어두운 테마는 인쇄에 쓰지 않음) */

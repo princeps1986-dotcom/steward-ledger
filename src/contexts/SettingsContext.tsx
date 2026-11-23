@@ -17,7 +17,7 @@ interface SettingsState {
   actions: SettingsActions;
 }
 
-const FONT_SCALE_PERCENT: Record<FontScale, string> = { NORMAL: '', LARGE: '112.5%', XLARGE: '125%' };
+const FONT_SCALE_PERCENT: Record<FontScale, string> = { SMALL: '87.5%', NORMAL: '', LARGE: '112.5%', XLARGE: '125%' };
 
 const SettingsCtx = createContext<SettingsState | null>(null);
 

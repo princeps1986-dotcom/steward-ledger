@@ -1,13 +1,14 @@
 # 청지기 장부
 
-교회 헌금 기록 프로그램(Windows Electron 앱, 데이터는 IndexedDB에만 저장, 서버 없음). 답변과 문서는 한글로 쓴다.
+교회 헌금 기록 프로그램(Windows Electron 앱, 데이터는 IndexedDB에만 저장, 서버 없음). 답변과 문서는 반드시 한글로 한다.
 
 ## 코드 탐색
 1. 첫 grep·검색·소스 읽기 전에 `graphify query "<질문>"`을 먼저 실행한다. 관계는 `graphify path "<A>" "<B>"`, 개념은 `graphify explain "<개념>"`.
 2. 기능 → 파일은 `docs/CODE_MAP.md`, 설계 이유는 `ARCHITECTURE.md`, 요구사항은 `PRD.md`.
 3. 그래프나 문서가 가리킨 파일·줄만 읽고, 연결이 실제 코드와 맞는지 확인한다. 생성·의존성 폴더(`dist/`, `release/`, `graphify-out/`, `node_modules/`)는 읽지 않는다.
 4. 코드를 탐색하는 서브에이전트 프롬프트에도 1번 규칙을 넣는다.
-5. bash에서 `graphify`가 PATH에 없으면 `~/.local/bin/graphify.exe`를 쓴다. 코드를 고친 뒤 `graphify update .`로 갱신한다(커밋 훅은 코드 변경만 자동 반영).
+5. bash에서 `graphify`가 PATH에 없으면 `~/.local/bin/graphify.exe`를 쓴다. 
+6. 커밋하면 `graphify update .`로 갱신한다(코드 변경만 자동 반영).
 
 ## 문서 유지
 파일을 옮기거나 이름을 바꾸거나 기능을 추가하면 `docs/CODE_MAP.md`와 해당 문서를 같은 변경에서 고친다. 기능이 바뀌면 설명서(`src/components/pages/help/helpContent.ts`)도 화면의 실제 단추·항목 이름에 맞춰 함께 고친다.
@@ -18,6 +19,7 @@
 - 데이터베이스 구조를 임의로 변경하지 않는다.
 - 기존 사용자 작업을 임의로 삭제하지 않는다.
 - 위험하거나 복구하기 어려운 작업은 먼저 확인한다.
+- 외부 라이브러리나 프레임워크 API를 사용할 때는 항상 context7 도구를 먼저 호출해 최신 공식 문서를 확인한 뒤 코드를 작성한다.
 
 ## 작업 후
 관련 테스트와 타입·빌드 오류를 확인하고, 수정한 파일과 이유를 요약하며, 확인하지 못한 것은 밝힌다. 결론을 먼저 말한다. 오류 로그는 다시 인용하지 말고 최초 실패 오류·직접 원인·영향받은 파일·해결 방법만 한 번씩 정리한다.

@@ -165,14 +165,14 @@ export function ReportsPage() {
               모두 표시
             </button>
           ) : null}
+          {/* 성도 행이 있는 표(주별·월별·일별)에만 있습니다. 분기·연도별은 헌금 종류 × 월 합계표라 해당 없음. */}
+          {f.personRange ? (
+            <label className="flex cursor-pointer items-center gap-1 border-l border-gray-300 pl-3">
+              <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+              비활성 성도 포함
+            </label>
+          ) : null}
         </div>
-        {/* 성도 행이 있는 표(주별·월별·일별)에만 있습니다. 분기·연도별은 헌금 종류 × 월 합계표라 해당 없음. */}
-        {f.personRange ? (
-          <label className="flex w-fit cursor-pointer items-center gap-1 text-sm">
-            <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
-            비활성 성도 포함
-          </label>
-        ) : null}
         <p className="text-xs text-gray-500">[헌금 종류]에서 활성 상태인 헌금만 기본으로 체크됩니다.</p>
         </div>
       ) : null}

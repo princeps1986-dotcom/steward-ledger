@@ -376,7 +376,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
   * 렌더러가 요청을 받으면 `ClosingOverlay`(전체 화면 안내, 0.4초 뒤에 표시, 5초 후 [백업 없이 종료] → `backup:skip`)를 띄웁니다.
   * 쓰기에 실패하면 main이 [그래도 종료 / 종료 취소]를 묻습니다(취소하면 `backup:cancelled`로 안내를 닫고 앱을 계속 씁니다).
   * 화면 프로세스가 죽거나 Windows `session-end`(종료·로그오프)이면 기다리지 않습니다. `close`는 이미 백업을 기다리는 중이면 중복 실행하지 않습니다.
-* **보안 설정:** 자동 백업은 화면이 경로를 보내지 않고 main이 정한 기본 폴더(`%APPDATA%\StewardLedger\backup`)에만 씁니다. 폴더 변경 기능은 없습니다. 카메라·위치 같은 모든 권한 요청은 거부합니다. 빌드 때 Electron 퓨즈로 `runAsNode`, `NODE_OPTIONS`, `--inspect` 인자를 끄고 asar 무결성 검증과 asar에서만 불러오기를 켭니다(`electronFuses`).
+* **보안 설정:** 자동 백업은 화면이 경로를 보내지 않고 main이 정한 기본 폴더(`%APPDATA%\StewardLedger\backup`)에만 씁니다. 폴더 변경 기능은 없습니다. 카메라·위치 같은 권한 요청은 모두 거부하고 영구 저장소(`persistent-storage`)만 허용하며, preload가 시작 때 `navigator.storage.persist()`를 요청해 디스크가 부족해도 저장소가 자동 정리되지 않게 합니다. 설치본은 `devTools: !app.isPackaged`로 개발자 도구를 열 수 없고(개발 실행에서만 열림), preload가 오른쪽 버튼 메뉴(`contextmenu`)를 막습니다. 빌드 때 Electron 퓨즈로 `runAsNode`, `NODE_OPTIONS`, `--inspect` 인자를 끄고 asar 무결성 검증과 asar에서만 불러오기를 켭니다(`electronFuses`).
 * **파일 열기:** 저장 창에서 정한 PDF의 저장 경로만 `savedFiles`에 기록하고, `file:open`/`file:show`는 그 경로만 처리해 렌더러가 임의 파일을 실행하지 못하게 합니다.
 
 ## 14. 저장소 버전

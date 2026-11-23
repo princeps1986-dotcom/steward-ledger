@@ -23,7 +23,7 @@
   .btn-danger {
     @apply inline-flex items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50;
   }
-  /* 위험 구역의 덜 파괴적인 단추: 빨간 테두리·글씨 */
+  /* 시연 데이터 생성 · 삭제의 덜 파괴적인 단추: 빨간 테두리·글씨 */
   .btn-danger-outline {
     @apply inline-flex items-center justify-center gap-1 rounded border border-red-500 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50;
   }

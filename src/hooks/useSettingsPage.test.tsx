@@ -48,7 +48,7 @@ describe('useSettingsPage 연도별 수동 백업 기록', () => {
       await act(() => result.current.backupNow());
       expect(result.current.message?.kind).toBe('info');
     }
-    expect(result.current.manualBackupLabels.map((l) => l.slice(0, 5))).toEqual(['2024년', '2023년']);
+    expect(result.current.manualBackups.map((b) => b.year)).toEqual(['2024', '2023']);
     vi.unstubAllGlobals();
   });
 });

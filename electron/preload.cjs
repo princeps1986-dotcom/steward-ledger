@@ -63,3 +63,7 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('backup:request', listener);
   },
 });
+
+// PC앱 전용 보호: 오른쪽 버튼 메뉴를 막고(붙여넣기는 Ctrl+V), 디스크가 부족해도 저장소가 자동 정리되지 않게 영구 저장소를 요청합니다(main이 이 권한만 허용).
+window.addEventListener('contextmenu', (e) => e.preventDefault(), true);
+void navigator.storage?.persist?.().catch(() => undefined);
