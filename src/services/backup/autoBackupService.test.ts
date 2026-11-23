@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS } from '../../contexts/types';
 import type { Donation } from '../../contexts/types';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
-import { dirtyYearsSinceFullBackup, isDirtySinceBackup, monthWrite, rowWrite, transact } from '../storage/storageService';
+import { dirtyYearsSinceFullBackup, isDirtySinceBackup, KEYS, monthWrite, rowWrite, transact } from '../storage/storageService';
 import { backupLines, desktopSink, saveBackupFile, streamBackup, type BackupSink } from './backupService';
 import { buildAutoBackup, runPeriodicBackup } from './autoBackupService';
 import { withBackupBusy } from './backupBusy';
@@ -288,6 +288,18 @@ describe('runPeriodicBackup', () => {
     const specs = fakeDesktop(f.sink);
     expect(await runPeriodicBackup({ ...DEFAULT_SETTINGS, autoBackupEnabled: false })).toBeNull();
     expect(specs).toEqual([]);
+  });
+});
+
+describe('복원이 중간에 끊긴 데이터', () => {
+  it('종료 백업과 10분 백업을 만들지 않는다(반쪽 데이터가 최신 전체 백업이 되지 않게)', async () => {
+    const f = fakeSink();
+    const specs = fakeDesktop(f.sink);
+    await transact(async () => ({ writes: [{ key: KEYS.restoreMarker, value: { startedAt: '2026-01-01T00:00:00Z', years: ['2026'] } }], result: 0 }));
+    expect(await buildAutoBackup()).toBeNull();
+    expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toBeNull();
+    expect(specs).toEqual([]);
+    expect(await isDirtySinceBackup()).toBe(true); // 다시 복원하기 전까지 변경 표시는 그대로
   });
 });
 

@@ -59,8 +59,11 @@ export function planMerge(current: { members: readonly Member[]; offeringTypes: 
     }
   }
   // 새로 추가되는 성도가 가리키는 세대 그룹·세대주도 대응 결과로 바꿉니다.
+  // 대응된 성도는 지금 속한 세대 번호를 씁니다(이 PC에서 세대주를 바꿨으면 세대 번호는 예전 세대주의 id로 남아 있으므로).
+  const curGroupOf = new Map(current.members.map((m) => [m.id, m.familyGroupId]));
   const addMembers = added.map((m) => {
-    const group = m.familyGroupId ? (memberIdMap.get(m.familyGroupId) ?? m.familyGroupId) : m.familyGroupId;
+    const mapped = m.familyGroupId ? memberIdMap.get(m.familyGroupId) : undefined;
+    const group = mapped ? (curGroupOf.get(mapped) ?? mapped) : m.familyGroupId;
     return group === m.familyGroupId ? m : { ...m, familyGroupId: group };
   });
   return { memberIdMap, typeIdMap, addMembers, addTypes, sameNameAdded };

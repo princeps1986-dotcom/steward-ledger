@@ -26,7 +26,7 @@
 
 ## 설정 정보(백업·복원·시연 데이터·초기화·업데이트)
 - 화면·로직: `src/components/pages/settings/SettingsPage.tsx`, `src/hooks/useSettingsPage.ts`, `src/contexts/SettingsContext.tsx`
-- 백업·복원: `src/services/backup/backupService.ts`(줄 단위 백업), `streamRestore.ts`(줄 단위 복원: 연도별 복원과 전체 복원 `full`), `mergeRules.ts`(다른 PC 백업 병합), `validation.ts`(체크섬·버전 변환), `sha256.ts`, `autoBackupService.ts`(종료·10분 자동 백업), `backupBusy.ts`(동시 실행 방지)
+- 백업·복원: `src/services/backup/backupService.ts`(줄 단위 백업), `streamRestore.ts`(줄 단위 복원: 연도별 복원과 전체 복원 `full`, 예전 한 덩어리 JSON은 `payloadBackup`으로 감싸 같은 길로), `mergeRules.ts`(다른 PC 백업 병합), `validation.ts`(체크섬·버전 변환), `sha256.ts`, `autoBackupService.ts`(종료·10분 자동 백업), `backupBusy.ts`(동시 실행 방지)
 - 시연 데이터: `src/services/demo/demoService.ts`, `demoData.ts`, `demoState.ts`, `src/hooks/useAutoDemo.ts`
 - 업데이트 안내: `src/hooks/useNewVersion.ts`(웹), main의 `update:check`(데스크톱)
 - 업데이트 후 변경 내역: `src/changelog.ts`(버전별 바뀐 점, 출시 때 package.json 버전과 같은 키로 추가), `src/components/shared/WhatsNewModal.tsx`(첫 실행 때 한 번, 본 버전은 설정 `seenVersion`)
@@ -37,7 +37,7 @@
 
 ## 데스크톱 셸(Electron)
 - `electron/main.cjs`(창, 백업·복원·PDF·업데이트 IPC, CSP, 권한·개발자 도구 차단, 종료 시 자동 백업), `preload.cjs`(노출 API, 오른쪽 버튼 차단·영구 저장소 요청, 타입은 `src/services/desktopBridge.ts`의 `DesktopApi`)
-- `electron/backupCrypto.cjs`(백업 암호화), `backupVerify.cjs`(백업 검증), `restoreLog.cjs`(복원 기록), `dataPaths.cjs`(데이터·백업 폴더)
+- `electron/backupCrypto.cjs`(백업 암호화), `backupVerify.cjs`(백업 검증), `restoreLog.cjs`(복원 기록), `dataPaths.cjs`(데이터·백업 폴더), `pcKey.cjs`(자동 백업용 PC 키)
 - 브라우저와 PC앱의 기능 차이는 `desktop()`(`desktopBridge.ts`)이 있는지로 갈립니다(`BrowserNotice.tsx`, `useAutoDemo.ts` 등).
 
 ## 앱 뼈대·공통 화면

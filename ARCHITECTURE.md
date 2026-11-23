@@ -96,7 +96,7 @@ src/
 └── components/
     ├── shared/         DatePicker, Modal, Notice, ThemePicker, MemberFormFields, MemberPicker, Pager, ErrorBoundary …
     └── pages/          donation-input · reports · members · offerings · settings · help
-electron/               main.cjs(창·백업 IPC), preload.cjs(노출 API), backupCrypto.cjs(백업 암호화), backupVerify.cjs(백업 검증), restoreLog.cjs(복원 기록), dataPaths.cjs(데이터 폴더)
+electron/               main.cjs(창·백업 IPC), preload.cjs(노출 API), backupCrypto.cjs(백업 암호화), backupVerify.cjs(백업 검증), restoreLog.cjs(복원 기록), dataPaths.cjs(데이터 폴더), pcKey.cjs(자동 백업용 PC 키)
 scripts/                testdata-core.mjs(생성 규칙), generate-test-data.mjs(파일 생성), smoke.mjs(스모크 시험), dev-app.mjs(개발 서버 + Electron 창)
 .github/workflows/      pages.yml (시연 페이지 자동 배포)
 ```
@@ -285,7 +285,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | :--- | :--- | :--- |
 | 만들기 | `collectPayload(years?)`, `createBackupJson`, `createBackupBlob(years?)`, `downloadBackup(prefix, years?)` | 선택 연도의 월 키를 연도별로 합쳐 담고 체크섬을 붙인다. 성도·종류는 항상 전부. |
 | 검사 | `validation.parseAndValidateBackup` | SHA-256 체크섬과 형식 검증, 이전 스키마(v1→v2) 자동 변환 |
-| 복원 | `restoreBackup(payload, {years, mode})` | 화면은 `mode: 'YEARS'`, 연도 하나 |
+| 복원 | `streamRestore.restoreFromFile(file, scan, years, overwrite?, full?)` | 줄 단위 백업을 달마다 저장. 예전 한 덩어리 JSON도 검사 후 `payloadBackup`으로 줄 단위처럼 감싸 같은 함수로 복원(복원 규칙은 한 곳) |
 | 전체 교체 | `replaceAllData(payload)` | 시연 데이터·초기화용(단일 트랜잭션, 큰 데이터에는 한도 있음) |
 | 초기화 | `resetAllData()` | 빈 성도·내역·이력 + 새 id의 기본 헌금 종류로 교체(설정 유지) |
 | 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개 보관. 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip한 뒤 암호화해(`backup_….slbk`) 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 웹 브라우저의 직접 백업은 `createBackupBlob`이 달마다 만든 줄을 Blob으로 이어 붙이고 끝 줄에 해시를 붙인 줄 단위 파일로 내려받음 |
@@ -298,10 +298,10 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 헌금 종류 | id 같음 또는 **이름 같음** | 새 종류로 추가 |
 | 성도 | id 같음 또는 **이름 + 연락처 뒷4자리 같음** | 새 성도로 추가 (이름만 같으면 동명이인일 수 있어 합치지 않음) |
 
-대응된 백업 id는 `remapDonations`/`remapAudits`로 **현재 id로 바꿔** 헌금·이력(스냅샷 포함)에 쓰므로 중복 없이 올바른 성도·종류에 연결됩니다. 새로 추가되는 성도의 세대 그룹이 대응된 성도를 가리키면 현재 id로 바꿉니다. `previewMerge`가 복원 창에 연결·추가·동명이인 가능 수를 미리 보여 줍니다.
+대응된 백업 id는 `remapDonations`/`remapAudits`로 **현재 id로 바꿔** 헌금·이력(스냅샷 포함)에 쓰므로 중복 없이 올바른 성도·종류에 연결됩니다. 새로 추가되는 성도의 세대 그룹이 대응된 성도를 가리키면 현재 id로 바꿉니다. `planFor`가 복원 창에 연결·추가·동명이인 가능 수를 미리 보여 줍니다.
 
 ### 10.2 원칙
-* 전체 초기화는 자동 백업을 하지 않습니다(예전의 긴급 백업 `emergency_before_reset_*`은 없어졌고, 이미 만든 그 파일은 지우지 않고 남겨 둡니다). 확인창이 마지막 전체 백업 시각을 보여 주고 필요하면 사용자가 먼저 직접 백업합니다. 시연 데이터는 데이터가 없을 때만 만들 수 있어 백업하지 않습니다. 직접 백업·복원이 진행되는 동안에는 `backupBusy`가 잠금을 잡아 자동 백업(주기·종료)이 건너뛰며(main은 백업 세션을 하나만 두어 겹치면 진행 중이던 쪽이 취소됨), 복원 중에는 화면을 `RestoringOverlay`로 덮고 헌금 저장·수정·삭제·복구하기도 막습니다. 연도 복원은 자동 백업 없이, 확인 창에서 “선택한 연도”만 바뀐다는 점을 강조하며 사용자가 필요하면 먼저 직접 백업합니다. 백업 저장은 확인 창에서 연도를 선택하게 합니다.
+* 전체 초기화는 자동 백업을 하지 않습니다(예전의 긴급 백업 `emergency_before_reset_*`은 없어졌고, 이미 만든 그 파일은 지우지 않고 남겨 둡니다). 확인창이 마지막 전체 백업 시각을 보여 주고 필요하면 사용자가 먼저 직접 백업합니다. 시연 데이터는 데이터가 없을 때만 만들 수 있어 백업하지 않습니다. 직접 백업·복원이 진행되는 동안에는 `backupBusy`가 잠금을 잡아 자동 백업(주기·종료)이 건너뛰며(main은 백업 세션을 하나만 두어 겹치면 진행 중이던 쪽이 취소됨), 복원 중에는 화면을 `RestoringOverlay`로 덮고 헌금 저장·수정·삭제·복구하기도 막습니다. 복원이 중간에 끊겨 '복원 중' 표시(`meta_restore_in_progress`)가 남아 있으면 종료·주기 자동 백업을 만들지 않습니다(반쪽 데이터가 [전체 복원]이 쓰는 최신 종료 백업이 되거나, 좋은 백업이 보관 개수에 밀려 지워지지 않게). 같은 백업으로 다시 복원하면 표시가 지워지고 자동 백업이 다시 돕니다. 연도 복원은 자동 백업 없이, 확인 창에서 “선택한 연도”만 바뀐다는 점을 강조하며 사용자가 필요하면 먼저 직접 백업합니다. 백업 저장은 확인 창에서 연도를 선택하게 합니다.
 * **전체 초기화 비활성:** 시연 데이터가 있거나, 성도·헌금 내역이 없고 헌금 종류도 기본값(`DEFAULT_OFFERING_TYPES`) 그대로이면 단추·핸들러(`hasData`) 모두 막습니다. **시연 제거 비활성:** 만드는 동안은 단추·핸들러·`removeDemoData` 세 곳에서 막습니다.
 * **정렬 비교:** `services/domain/compare.ts`의 공유 `Intl.Collator`(`compareKo`·`compareKoNumeric`)와 고정 형식 문자열용 `compareFixed`를 씁니다(`localeCompare`를 매번 부르지 않음). 성도 정보 검색어는 `useDeferredValue`로 입력 반응을 우선합니다.
 * 복원은 화면에서 연도 하나씩 선택하는 방식을 유지합니다. Dexie 트랜잭션에서는 값이 키마다 따로라 그 한도 문제는 없습니다.
@@ -318,11 +318,11 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **전역 오류 안내:** 처리되지 않은 오류·Promise 거부는 `GlobalErrorBanner`가 화면 위쪽에 보여 줍니다(저장소 오류는 `StorageError` 한글 문구 그대로).
 * **직접 백업:** 데스크톱 앱에서는 같은 스트리밍 세션(`backupBegin` kind `manual`)으로 줄 단위 `.slbk`에 씁니다(사용자 암호로 잠금). 큰 데이터를 한 문자열로 만들 때의 한도(약 512MB)와 메모리 2~3배 사용을 피합니다. 브라우저·데모는 기존 JSON 내려받기입니다.
 * **백업 암호화(.slbk, `electron/backupCrypto.cjs`):** 데스크톱 앱의 백업은 줄 단위 v3 내용을 gzip한 바이트를 1MB 조각마다 AES-256-GCM으로 암호화합니다. 머리말 `SLBK`+버전+방식, 조각은 길이·마지막 표시·IV·암호문+태그이고, 인증 데이터에 머리말·조각 번호·마지막 표시를 넣어 바꿔치기·순서 바꾸기·잘라내기를 막습니다(끝 줄 SHA-256 검사는 그대로).
-  * **자동 백업 = PC 키:** main이 처음 쓸 때 32바이트 무작위 키를 만들어 `safeStorage`(Windows DPAPI)로 잠근 뒤 `userData\backup-key.bin`에 둡니다. 머리말에 키 식별값(키 SHA-256 앞 8바이트)을 넣어, 다른 PC·Windows 재설치 전의 파일이면 손상이 아니라 '다른 PC' 안내를 합니다. 키 파일을 풀 수 없으면 `.old`로 남기고 새 키를 만듭니다. 설치 파일·저장소에는 키가 없습니다.
+  * **자동 백업 = PC 키:** main이 처음 쓸 때 32바이트 무작위 키를 만들어 `safeStorage`(Windows DPAPI)로 잠근 뒤 `userData\backup-key.bin`에 둡니다(임시 파일에 쓴 뒤 이름을 바꿔, 쓰다가 끊겨도 기존 키 파일이 깨지지 않음). 머리말에 키 식별값(키 SHA-256 앞 8바이트)을 넣어, 다른 PC·Windows 재설치 전의 파일이면 손상이 아니라 '다른 PC' 안내를 합니다. 키 파일을 풀 수 없으면 `.old`로 남기고 새 키를 만듭니다. 자동 백업을 열 때 지금 키의 식별값과 다르면 `.old` 키들을 차례로 풀어 맞는 키를 씁니다(잠깐의 오류로 새 키가 생겨도 예전 자동 백업을 열 수 있음). 설치 파일·저장소에는 키가 없습니다.
   * **직접 백업 = 사용자 암호:** PBKDF2-SHA256 60만 회(파일마다 salt)로 키를 만들며 앱은 암호를 저장하지 않습니다. 다른 PC에서도 암호로 복원됩니다.
   * **복원:** 화면은 키를 모릅니다. `backup:inspect-file`로 종류(일반·PC 키·암호)를 확인하고, `backup:verify-file`(암호 포함)로 main이 풀어서 체크섬을 확인한 뒤, `backup:open-reader`/`read`/`close-reader`로 main이 풀어 준 평문 조각을 `decryptedBackup` 래퍼(`ReadableBackup`)로 읽어 기존 `scanBackupFile`·`restoreFromFile`을 그대로 씁니다. 예전 `.json`·`.json.gz`도 그대로 복원됩니다. 웹 버전은 암호화하지 않습니다.
 * **줄 단위 복원(streamRestore):** 줄 단위 백업(.slbk/.json/.json.gz)은 파일째 읽지 않고 흘려 읽습니다. 1단계 `scanBackupFile`이 파일 전체를 읽으며 증분 SHA-256(`sha256.ts`; WebCrypto는 조각 입력이 안 됨)과 줄별 형식을 검증하고 연도별 건수를 셉니다(아무것도 쓰지 않음). 2단계 `restoreFromFile`이 검증된 파일을 다시 읽으며 달마다 따로 저장합니다(메모리는 한 달치). 달마다 따로 저장하므로 전체가 한 트랜잭션은 아니며, 시작 트랜잭션에서 `meta_restore_in_progress` 표시를 남기고 끝에 지웁니다. 중간에 꺼지면 표시가 남아 다음 실행 때 상단 안내로 알리고(같은 백업으로 다시 복원), 전체 교체(`replaceAllData`: 시연·초기화)도 표시를 지웁니다. 한 덩어리 JSON(예전 형식)은 기존처럼 전체를 읽어 한 트랜잭션으로 복원합니다.
-* **시연 중 백업 차단:** 시연 데이터가 있거나 만드는 중이면(`isDemoBusy`) 자동 백업(종료 시 `buildAutoBackup`·10분 `runPeriodicBackup`)은 아무것도 하지 않고(null), 수동 백업·복원(`saveBackupFile`·`restoreBackup`·`restoreFromFile`)은 오류로 거부하며(`assertNoDemo`), 설정 화면의 백업·복원·자동 백업 컨트롤은 비활성, 백업 권고 배너는 숨깁니다. 시연 생성 직전 백업과 시연 제거 복구는 시연 흐름의 일부라 막지 않습니다.
+* **시연 중 백업 차단:** 시연 데이터가 있거나 만드는 중이면(`isDemoBusy`) 자동 백업(종료 시 `buildAutoBackup`·10분 `runPeriodicBackup`)은 아무것도 하지 않고(null), 수동 백업·복원(`saveBackupFile`·`restoreFromFile`)은 오류로 거부하며(`assertNoDemo`), 설정 화면의 백업·복원·자동 백업 컨트롤은 비활성, 백업 권고 배너는 숨깁니다. 시연 생성 직전 백업과 시연 제거 복구는 시연 흐름의 일부라 막지 않습니다.
 * **시연 데이터(`demo/`):** [시연 데이터 생성]은 오늘 이전 3년(156주)을 주 단위로 나누어 만듭니다(`planDemo`, 고정 시드; 주마다 편차를 두고 매년 12/25·1/1 날짜 하루에는 건수 추가; 이력 6건).
   * **규모는 접속 방식에 따라 다릅니다.**
 
@@ -408,7 +408,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 복구하기, 연도 퇴출(건수 예산·사용 중 유지), 연도 목록 갱신 |
 | 연타 방지 | `hooks/exclusive.test.ts` | 진행 중 호출 무시, 실패 후 해제 |
-| 백업 | `backup/autoBackupService.test.ts`, `backup/backupCrypto.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접 백업 세션, 백업 파일 검증(변조·잘림), 암호화 왕복·틀린 암호·다른 PC·조각 변조/순서/잘림, 백업 폴더 허용 |
+| 백업 | `backup/autoBackupService.test.ts`, `backup/backupCrypto.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts`, `pcKey.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접 백업 세션, 백업 파일 검증(변조·잘림), 암호화 왕복·틀린 암호·다른 PC·조각 변조/순서/잘림, 백업 폴더 허용, PC 키(처음 만들기·재사용·읽기 실패·풀 수 없는 키 .old·다시 잠그기 실패) |
 | 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선 |
 
 **Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다.

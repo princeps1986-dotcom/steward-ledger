@@ -1,7 +1,6 @@
 import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
-import type { RestoreResult } from './streamRestore';
 import { assertNoDemo } from '../demo/demoState';
-import { withBackupBusy, withRestoring } from './backupBusy';
+import { withBackupBusy } from './backupBusy';
 import { APP_VERSION } from '../../contexts/types';
 import { nowStamp } from '../domain/dates';
 import { newId } from '../domain/ids';
@@ -17,7 +16,6 @@ import {
   getItem,
   isDirtySinceBackup,
   restoreDirty,
-  strayRowWrites,
   getMany,
   listAuditKeys,
   listDonationMonths,
@@ -30,7 +28,6 @@ import {
   transact,
   type Write,
 } from '../storage/storageService';
-import { planMerge, remapAudits, remapDonations, restoredLists, type MergePlan, type RestoreOverwrite } from './mergeRules';
 import { NDJSON_VERSION } from './validation';
 import { Sha256 } from './sha256';
 
@@ -211,74 +208,6 @@ export async function isCompleteYearBackup(year: string): Promise<boolean> {
   const years = new Set<string>(await listDonationYears());
   for (const k of await listAuditKeys()) years.add(AUDIT_KEY_RE.exec(k)![1]);
   return years.size === 0 || (years.size === 1 && years.has(year));
-}
-
-/** 백업 payload에 들어 있는 연도 목록(헌금 또는 이력이 있는 연도, 오름차순) */
-export function yearsInPayload(p: BackupPayload): string[] {
-  return [...new Set([...Object.keys(p.donationsByYear), ...Object.keys(p.auditLogsByYear)])].sort();
-}
-
-/** 복원 전에 보여 줄 합치기 미리보기: 현재 데이터와 대응되는 성도·종류 수와 새로 추가될 수 */
-export async function previewMerge(payload: BackupPayload): Promise<MergePlan> {
-  const members = (await getItem<Member[]>(KEYS.members)) ?? [];
-  const offeringTypes = (await getItem<OfferingType[]>(KEYS.offeringTypes)) ?? [];
-  return planMerge({ members, offeringTypes }, payload);
-}
-
-type RestoreMode = 'YEARS' | 'FULL';
-
-const pickYears = <T,>(by: Record<string, T[]>, years: ReadonlySet<string>): Record<string, T[]> =>
-  Object.fromEntries(Object.entries(by).filter(([y]) => years.has(y)));
-
-/**
- * 백업에서 선택한 연도만 복원합니다(복원 전 자동 백업은 하지 않음).
- * - FULL: 현재 모든 데이터를 지우고 백업의 성도·헌금 종류와 선택한 연도 내역으로 교체합니다.
- * - YEARS: 선택한 연도의 헌금 내역·이력만 백업 내용으로 교체하고, 다른 연도는 그대로 둡니다.
- *   성도·헌금 종류는 현재 데이터를 지우지 않고 백업에만 있는 항목(id 기준)을 추가합니다. overwrite를 고르면 같은 항목은 백업 내용으로 바꿉니다.
- */
-export const restoreBackup = (payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode; overwrite?: RestoreOverwrite }): Promise<RestoreResult> => withRestoring(() => restoreBackupNow(payload, opts));
-async function restoreBackupNow(payload: BackupPayload, opts: { years: readonly string[]; mode: RestoreMode; overwrite?: RestoreOverwrite }): Promise<RestoreResult> {
-  await assertNoDemo();
-  const years = new Set(opts.years);
-  const donationsByYear = pickYears(payload.donationsByYear, years);
-  const auditLogsByYear = pickYears(payload.auditLogsByYear, years);
-  if (opts.mode === 'FULL') {
-    await replaceAllData({ members: payload.members, offeringTypes: payload.offeringTypes, donationsByYear, auditLogsByYear });
-    return { addedMembers: payload.members.length, addedTypes: payload.offeringTypes.length, updatedMembers: 0, updatedTypes: 0 };
-  }
-  const { result } = await transact(async (read) => {
-    const writes: Write[] = [];
-    // 선택한 연도의 기존 월별 헌금 키와 이력 키를 지우고, 백업 내용을 월별로 다시 씁니다.
-    for (const ym of await listDonationMonths()) if (years.has(ym.slice(0, 4))) writes.push(monthWrite(ym, []));
-    for (const k of await listAuditKeys()) if (years.has(AUDIT_KEY_RE.exec(k)![1])) writes.push({ key: k, value: null });
-    // 성도·헌금 종류: 현재 데이터는 유지하고, 다른 PC의 백업이면 같은 성도·종류를 현재 id로 대응시켜 중복을 막습니다.
-    const curMembers = (await read<Member[]>(KEYS.members)) ?? [];
-    const curTypes = (await read<OfferingType[]>(KEYS.offeringTypes)) ?? [];
-    const plan = planMerge({ members: curMembers, offeringTypes: curTypes }, payload);
-    const byMonth = new Map<string, Donation[]>();
-    for (const list of Object.values(donationsByYear)) {
-      for (const d of remapDonations(list, plan)) {
-        const ym = monthOfDate(d.date);
-        if (!byMonth.has(ym)) byMonth.set(ym, []);
-        byMonth.get(ym)!.push(d);
-      }
-    }
-    for (const [ym, list] of byMonth) writes.push(monthWrite(ym, list));
-    const ids = new Set(Object.values(donationsByYear).flatMap((l) => l.map((d) => d.id)));
-    writes.push(...(await strayRowWrites(ids, years)));
-    for (const [y, list] of Object.entries(auditLogsByYear)) {
-      const mapped = remapAudits(list, plan);
-      if (mapped.length) writes.push({ key: auditKey(y), value: mapped });
-    }
-    const lists = restoredLists({ members: curMembers, offeringTypes: curTypes }, payload, plan, opts.overwrite);
-    if (plan.addMembers.length || lists.updatedMembers) writes.push({ key: KEYS.members, value: lists.members });
-    if (plan.addTypes.length || lists.updatedTypes) writes.push({ key: KEYS.offeringTypes, value: lists.offeringTypes });
-    // 같은 키에 대한 삭제→쓰기 순서가 보장되도록 마지막 쓰기만 남깁니다.
-    const last = new Map<string, Write>();
-    for (const w of writes) last.set(w.key, w);
-    return { writes: [...last.values()], result: { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length, updatedMembers: lists.updatedMembers, updatedTypes: lists.updatedTypes } };
-  });
-  return result;
 }
 
 /**

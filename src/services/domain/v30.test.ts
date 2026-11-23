@@ -26,6 +26,11 @@ describe('filterByDonor', () => {
     expect(filterByDonor(list, '무명').map((x) => x.id)).toEqual(['b', 'c', 'e']);
     expect(filterByDonor(list, '철').map((x) => x.id)).toEqual(['a']);
   });
+  it('ignores spaces in both the query and the name', () => {
+    const spaced = [d('s', '2026-11-15', '김 철수', '2026-11-15T01:00'), d('j', '2026-11-15', 'John Smith', '2026-11-15T02:00')];
+    expect(filterByDonor(spaced, '김철수').map((x) => x.id)).toEqual(['s']);
+    expect(filterByDonor(spaced, 'John Smith').map((x) => x.id)).toEqual(['j']);
+  });
   it('does not match by initial consonants', () => {
     expect(filterByDonor(list, 'ㄱㅊㅅ')).toEqual([]);
   });

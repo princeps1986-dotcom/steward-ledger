@@ -4,14 +4,14 @@ import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import { useOfferingActions, useOfferingTypes } from '../contexts/OfferingTypeContext';
 import { DEFAULT_OFFERING_TYPES } from '../services/domain/offeringDefaults';
 import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
-import type { AppTheme, BackupEnvelope, FontScale, PrintTheme } from '../contexts/types';
+import type { AppTheme, FontScale, PrintTheme } from '../contexts/types';
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { createDemoData, removeDemoData } from '../services/demo/demoService';
 import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
-import { isCompleteYearBackup, saveBackupFile, resetAllData, previewMerge, restoreBackup, yearsInPayload } from '../services/backup/backupService';
-import { decryptedBackup, isNdjsonFile, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
+import { isCompleteYearBackup, saveBackupFile, resetAllData } from '../services/backup/backupService';
+import { decryptedBackup, isNdjsonFile, payloadBackup, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
 import { setRestoreProgress, withCheckingBackup, withRestoring } from '../services/backup/backupBusy';
 import { isPeriodicBackupRunning } from '../services/backup/autoBackupService';
 import { countYearDonations } from '../services/storage/storageService';
@@ -20,10 +20,8 @@ import { desktop, type UpdateCheck } from '../services/desktopBridge';
 import type { MergePlan, RestoreOverwrite } from '../services/backup/mergeRules';
 
 interface RestoreCandidate {
-  /** 한 덩어리 JSON 백업(작은 파일)은 전체를 읽어 둔 내용, 줄 단위 백업은 null(복원할 때 파일을 다시 읽음) */
-  envelope: BackupEnvelope | null;
-  /** 줄 단위 백업: 검증을 마친 파일과 그 요약 */
-  stream?: { file: ReadableBackup; scan: BackupScan };
+  /** 검증을 마친 줄 단위 백업과 그 요약(예전 한 덩어리 JSON도 payloadBackup으로 감싼 것) */
+  stream: { file: ReadableBackup; scan: BackupScan };
   fileName: string;
   migratedFrom: number | null;
   summary: string;
@@ -184,7 +182,6 @@ export function useSettingsPage() {
       const years = Object.keys(scan.yearCounts).sort();
       setRestore({
         mergeNotice: full ? '' : mergeNoticeOf(await planFor(scan)),
-        envelope: null,
         stream: { file: source, scan },
         fileName,
         full,
@@ -229,18 +226,21 @@ export function useSettingsPage() {
       }
       const res = await parseAndValidateBackup(await readBackupText(file));
       if (!res.ok) return setMessage({ kind: 'error', text: `복원 불가: ${res.error}` });
-      const p = res.envelope.payload;
-      const donationCount = Object.values(p.donationsByYear).reduce((s, l) => s + l.length, 0);
+      // 예전 형식도 줄 단위 백업처럼 감싸 같은 복원(restoreFromFile)을 씁니다. 체크섬은 위에서 확인했습니다.
+      const source = payloadBackup(res.envelope);
+      const scan = await scanBackupFile(source, { hashChecked: true });
+      if (!scan.ok) return setMessage({ kind: 'error', text: `복원 불가: ${scan.error}` });
+      const donationCount = Object.values(scan.yearCounts).reduce((s, n) => s + n, 0);
       // 다른 PC의 백업이면 같은 성도·헌금 종류를 현재 데이터와 대응시키므로, 그 결과를 미리 알려 줍니다.
-      const plan = await previewMerge(p);
+      const plan = await planFor(scan);
       setMessage(null);
       setRestore({
         mergeNotice: mergeNoticeOf(plan),
-        envelope: res.envelope,
+        stream: { file: source, scan },
         fileName: file.name,
         migratedFrom: res.migratedFrom,
-        summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${p.members.length}명 · 헌금 종류 ${p.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
-        yearRows: yearsInPayload(p).map((year) => ({ year, count: (p.donationsByYear[year] ?? []).length })),
+        summary: `백업 일시 ${formatDateTime(res.envelope.exportedAt)} · 성도 ${scan.members.length}명 · 헌금 종류 ${scan.offeringTypes.length}개 · 헌금 내역 ${donationCount}건`,
+        yearRows: Object.keys(scan.yearCounts).sort().map((year) => ({ year, count: scan.yearCounts[year] })),
       });
       });
     } catch (err) {
@@ -378,7 +378,7 @@ export function useSettingsPage() {
       const result = await withRestoring(async () => {
         const [r] = await Promise.all([
           (async () => {
-            const res = restore.stream ? await restoreFromFile(restore.stream.file, restore.stream.scan, picked, restoreOverwrite, full) : await restoreBackup(restore.envelope!.payload, { years: picked, mode: 'YEARS', overwrite: restoreOverwrite });
+            const res = await restoreFromFile(restore.stream.file, restore.stream.scan, picked, restoreOverwrite, full);
             await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
             return res;
           })(),

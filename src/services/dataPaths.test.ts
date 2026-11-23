@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
-const { resolveUserDataDir, backupsToPrune } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
+const { resolveUserDataDir, backupsToPrune, oldPcKeyFiles } = createRequire(import.meta.url)('../../electron/dataPaths.cjs') as {
   resolveUserDataDir(appData: string): string;
   backupsToPrune(names: string[]): string[];
+  oldPcKeyFiles(names: string[]): string[];
 };
 const { parseRestoreLog } = createRequire(import.meta.url)('../../electron/restoreLog.cjs') as {
   parseRestoreLog(e: unknown): { stage: string; entry: Record<string, unknown> } | null;
@@ -71,3 +72,10 @@ describe('데이터 폴더는 영문 경로', () => {
   });
 });
 
+
+describe('예전 PC 키 파일', () => {
+  it('풀지 못해 남긴 .old 키만 최근 것부터 고르고, 지금 키와 다른 파일은 고르지 않는다', () => {
+    const names = ['backup-key.bin', 'backup-key.bin.20250101_000000.old', 'backup-key.bin.20260101_000000.old', 'backup-key.bin.tmp', 'x.old'];
+    expect(oldPcKeyFiles(names)).toEqual(['backup-key.bin.20260101_000000.old', 'backup-key.bin.20250101_000000.old']);
+  });
+});

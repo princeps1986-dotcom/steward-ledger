@@ -2,8 +2,8 @@ import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
 import { KEYS, getItem, transact } from '../storage/storageService';
-import { previewMerge, restoreBackup } from './backupService';
-import { payloadNow } from './testPayload';
+import { planFor } from './streamRestore';
+import { payloadNow, restorePayload } from './testPayload';
 import { planMerge, remapAudits, remapDonations, restoredLists } from './mergeRules';
 
 const m = (id: string, name: string, phoneLast4?: string, extra: Partial<Member> = {}): Member =>
@@ -43,6 +43,12 @@ describe('planMerge (다른 PC 백업 합치기 규칙)', () => {
     expect(p.addMembers).toHaveLength(1);
     expect(p.addMembers[0].familyGroupId).toBe('c1');
   });
+
+  it('연결된 성도가 이 PC에서 다른 세대 번호(세대주를 바꾼 세대)에 있으면 그 번호를 쓴다', () => {
+    const here = { members: [m('c0', '김부친', undefined, { familyGroupId: 'c0' }), m('c1', '김영수', '1234', { isFamilyHead: true, familyGroupId: 'c0' })], offeringTypes: [] };
+    const p = planMerge(here, { members: [m('b1', '김영수', '1234', { isFamilyHead: true, familyGroupId: 'b1' }), m('b2', '김영희', undefined, { familyGroupId: 'b1' })], offeringTypes: [] });
+    expect(p.addMembers.map((x) => [x.id, x.familyGroupId])).toEqual([['b2', 'c0']]);
+  });
 });
 
 describe('remap', () => {
@@ -70,7 +76,7 @@ describe('remap', () => {
   });
 });
 
-describe('restoreBackup(YEARS) — 다른 PC 백업', () => {
+describe('예전 형식 연도별 복원 — 다른 PC 백업', () => {
   beforeAll(() => {
     (globalThis as unknown as { window?: unknown }).window ??= globalThis;
   });
@@ -89,10 +95,10 @@ describe('restoreBackup(YEARS) — 다른 PC 백업', () => {
       donationsByYear: { '2025': [d('d1', '2025-03-02', 'b1', 'bt1'), d('d2', '2025-03-02', 'b2', 'bt2')] },
       auditLogsByYear: {},
     };
-    const pre = await previewMerge(backup);
+    const pre = await planFor(backup);
     expect(pre.memberIdMap.get('b1')).toBe('c1');
     expect(pre.sameNameAdded).toBe(1);
-    await restoreBackup(backup, { years: ['2025'], mode: 'YEARS' });
+    await restorePayload(backup, ['2025']);
     const after = await payloadNow();
     expect(after.members.map((x) => x.id)).toEqual(['c1', 'b2']);
     expect(after.offeringTypes.map((x) => x.id)).toEqual(['ct1', 'bt2']);

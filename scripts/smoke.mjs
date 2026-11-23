@@ -79,6 +79,15 @@ try {
     check('보안: 임의 폴더를 보내도 허용된 폴더에만 씀', String(written).startsWith(backupDir), String(written));
     check('백업 IPC: 임시 파일이 남지 않음', readdirSync(backupDir).every((n) => !n.endsWith('.tmp')));
     void NL;
+    // 종료 백업(kind close)도 같은 PC 키로 잠기고, [전체 복원]이 쓰는 최신 종료 백업을 같은 키로 검증·인식하는지 봅니다.
+    const closed = await ev(`(async () => { const id = await window.desktop.backupBegin({ kind: 'close' }); await window.desktop.backupWrite(id, JSON.stringify({ ndjson: 3 }) + String.fromCharCode(10)); await window.desktop.backupWrite(id, JSON.stringify({ t: 'members', data: [] }) + String.fromCharCode(10)); return await window.desktop.backupEnd(id); })()`);
+    check('백업 IPC: 종료 백업 파일이 저장됨', typeof closed === 'string' && /backup_\d{8}_\d{6}\.slbk$/.test(closed) && existsSync(closed), String(closed));
+    const keyDir = join(appData, 'StewardLedger');
+    check('PC 키: 키 파일이 만들어지고 임시 파일은 남지 않음', existsSync(join(keyDir, 'backup-key.bin')) && readdirSync(keyDir).every((n) => !/^backup-key\.bin\.tmp$/.test(n)), readdirSync(keyDir).filter((n) => n.startsWith('backup-key')).join(','));
+    const latest = await ev('window.desktop.latestAutoBackup()');
+    check('PC 키: 최신 종료 백업이 [전체 복원] 대상으로 잡힘', latest?.path === 'auto:latest' && /^backup_/.test(latest?.name ?? ''), JSON.stringify(latest));
+    check('PC 키: 같은 키로 검증됨(체크섬 통과)', (await ev('window.desktop.verifyBackupFile("auto:latest")')) === '');
+    check('PC 키: 이 PC의 키로 잠긴 백업으로 인식됨', JSON.stringify(await ev('window.desktop.inspectBackupFile("auto:latest")')) === '{"kind":"pc"}');
   }
   ws.close();
 } catch (e) {

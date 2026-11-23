@@ -59,4 +59,9 @@ function latestFullBackup(names) {
   return names.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort().pop() ?? null;
 }
 
-module.exports = { resolveUserDataDir, backupsToPrune, latestFullBackup, USER_DATA_NAME };
+/** 앱 데이터 폴더의 파일 이름 중 풀지 못해 남겨 둔 예전 PC 키(backup-key.bin.<시각>.old), 최근 것부터 */
+function oldPcKeyFiles(names) {
+  return names.filter((n) => /^backup-key\.bin\.\d{8}_\d{6}\.old$/.test(n)).sort().reverse();
+}
+
+module.exports = { resolveUserDataDir, backupsToPrune, latestFullBackup, oldPcKeyFiles, USER_DATA_NAME };

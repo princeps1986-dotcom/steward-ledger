@@ -3,6 +3,8 @@
 import type { BackupPayload } from '../../contexts/types';
 import { SCHEMA_VERSION } from '../../contexts/types';
 import { backupLines } from './backupService';
+import type { RestoreOverwrite } from './mergeRules';
+import { payloadBackup, restoreFromFile, scanBackupFile, type RestoreResult } from './streamRestore';
 import { computeChecksum, isObj, isStr, parseAndValidateBackup, sha256Hex, type BackupParseResult } from './validation';
 
 /** 끝 줄의 SHA-256을 확인하고 줄을 모아 {schemaVersion, payload} 모양으로 만듭니다. 실패하면 오류 문구 */
@@ -56,4 +58,12 @@ export async function payloadNow(years?: readonly string[]): Promise<BackupPaylo
   const res = await parseNdjsonBackup(`${body}${JSON.stringify({ t: 'end', sha256: await sha256Hex(body) })}\n`);
   if (!res.ok) throw new Error(res.error);
   return res.envelope.payload;
+}
+
+/** 예전 한 덩어리 JSON 내용을 앱과 같은 길(payloadBackup → scanBackupFile → restoreFromFile)로 복원합니다. full이면 전체 교체 */
+export async function restorePayload(payload: BackupPayload, years: readonly string[], opts: { full?: boolean; overwrite?: RestoreOverwrite } = {}): Promise<RestoreResult> {
+  const source = payloadBackup({ appVersion: 'test', exportedAt: new Date().toISOString(), payload });
+  const scan = await scanBackupFile(source, { hashChecked: true });
+  if (!scan.ok) throw new Error(scan.error);
+  return restoreFromFile(source, scan, years, opts.overwrite, opts.full);
 }

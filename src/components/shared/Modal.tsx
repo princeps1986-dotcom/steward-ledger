@@ -23,13 +23,11 @@ export function Modal({ open, onClose, title, description, children, footer, wid
           className={`fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] ${widthClass} -translate-x-1/2 -translate-y-1/2 ${overflowVisible ? 'overflow-visible' : 'overflow-y-auto'} rounded-lg bg-white p-5 shadow-xl outline-none`}
           onCloseAutoFocus={onCloseAutoFocus}
           onPointerDownOutside={(e) => e.preventDefault()}
+          // 설명이 없으면 Radix 권장대로 aria-describedby를 명시적 undefined로 넘겨 제목을 두 번 읽지 않게 합니다.
+          {...(!description && { 'aria-describedby': undefined })}
         >
           <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
-          {description ? (
-            <Dialog.Description className="mt-1 text-sm text-gray-500">{description}</Dialog.Description>
-          ) : (
-            <Dialog.Description className="sr-only">{title}</Dialog.Description>
-          )}
+          {description ? <Dialog.Description className="mt-1 text-sm text-gray-500">{description}</Dialog.Description> : null}
           <div className="mt-4">{children}</div>
           {footer ? <div className="mt-5 flex justify-end gap-2">{footer}</div> : null}
         </Dialog.Content>

@@ -4,6 +4,7 @@ import { isBackupBusy } from './backupBusy';
 import { desktop, type AutoBackupPayload } from '../desktopBridge';
 import { clearDirty, dirtyYearsSinceFullBackup, isDirtySinceBackup, listDonationYears, markDirty } from '../storage/storageService';
 import { backupLines, desktopSink, hasAnyData, streamBackup } from './backupService';
+import { interruptedRestore } from './streamRestore';
 
 /** 주기 백업이 진행 중인지(종료 직전에 겹치면 종료 때 백업이 '바뀐 것 없음'으로 건너뛰지 않도록) */
 let periodicRunning = false;
@@ -21,6 +22,8 @@ export async function buildAutoBackup(): Promise<AutoBackupPayload | null> {
   // 10분 백업이 일부 연도만 담았으면 '변경 있음' 표시는 꺼져도 바뀐 연도 목록이 남아 있으므로 전체 백업합니다(두 값만 읽어 빠름).
   if (!periodicRunning && !(await isDirtySinceBackup()) && !(await dirtyYearsSinceFullBackup())?.length) return null;
   if (!(await hasAnyData())) return null; // 성도·헌금이 하나도 없으면 빈 백업 파일을 만들지 않습니다.
+  // 복원이 중간에 끊긴 데이터는 백업하지 않습니다: 반쪽 데이터가 [전체 복원]이 쓰는 최신 종료 백업이 되고, 좋은 백업이 보관 개수에 밀려 지워지지 않게.
+  if (await interruptedRestore()) return null;
   const id = await api.backupBegin({ kind: 'close' });
   if (id === null) return null;
   for await (const line of backupLines()) await api.backupWrite(id, line);
@@ -48,6 +51,7 @@ export async function runPeriodicBackup(settings: AppSettings): Promise<{ file: 
   const api = desktop();
   if (!api || !settings.autoBackupEnabled || periodicRunning || isBackupBusy() || (await isDemoBusy())) return null;
   if (!(await isDirtySinceBackup())) return null;
+  if (await interruptedRestore()) return null; // 복원이 중간에 끊긴 반쪽 데이터는 백업하지 않습니다(종료 백업과 같은 이유).
   periodicRunning = true;
   try {
     let years = await dirtyYearsSinceFullBackup();

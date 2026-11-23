@@ -14,11 +14,12 @@ export function sortForList(donations: readonly Donation[]): Donation[] {
 }
 
 /**
- * 표기명(성도 이름·무명1 등)으로 내역을 거릅니다.
+ * 표기명(성도 이름·무명1 등)으로 내역을 거릅니다(띄어쓰기 무시).
  * 빈 검색어는 전체를 돌려줍니다.
  */
 export function filterByDonor(donations: readonly Donation[], query: string): Donation[] {
   const q = query.replace(/\s/g, '');
   if (q === '') return [...donations];
-  return donations.filter((d) => d.donorDisplayName.includes(q));
+  // 검색어처럼 이름의 띄어쓰기도 빼고 비교합니다('김 철수'·'John Smith'도 찾도록, 성도 찾기와 같은 규칙).
+  return donations.filter((d) => d.donorDisplayName.replace(/\s/g, '').includes(q));
 }

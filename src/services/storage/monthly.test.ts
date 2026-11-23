@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import type { Donation } from '../../contexts/types';
-import { replaceAllData, restoreBackup, yearsInPayload } from '../backup/backupService';
-import { payloadNow } from '../backup/testPayload';
+import { replaceAllData } from '../backup/backupService';
+import { payloadNow, restorePayload } from '../backup/testPayload';
 import {
   listDonationMonths,
   monthWrite,
@@ -50,7 +50,7 @@ describe('year-selectable backup and restore', () => {
     expect(Object.keys(only.donationsByYear)).toEqual(['2025']);
     expect(ids(only.donationsByYear['2025'])).toEqual(['b1', 'b2']);
     expect(only.members).toHaveLength(2);
-    expect(yearsInPayload(await payloadNow())).toEqual(['2024', '2025']);
+    expect(Object.keys((await payloadNow()).donationsByYear).sort()).toEqual(['2024', '2025']);
   });
 
   it('YEARS mode replaces only the chosen year, keeps other years, and only adds missing members/types', async () => {
@@ -66,7 +66,7 @@ describe('year-selectable backup and restore', () => {
       donationsByYear: { '2025': [d('new25a', '2025-01-05'), d('new25b', '2025-02-02')], '2026': [d('skip26', '2026-01-04')] },
       auditLogsByYear: {},
     };
-    await restoreBackup(backup, { years: ['2025'], mode: 'YEARS' });
+    await restorePayload(backup, ['2025']);
     const after = await payloadNow();
     expect(ids(after.donationsByYear['2024'])).toEqual(['keep24']); // 다른 연도 유지
     expect(ids(after.donationsByYear['2025'])).toEqual(['new25a', 'new25b']); // 선택 연도 교체
@@ -82,7 +82,7 @@ describe('year-selectable backup and restore', () => {
       donationsByYear: { '2023': [d('x23', '2023-06-04')], '2025': [d('x25', '2025-06-01')] },
       auditLogsByYear: {},
     };
-    await restoreBackup(backup, { years: ['2023'], mode: 'FULL' });
+    await restorePayload(backup, ['2023'], { full: true });
     const after = await payloadNow();
     expect(Object.keys(after.donationsByYear)).toEqual(['2023']);
     expect(after.members.map((x) => x.id)).toEqual(['z']);

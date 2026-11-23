@@ -12,11 +12,13 @@ const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./dataPaths.cjs');
+const { createPcKeyStore } = require('./pcKey.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
-const { pcHeader, passwordHeader, parseHeader, deriveKey, keyIdOf, createEncryptStream } = require('./backupCrypto.cjs');
+const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
 
-const DEV_URL = process.env.ELECTRON_DEV_URL;
+// 설치한 앱은 환경변수로 다른 주소를 열지 않습니다(그 페이지가 백업 읽기 기능을 쓰지 못하게).
+const DEV_URL = (!app.isPackaged && process.env.ELECTRON_DEV_URL) || null;
 const DIST = path.join(__dirname, '..', 'dist');
 // 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
@@ -99,38 +101,14 @@ if (!app.requestSingleInstanceLock()) {
   let sessionCounter = 0;
   const SAFE_STREAM_NAME_RE = /^[A-Za-z0-9_-]+\.slbk$/;
 
-  // 자동 백업(종료·주기)을 잠그는 이 PC의 키: 처음 쓸 때 무작위로 만들어 Windows 보안 저장소(DPAPI)로 잠근 뒤 앱 데이터 폴더에 둡니다.
-  // 설치 파일에는 키가 없으므로 백업 파일을 다른 곳으로 가져가면 열 수 없습니다(PC를 옮길 때는 암호를 건 직접 백업을 씀).
-  let pcKey = null;
-  function getPcKey() {
-    if (pcKey) return pcKey;
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('이 PC에서 백업 암호화를 쓸 수 없습니다.');
-    const file = path.join(app.getPath('userData'), 'backup-key.bin');
-    let locked = null;
-    try {
-      locked = fsSync.readFileSync(file);
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err; // 읽기 오류(잠김 등)로 새 키를 만들면 예전 백업을 못 열게 되므로 실패로 알립니다.
-    }
-    if (locked) {
-      try {
-        const key = Buffer.from(safeStorage.decryptString(locked), 'base64');
-        if (key.length === 32) return (pcKey = key);
-      } catch {
-        /* Windows를 다시 설치하는 등으로 풀 수 없음: 아래에서 새 키를 만듭니다 */
-      }
-      fsSync.renameSync(file, `${file}.${stamp()}.old`); // 풀 수 없는 키 파일도 지우지 않고 남겨 둡니다.
-    }
-    const key = crypto.randomBytes(32);
-    fsSync.writeFileSync(file, safeStorage.encryptString(key.toString('base64')));
-    return (pcKey = key);
-  }
+  // 자동 백업(종료·주기)을 잠그는 이 PC의 키(electron/pcKey.cjs). 예전 키(.old)도 풀어 보는 pcKeyFor로 백업 머리말의 키 식별값에 맞는 키를 찾습니다.
+  const { getPcKey, pcKeyFor } = createPcKeyStore({ safeStorage, dir: app.getPath('userData'), log, stamp });
   const OTHER_PC = '다른 PC(또는 Windows를 다시 설치하기 전)에서 만든 자동 백업이라 이 PC에서는 열 수 없습니다. PC를 옮길 때는 암호를 건 직접 백업을 쓰세요.';
-  /** 백업 파일 머리말에 맞는 키: 자동 백업은 이 PC의 키(식별값이 다르면 거절), 직접 백업은 사용자 암호에서 만든 키 */
+  /** 백업 파일 머리말에 맞는 키: 자동 백업은 이 PC의 키(예전 키 포함, 맞는 것이 없으면 거절), 직접 백업은 사용자 암호에서 만든 키 */
   const keyForFile = (password) => async (h) => {
     if (h.mode === 'pc') {
-      const key = getPcKey();
-      if (!h.keyId.equals(keyIdOf(key))) throw new Error(`백업 파일 검증 실패: ${OTHER_PC}`);
+      const key = await pcKeyFor(h.keyId);
+      if (!key) throw new Error(`백업 파일 검증 실패: ${OTHER_PC}`);
       return key;
     }
     if (typeof password !== 'string' || !password) throw new Error('백업 파일 검증 실패: 암호를 입력하세요.');
@@ -178,7 +156,7 @@ if (!app.requestSingleInstanceLock()) {
     if (kind !== 'close' && kind !== 'periodic') throw new Error('잘못된 백업 종류');
     const d = defaultBackupDir(); // 화면이 보낸 dir은 쓰지 않습니다.
     await fs.mkdir(d, { recursive: true });
-    const key = getPcKey();
+    const key = await getPcKey();
     return startSession(path.join(d, `${kind === 'periodic' ? 'autosave' : 'backup'}_${stamp()}.slbk`), kind, { header: pcHeader(key), key });
   });
   const sessionOf = (id) => {
@@ -423,7 +401,7 @@ if (!app.requestSingleInstanceLock()) {
       const h = parseHeader(head.subarray(0, bytesRead));
       if (!h) return { error: '백업 파일 검증 실패: 내용이 잘렸습니다.' };
       if (h.mode === 'password') return { kind: 'password' };
-      return h.keyId.equals(keyIdOf(getPcKey())) ? { kind: 'pc' } : { kind: 'pc', error: OTHER_PC };
+      return (await pcKeyFor(h.keyId)) ? { kind: 'pc' } : { kind: 'pc', error: OTHER_PC };
     } catch (err) {
       return { error: verifyMessage(err) };
     }

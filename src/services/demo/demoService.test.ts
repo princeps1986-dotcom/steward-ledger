@@ -7,7 +7,8 @@ import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact, wip
 import { sha256Hex } from '../backup/validation';
 import { DEFAULT_SETTINGS } from '../../contexts/types';
 import { buildAutoBackup, runPeriodicBackup } from '../backup/autoBackupService';
-import { restoreBackup, saveBackupFile } from '../backup/backupService';
+import { saveBackupFile } from '../backup/backupService';
+import { restorePayload } from '../backup/testPayload';
 import { createDemoData, removeDemoData } from './demoService';
 import { allocate, allocateCapped, buildDemoPayload, DEMO_PREFIX, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, type DemoSpec } from './demoData';
 import { hasDemoData, isDemoBusy } from './demoState';
@@ -195,7 +196,7 @@ describe('backups are blocked while demo data exists', () => {
     expect(await buildAutoBackup()).toBeNull();
     expect(await runPeriodicBackup(settings)).toBeNull();
     await expect(saveBackupFile('backup')).rejects.toThrow('시연 데이터를 쓰는 동안');
-    await expect(restoreBackup({ members: [], offeringTypes: [], donationsByYear: {}, auditLogsByYear: {} }, { years: [], mode: 'FULL' })).rejects.toThrow('시연 데이터를 쓰는 동안');
+    await expect(restorePayload({ members: [], offeringTypes: [], donationsByYear: {}, auditLogsByYear: {} }, [], { full: true })).rejects.toThrow('시연 데이터를 쓰는 동안');
     await removeDemoData();
     expect(await isDemoBusy()).toBe(false);
     await expect(saveBackupFile('backup')).resolves.toBeTruthy();

@@ -1,4 +1,4 @@
-import type { AuditLog, Donation, Member, OfferingType } from '../../contexts/types';
+import type { AuditLog, BackupEnvelope, Donation, Member, OfferingType } from '../../contexts/types';
 import { assertNoDemo } from '../demo/demoState';
 import { setRestoreProgress, withRestoring } from './backupBusy';
 import { stripBirthDate } from '../domain/memberRules';
@@ -47,6 +47,32 @@ export function decryptedBackup(api: Pick<DesktopApi, 'openBackupReader' | 'read
       });
     },
   };
+}
+
+/**
+ * 예전 한 덩어리 JSON 백업(검증을 마친 내용)을 줄 단위 백업처럼 읽게 감쌉니다. 복원 규칙을 줄 단위 복원(restoreFromFile) 한 곳에만 두기 위함입니다.
+ * 체크섬은 이미 확인했으므로 끝 줄에 값을 넣지 않습니다(scanBackupFile에 hashChecked: true로 넘김). 예전 파일은 작아 메모리에 한 번에 만듭니다.
+ */
+export function payloadBackup(env: Pick<BackupEnvelope, 'appVersion' | 'exportedAt' | 'payload'>): ReadableBackup {
+  const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
+  const { payload: p } = env;
+  const byMonth = new Map<string, Donation[]>();
+  for (const list of Object.values(p.donationsByYear)) {
+    for (const d of list) {
+      const ym = d.date.slice(0, 7);
+      if (!byMonth.has(ym)) byMonth.set(ym, []);
+      byMonth.get(ym)!.push(d);
+    }
+  }
+  const blob = new Blob([
+    line({ ndjson: NDJSON_VERSION, appVersion: env.appVersion, exportedAt: env.exportedAt }),
+    line({ t: 'members', data: p.members }),
+    line({ t: 'offeringTypes', data: p.offeringTypes }),
+    ...Object.entries(p.auditLogsByYear).map(([year, data]) => line({ t: 'audit', year, data })),
+    ...[...byMonth].sort(([a], [b]) => (a < b ? -1 : 1)).map(([ym, data]) => line({ t: 'donations', ym, data })),
+    line({ t: 'end' }),
+  ]);
+  return { name: 'backup.json', stream: () => blob.stream() };
 }
 
 /** 파일을 줄 단위로 읽습니다(.gz는 압축을 풂). 각 줄은 끝의 줄바꿈 문자를 포함합니다. */
