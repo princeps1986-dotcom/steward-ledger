@@ -36,7 +36,7 @@ describe('usePersonalReport 세대 집계 기준 전환', () => {
       writes: [{ key: KEYS.members, value: [member('a', '김가'), member('b', '이나')] }, monthWrite('2026-11', [row('r1', 'a', '2026-11-08', 1000) as never])],
       result: 0,
     }));
-    const { result } = renderHook(() => {
+    const { result, unmount } = renderHook(() => {
       const f = useReportFilters();
       return { f, r: usePersonalReport(f) };
     }, { wrapper: AppProviders });
@@ -60,5 +60,8 @@ describe('usePersonalReport 세대 집계 기준 전환', () => {
 
     act(() => result.current.r.select('b'));
     expect(result.current.r.rows).toHaveLength(0); // 다른 성도의 이전 내역은 보이지 않음
+    // 남은 예약 작업이 jsdom 환경이 닫힌 뒤 실행되어 "window is not defined"가 나지 않도록 기다린 뒤 해제
+    await wait(REPORT_DELAY_MS + 50);
+    unmount();
   });
 });
