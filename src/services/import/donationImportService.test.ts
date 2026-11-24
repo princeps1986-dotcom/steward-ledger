@@ -45,6 +45,13 @@ describe('헌금 CSV 불러오기 판정', () => {
     expect(withPhone.draft?.memberId).toBe('m4');
   });
 
+  it('엑셀이 지운 연락처 앞자리 0을 되돌려 동명이인을 찾는다', () => {
+    const withZero = [...members, member({ id: 'm5', name: '홍길동', phoneLast4: '0123' })];
+    const [r] = matchDonationRows(csv([row({ 성도이름: '홍길동', 연락처뒷4자리: '123' })]).rows, { ...base, members: withZero });
+    expect(r.draft?.memberId).toBe('m5');
+    expect(csv([row({ 연락처뒷4자리: '' })]).rows[0].phoneLast4).toBe('');
+  });
+
   it('금액 상한을 넘으면 오류', () => {
     const [r] = matchDonationRows(csv([row({ 금액: '99999999999999999999' })]).rows, base);
     expect(r.status).toBe('ERROR');

@@ -60,7 +60,8 @@ export function normalizeDonationRows(raw: Record<string, string>[]): { rows: Do
     rowNo: i + 2,
     date: pick(rec, ALIASES.date).replace(/[./]/g, '-'),
     name: pick(rec, ALIASES.name),
-    phoneLast4: pick(rec, ALIASES.phoneLast4).replace(/[^0-9]/g, ''),
+    // 엑셀이 앞자리 0을 지운 값(0123 → 123)을 성도 명단 불러오기처럼 4자리로 되돌립니다. 빈 값은 그대로 둡니다.
+    phoneLast4: pick(rec, ALIASES.phoneLast4).replace(/[^0-9]/g, '').replace(/^\d{1,3}$/, (d) => d.padStart(4, '0')),
     typeName: pick(rec, ALIASES.typeName),
     amountRaw: pick(rec, ALIASES.amountRaw).replace(/[,\s원]/g, ''),
     memo: pick(rec, ALIASES.memo),
