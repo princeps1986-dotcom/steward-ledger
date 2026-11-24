@@ -86,6 +86,8 @@ export interface AppSettings {
   printTheme: PrintTheme;
   /** 변경 내역 창을 마지막으로 확인한 데스크톱 앱 버전(업데이트 후 첫 실행에 한 번 보여 주기용) */
   seenVersion?: string;
+  /** 잠긴(마감한) 연도. 잠긴 연도의 헌금은 입력·수정·삭제할 수 없습니다(걸기: 관리자·재정담당, 풀기: 관리자) */
+  lockedYears: string[];
 }
 
 export type FontScale = 'SMALL' | 'NORMAL' | 'LARGE' | 'XLARGE';
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontScale: 'NORMAL',
   theme: 'BLUE',
   printTheme: 'MONO',
+  lockedYears: [],
 };
 
 /** 헌금 저장 입력 (한 봉투의 한 종류) */

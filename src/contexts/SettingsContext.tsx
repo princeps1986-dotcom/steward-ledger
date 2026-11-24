@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createContext, useContextSelector } from 'use-context-selector';
+import { assertAllowed } from '../services/auth/access';
 import { applyTheme } from '../services/theme';
 import { getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
@@ -52,6 +53,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const { result } = await transact(async (read) => {
       const cur = { ...DEFAULT_SETTINGS, ...((await read<Partial<AppSettings>>(KEYS.settings)) ?? {}) };
       const next = { ...cur, ...patch };
+      // 연도 잠금: 걸기는 관리자·재정담당, 풀기는 관리자만(화면을 우회해도 막음)
+      if (patch.lockedYears) {
+        if (patch.lockedYears.some((y) => !cur.lockedYears.includes(y))) assertAllowed('year:lock');
+        if (cur.lockedYears.some((y) => !patch.lockedYears!.includes(y))) assertAllowed('year:unlock');
+      }
       return { writes: [{ key: KEYS.settings, value: next }], result: next };
     });
     setSettings(result);

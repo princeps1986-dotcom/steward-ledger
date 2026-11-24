@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import type { AuditLog, Donation } from '../../contexts/types';
+import type { AppSettings, AuditLog, Donation } from '../../contexts/types';
 import { allowed, NOT_ALLOWED } from '../auth/access';
 import { decryptJson, encryptJson, hasDataKey } from './cipher';
 import { db, type AuditRow, type Sealable } from './db';
@@ -220,12 +220,21 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
  */
 export function transact<R>(
   build: (read: Reader) => Promise<{ writes: Write[]; result: R }>,
-  opts: { markDirty?: boolean } = {},
+  opts: { markDirty?: boolean; lockYears?: boolean } = {},
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
     try {
       const out = await db.transaction('rw', db.kv, db.donations, db.audits, async () => {
         const { writes, result } = await build(getItem);
+        // 연도 잠금(헌금 입력·수정·삭제·복구·기간 삭제가 켬): 잠긴 연도의 헌금은 바꿀 수 없습니다. 복원·초기화·시연은 관리자 전용 진입 함수가 따로 다룹니다.
+        if (opts.lockYears) {
+          const years = new Set(writes.flatMap((w) => DONATION_KEY_RE.exec(w.key)?.[1].slice(0, 4) ?? []));
+          if (years.size) {
+            const locked = (await getItem<Partial<AppSettings>>(KEYS.settings))?.lockedYears ?? [];
+            const hit = [...years].find((y) => locked.includes(y));
+            if (hit) throw new Error(`${hit}년은 잠겨 있어 입력·수정·삭제할 수 없습니다. 관리자가 [설정 정보]에서 잠금을 풀 수 있습니다.`);
+          }
+        }
         // 쓰기 길목의 역할 확인: 헌금·성도·이력을 바꾸는 쓰기는 입력/편집 권한이 있는 역할만(열람자는 화면을 우회해도 저장되지 않음). 복원·초기화·일괄 삭제는 각 진입 함수가 더 엄격히 확인합니다.
         if (writes.some((w) => isDataKey(w.key)) && !allowed('donation:write') && !allowed('catalog:edit')) throw new Error(NOT_ALLOWED);
         const all = [...writes];
@@ -339,6 +348,10 @@ export async function strayRowWrites(ids: ReadonlySet<string>, years: ReadonlySe
 /** 그 연도의 헌금 건수(기본키 색인 범위로 세므로 내역을 읽지 않음) */
 export const countYearDonations = (year: string): Promise<number> =>
   db.donations.where('[date+id]').between([`${year}-`, Dexie.minKey], [`${year}-￿`, Dexie.maxKey], true, true).count();
+
+/** 달 범위('YYYY-MM' ~ 'YYYY-MM', 양 끝 포함)의 헌금 건수(색인 사용) */
+export const countDonationsBetween = (fromYm: string, toYm: string): Promise<number> =>
+  db.donations.where('[date+id]').between([`${fromYm}-`, Dexie.minKey], [`${toYm}-￿`, Dexie.maxKey], true, true).count();
 
 /** 헌금 종류를 쓰는 내역 수(색인 사용) */
 export const countDonationsOfType = (offeringTypeId: string): Promise<number> => db.donations.where('offeringTypeId').equals(offeringTypeId).count();

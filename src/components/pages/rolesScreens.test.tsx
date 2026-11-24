@@ -68,6 +68,8 @@ describe('역할별 설정 화면', () => {
     expect(has('전체 초기화')).toBe(true);
     expect(has('시연 데이터 생성')).toBe(true);
     expect(has('업데이트 확인')).toBe(true);
+    expect(screen.getByText('연도 잠금')).toBeTruthy();
+    expect(screen.getByText('기간 헌금 삭제')).toBeTruthy();
   });
 
   it('재정담당은 백업 저장·업데이트는 보지만 복원·전체 초기화·시연 데이터는 보지 못한다', async () => {
@@ -78,6 +80,8 @@ describe('역할별 설정 화면', () => {
     expect(has('백업 파일 복원')).toBe(false);
     expect(has('전체 초기화')).toBe(false);
     expect(has('시연 데이터 생성')).toBe(false);
+    expect(screen.getByText('연도 잠금')).toBeTruthy(); // 잠그기는 재정담당도
+    expect(screen.queryByText('기간 헌금 삭제')).toBeNull(); // 일괄 삭제는 관리자만
   });
 
   it('열람자는 화면 테마만 바꿀 수 있고 백업·복원·업데이트·초기화는 모두 보이지 않는다', async () => {
@@ -85,6 +89,7 @@ describe('역할별 설정 화면', () => {
     renderPage(<SettingsPage />);
     expect(await screen.findByText('화면 테마')).toBeTruthy();
     expect(screen.getByText(/인쇄 양식 색상/)).toBeTruthy();
+    expect(screen.queryByText('연도 잠금')).toBeNull();
     for (const name of ['백업 파일 저장', '백업 파일 복원', '전체 초기화', '시연 데이터 생성', '업데이트 확인', '설정 저장']) expect(has(name)).toBe(false);
   });
 });

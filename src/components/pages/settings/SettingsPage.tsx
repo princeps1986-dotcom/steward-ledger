@@ -5,6 +5,8 @@ import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { ThemePicker } from '../../shared/ThemePicker';
 import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { PeriodDeleteSection } from './PeriodDeleteSection';
+import { YearLockSection } from './YearLockSection';
 
 export function SettingsPage() {
   const s = useSettingsPage();
@@ -223,6 +225,9 @@ export function SettingsPage() {
         ) : null}
       </Modal>
 
+      <YearLockSection />
+      {allowed('donation:bulkDelete') ? <PeriodDeleteSection /> : null}
+
       {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
       {allowed('data:reset') ? (
       <section className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-4" aria-labelledby="danger-zone-title">
@@ -320,6 +325,7 @@ export function SettingsPage() {
           <div className="rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900">
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li><b>성도</b>, <b>헌금 내역</b>, <b>수정·삭제 이력</b>이 모두 삭제됩니다.</li>
+              <li>잠긴 연도도 모두 지워집니다.</li>
               <li><b>헌금 종류</b>는 <b>기본값</b>으로 돌아갑니다. 환경 설정은 유지됩니다.</li>
             </ul>
           </div>
@@ -384,7 +390,7 @@ export function SettingsPage() {
         open={!!s.restore}
         onClose={s.cancelRestore}
         title={s.restore?.full ? '전체 복원할까요?' : singleRestoreYear ? `${s.restoreYear}년 백업 파일을 복원할까요?` : '백업 파일 복원할까요?'}
-        description={s.restore?.full ? '현재 모든 데이터가 백업 시점으로 바뀝니다.' : singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다.` : '복원할 연도를 선택하세요.'}
+        description={s.restore?.full ? '현재 모든 데이터가 백업 시점으로 바뀝니다. 잠긴 연도도 바뀝니다.' : singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다. 잠긴 연도도 바뀝니다.` : '복원할 연도를 선택하세요. 잠긴 연도도 바뀝니다.'}
         footer={
           <ConfirmFooter
             onCancel={s.cancelRestore}

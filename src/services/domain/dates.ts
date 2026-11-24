@@ -61,3 +61,18 @@ export const formatPrintStamp = (d: Date): string => `${format(d, 'yyyy-MM-dd')}
 
 export const nowStamp = (): string => format(seoulNow(), 'yyyyMMdd_HHmmss');
 export const formatDateTime = (iso: string): string => format(seoulNow(parseISO(iso)), 'yyyy-MM-dd HH:mm:ss');
+
+/** 'YYYY-MM' 두 달 사이(양 끝 포함)의 달 목록. 형식이 틀리거나 끝이 시작보다 앞서면 오류 */
+export function monthsBetween(fromYm: string, toYm: string): string[] {
+  const re = /^\d{4}-(0[1-9]|1[0-2])$/;
+  if (!re.test(fromYm) || !re.test(toYm)) throw new Error('달은 YYYY-MM 형식이어야 합니다.');
+  if (fromYm > toYm) throw new Error('끝 달이 시작 달보다 앞설 수 없습니다.');
+  const out: string[] = [];
+  let [y, m] = fromYm.split('-').map(Number);
+  for (;;) {
+    const ym = `${y}-${String(m).padStart(2, '0')}`;
+    out.push(ym);
+    if (ym === toYm) return out;
+    if (++m > 12) [y, m] = [y + 1, 1];
+  }
+}

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createContext, useContextSelector } from 'use-context-selector';
 import { nextAnonymousName, uniqueAnonymousName } from '../services/domain/anonymous';
 import { assertNotRestoring } from '../services/backup/backupBusy';
-import { yearOf } from '../services/domain/dates';
+import { assertAllowed } from '../services/auth/access';
+import { monthsBetween, yearOf } from '../services/domain/dates';
 import {
   applyRowOps,
   buildDonation,
@@ -10,6 +11,7 @@ import {
   mergeDonation,
   REASON_MERGE,
   REASON_UNDO,
+  validateReason,
 } from '../services/domain/donationOps';
 import { newId, nowIso } from '../services/domain/ids';
 import { yearsToEvict } from '../services/domain/monthCache';
@@ -21,6 +23,7 @@ import {
   findDonationById,
   findDuplicateRow,
   getItem,
+  KEYS,
   listDonationYears,
   monthOfDate,
   monthsOfYear,
@@ -33,7 +36,7 @@ import {
   type Write,
 } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
-import type { AuditLog, Donation, DonationDraft, DuplicateResolution, SaveBatch } from './types';
+import type { AppSettings, AuditLog, Donation, DonationDraft, DuplicateResolution, SaveBatch } from './types';
 
 const HISTORY_LIMIT = 10;
 /**
@@ -56,6 +59,8 @@ interface DonationActions {
   saveBatch(drafts: DonationDraft[], resolution: DuplicateResolution): Promise<SaveBatch>;
   updateDonation(original: Donation, next: Donation, reason: string): Promise<void>;
   deleteDonation(target: Donation, reason: string): Promise<void>;
+  /** 달 범위의 헌금을 모두 지우고 건별 이력을 남깁니다(관리자 전용). 지운 건수를 돌려줌 */
+  deletePeriod(fromYm: string, toYm: string, reason: string): Promise<number>;
   undoLast(): Promise<SaveBatch | null>;
   reloadAll(): Promise<void>;
 }
@@ -397,7 +402,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const w: Write[] = [rowWrite(ym, { puts: [...touched.values()], deletes: [] })];
         if (logs.length) w.push(auditAppend(year, logs));
         return { writes: w, result: batch };
-      });
+      }, { lockYears: true });
       applyWrites(writes);
       setHistory((prev) => [result, ...prev].slice(0, HISTORY_LIMIT));
       return result;
@@ -429,7 +434,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         else w.push(rowWrite(oldYm, { puts: [], deletes: [[before.date, before.id]] }), rowWrite(newYm, { puts: [after], deletes: [] }));
         w.push(auditAppend(newYear, [makeAudit('UPDATE', before, after, reason)]));
         return { writes: w, result: undefined };
-      });
+      }, { lockYears: true });
       applyWrites(writes);
     },
     [applyWrites],
@@ -444,7 +449,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const before = await readRow(target.date, target.id);
         if (!before) throw new Error('삭제할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
         return { writes: [rowWrite(ym, { puts: [], deletes: [[before.date, before.id]] }), auditAppend(year, [makeAudit('DELETE', before, null, reason)])], result: undefined };
-      });
+      }, { lockYears: true });
       applyWrites(writes);
     },
     [applyWrites],
@@ -494,15 +499,46 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       for (const [m, o] of ops) w.push(rowWrite(m, o));
       for (const [y, l] of logs) w.push(auditAppend(y, l));
       return { writes: w, result: undefined };
-    });
+    }, { lockYears: true });
     applyWrites(writes);
     setHistory((prev) => prev.filter((b) => b.batchId !== batch.batchId));
     return batch;
   }, [applyWrites]);
 
+  /**
+   * 기간(달 범위, 양 끝 포함)의 헌금을 모두 지웁니다(관리자 전용). 달 단위 트랜잭션으로 지우고 건마다 이력(사유·작업자)을 남깁니다.
+   * 잠긴 연도가 범위에 있으면 아무것도 지우기 전에 거절합니다. 지운 건수를 돌려줍니다.
+   */
+  const deletePeriod = useCallback(
+    async (fromYm: string, toYm: string, reason: string): Promise<number> => {
+      assertAllowed('donation:bulkDelete');
+      assertNotRestoring();
+      const bad = validateReason(reason);
+      if (bad) throw new Error(bad);
+      const yms = monthsBetween(fromYm, toYm);
+      const locked = (await getItem<Partial<AppSettings>>(KEYS.settings))?.lockedYears ?? [];
+      const hit = yms.map((m) => m.slice(0, 4)).find((y) => locked.includes(y));
+      if (hit) throw new Error(`${hit}년은 잠겨 있어 지울 수 없습니다. 먼저 잠금을 푸세요.`);
+      let total = 0;
+      for (const ym of yms) {
+        const { writes, result } = await transact(async () => {
+          const rows = await readMonth(ym);
+          if (rows.length === 0) return { writes: [], result: 0 };
+          const now = nowIso();
+          const logs = rows.map((r) => makeAudit('DELETE', r, null, reason, now));
+          return { writes: [rowWrite(ym, { puts: [], deletes: rows.map((r) => [r.date, r.id] as const) }), auditAppend(ym.slice(0, 4), logs)], result: rows.length };
+        }, { lockYears: true });
+        applyWrites(writes);
+        total += result;
+      }
+      return total;
+    },
+    [applyWrites],
+  );
+
   const actions = useMemo(
-    () => ({ ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll }),
-    [ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, undoLast, reloadAll],
+    () => ({ ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, deletePeriod, undoLast, reloadAll }),
+    [ensureMonths, pinMonths, ensureYear, ensureAuditYear, findDuplicates, saveBatch, updateDonation, deleteDonation, deletePeriod, undoLast, reloadAll],
   );
   const value = useMemo(() => ({ months, epoch, monthVersions, audits, years, history, failedMonths, actions }), [months, epoch, monthVersions, audits, years, history, failedMonths, actions]);
   return <DonationCtx.Provider value={value}>{children}</DonationCtx.Provider>;
