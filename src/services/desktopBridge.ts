@@ -99,6 +99,11 @@ export interface DesktopApi {
   authSetPin(pin: string): Promise<{ ok: true } | { error: string }>;
   /** ok:false의 left=남은 시도 · locked=5회 실패로 로그아웃됨(구글 재로그인 필요) · noPin=PIN이 아직 없음 */
   authVerifyPin(pin: string): Promise<{ ok: true } | { ok: false; left: number } | { ok: false; locked: true } | { ok: false; noPin: true } | { error: string }>;
+  /** 계정·역할 관리(관리자만, main이 확인). 화면은 6단계 관리자 탭. 실패하면 { error }. */
+  usersList(): Promise<{ users: UserEntry[] } | { error: string }>;
+  usersAdd(user: { email: string; role: Role }): Promise<{ ok: true } | { error: string }>;
+  usersSetRole(email: string, role: Role): Promise<{ ok: true } | { error: string }>;
+  usersSetDisabled(email: string, disabled: boolean): Promise<{ ok: true } | { error: string }>;
   /** 저장 데이터 열쇠(base64, 로그인 뒤에만). 풀 수 없으면 code가 DATA_KEY_UNREADABLE(Windows 계정이 바뀌었거나 다시 설치됨). */
   dataKey(): Promise<{ key: string } | { error: string; code?: string }>;
   /** 풀 수 없는 열쇠를 .old로 남기고 새로 만듭니다(화면이 저장소가 비었거나 새로 시작하기로 확인한 뒤에만). 멀쩡한 열쇠는 그대로 둡니다. */
@@ -106,6 +111,16 @@ export interface DesktopApi {
   /** 브라우저 응답을 기다리는 로그인을 멈춥니다(그 로그인은 '취소했습니다' 오류로 끝남). */
   authCancel(): Promise<void>;
   authLogout(): Promise<void>;
+}
+
+/** 계정 목록의 한 줄(sub·PIN 해시는 화면에 주지 않음). registered=false는 한 번도 로그인하지 않은 사전 등록 */
+export interface UserEntry {
+  email: string;
+  role: Role;
+  addedAt: string;
+  disabled: boolean;
+  registered: boolean;
+  hasPin: boolean;
 }
 
 export interface AuthStatus {

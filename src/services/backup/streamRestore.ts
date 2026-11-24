@@ -8,6 +8,7 @@ import { planMerge, remapAudits, remapDonations, restoredLists, type MergePlan, 
 import { Sha256 } from './sha256';
 import type { DesktopApi } from '../desktopBridge';
 import { fillReason, isAuditLike, isDonation, isMember, isOfferingType, NDJSON_PREFIX, NDJSON_VERSION } from './validation';
+import { assertAllowed } from '../auth/access';
 
 /**
  * 큰 백업을 파일째 메모리에 올리지 않고 줄 단위로 읽어 복원합니다(줄 단위 형식 .json/.json.gz 전용; 오래된 한 덩어리 JSON은 기존 방식).
@@ -226,7 +227,10 @@ export async function planFor(scan: Pick<BackupScan, 'members' | 'offeringTypes'
  * 검증을 마친 파일(scanBackupFile)에서 선택한 연도의 헌금·이력만 복원합니다(다른 연도는 그대로, 성도·헌금 종류는 합침).
  * 실패하면 '복원 중' 표시를 남긴 채 오류를 던집니다.
  */
-export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite, full = false): Promise<RestoreResult> => withRestoring(() => restoreFromFileNow(file, scan, years, overwrite, full));
+export const restoreFromFile = (file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite, full = false): Promise<RestoreResult> => {
+  assertAllowed('backup:restore'); // 복원은 관리자만(복원으로 일괄 삭제 제한·연도 잠금이 우회되지 않게)
+  return withRestoring(() => restoreFromFileNow(file, scan, years, overwrite, full));
+};
 /** full: 현재 성도·헌금 종류·모든 헌금·이력을 지우고 백업 내용으로 완전히 교체합니다(years는 백업의 모든 연도). */
 async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years: readonly string[], overwrite?: RestoreOverwrite, full = false): Promise<RestoreResult> {
   await assertNoDemo();

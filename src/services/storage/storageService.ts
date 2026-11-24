@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import type { AuditLog, Donation } from '../../contexts/types';
+import { allowed, NOT_ALLOWED } from '../auth/access';
 import { decryptJson, encryptJson, hasDataKey } from './cipher';
 import { db, type AuditRow, type Sealable } from './db';
 import { auditKey, donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS } from './keys';
@@ -225,6 +226,8 @@ export function transact<R>(
     try {
       const out = await db.transaction('rw', db.kv, db.donations, db.audits, async () => {
         const { writes, result } = await build(getItem);
+        // 쓰기 길목의 역할 확인: 헌금·성도·이력을 바꾸는 쓰기는 입력/편집 권한이 있는 역할만(열람자는 화면을 우회해도 저장되지 않음). 복원·초기화·일괄 삭제는 각 진입 함수가 더 엄격히 확인합니다.
+        if (writes.some((w) => isDataKey(w.key)) && !allowed('donation:write') && !allowed('catalog:edit')) throw new Error(NOT_ALLOWED);
         const all = [...writes];
         // '마지막 백업 이후 변경' 표시는 아직 꺼져 있을 때만 씁니다(저장마다 같은 값을 다시 쓰지 않음).
         if (all.length > 0 && (opts.markDirty ?? true) && writes.some((w) => isDataKey(w.key))) {

@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Donation, Member } from '../../contexts/types';
+import { setCurrentUser } from '../auth/currentUser';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { getItem, KEYS, listDonationMonths, monthWrite, readMonth, transact, wipeDonationsWrites } from '../storage/storageService';
@@ -106,10 +107,14 @@ const don = (id: string, date: string, memberId: string | null = null): Donation
 const real: Member = { id: 'real-1', name: '김철수', position: '', isFamilyHead: true, isActive: true, createdAt: 'x', updatedAt: 'x' };
 
 beforeEach(async () => {
+  setCurrentUser({ email: 'a@b.c', role: 'admin' }); // 데스크톱 모드를 흉내 내는 시험은 로그인한 관리자로 진행
   await db.kv.clear();
   await db.donations.clear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setCurrentUser(null);
+});
 
 describe('hasDemoData', () => {
   it('is false for real data and true as soon as one demo donation exists', async () => {

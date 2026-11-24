@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useHasExportableData, useReportExport, useReportFilters, useTypeToggleOptions, type ReportTab } from '../../../hooks/useReports';
+import { allowed } from '../../../services/auth/access';
+import type { Action } from '../../../services/auth/roles';
 import type { PeriodType } from '../../../services/domain/dates';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
@@ -9,14 +11,17 @@ import { PersonalTab } from './PersonalTab';
 import { PrintHeader } from './PrintHeader';
 import { SummaryTab } from './SummaryTab';
 
-const TABS: { key: ReportTab; label: string }[] = [
+const ALL_TABS: { key: ReportTab; label: string }[] = [
   { key: 'SUMMARY', label: '종합 보고서' },
   { key: 'LIST', label: '전체 입력 내역' },
   { key: 'PERSONAL', label: '개인별·세대별 내역' },
   { key: 'AUDIT', label: '수정·삭제 이력' },
 ];
+/** 탭마다 필요한 권한(roles.ts). 열람자는 종합 보고서 탭만 봅니다. */
+const TAB_ACTION: Record<ReportTab, Action> = { SUMMARY: 'report:summary', LIST: 'report:list', PERSONAL: 'report:personal', AUDIT: 'report:audit' };
 
 export function ReportsPage() {
+  const tabs = ALL_TABS.filter((t) => allowed(TAB_ACTION[t.key]));
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
   // 전체 입력 내역 탭은 기간의 헌금을 메모리에 올리지 않고 달 단위로 직접 읽습니다(큰 연도에서도 메모리가 작음).
   const f = useReportFilters(tab !== 'LIST');
@@ -42,6 +47,7 @@ export function ReportsPage() {
     setIncludeInactive(true);
   }, [reportKey]);
   const changeTab = (t: ReportTab) => {
+    if (!tabs.some((x) => x.key === t)) return; // 허용되지 않은 탭은 열지 않습니다.
     setTab(t);
     setFlippedIds([]);
     setIncludeInactive(true);
@@ -127,7 +133,7 @@ export function ReportsPage() {
       {showPrintTitle ? <PrintHeader title={`${f.label} 헌금 결산 보고서`} /> : null}
 
       <nav className="no-print flex gap-1 border-b border-gray-200" role="tablist" aria-label="보고서 종류">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             role="tab"

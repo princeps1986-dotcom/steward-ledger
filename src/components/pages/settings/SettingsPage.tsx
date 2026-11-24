@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useSettingsPage } from '../../../hooks/useSettingsPage';
+import { allowed } from '../../../services/auth/access';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { ThemePicker } from '../../shared/ThemePicker';
@@ -9,6 +10,20 @@ export function SettingsPage() {
   const s = useSettingsPage();
   const fileRef = useRef<HTMLInputElement>(null);
   const singleRestoreYear = s.restoreYearOptions.length === 1;
+  // 열람자는 설정 전체가 아니라 화면 테마만 바꿀 수 있습니다(역할 표의 settings:full).
+  if (!allowed('settings:full')) {
+    return (
+      <div className="max-w-3xl space-y-4">
+        <section className="card space-y-3">
+          <h3 className="font-semibold">
+            화면 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
+          </h3>
+          <ThemePicker legend="화면 테마" value={s.theme} options={s.themeOptions} onChange={s.changeTheme} />
+          <ThemePicker legend="인쇄 양식 색상 (보고서 인쇄)" value={s.printTheme} options={s.printThemeOptions} onChange={s.changePrintTheme} />
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="max-w-3xl space-y-4">
       <Notice message={s.message} />
@@ -84,10 +99,15 @@ export function SettingsPage() {
           >
             백업 파일 저장
           </button>
-          <button className="btn" onClick={s.openRestoreChoice} disabled={s.busy || s.backupBlocked}>
-            백업 파일 복원
-          </button>
-          <input ref={fileRef} type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
+          {/* 복원은 관리자만(복원으로 일괄 삭제 제한·연도 잠금이 우회되지 않게) */}
+          {allowed('backup:restore') ? (
+            <>
+              <button className="btn" onClick={s.openRestoreChoice} disabled={s.busy || s.backupBlocked}>
+                백업 파일 복원
+              </button>
+              <input ref={fileRef} type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
+            </>
+          ) : null}
         </div>
         {/* 전체 백업(앱 종료 때 자동 백업, 모든 연도를 담은 직접 백업)이 성공했을 때만 갱신됩니다. */}
         <p className="text-sm text-gray-600">마지막 전체 백업 시각: {s.lastBackupLabel}</p>
@@ -117,7 +137,7 @@ export function SettingsPage() {
       </section>
 
       {/* 데스크톱 앱에서만: 단추를 누를 때만 인터넷에 접속해 바뀐 부분을 받고, 앱을 닫을 때 설치합니다. */}
-      {s.isDesktop ? (
+      {s.isDesktop && allowed('update:check') ? (
         <section className="card space-y-3" aria-labelledby="app-update-title">
           <h3 id="app-update-title" className="font-semibold">
             프로그램 업데이트
@@ -204,6 +224,7 @@ export function SettingsPage() {
       </Modal>
 
       {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
+      {allowed('data:reset') ? (
       <section className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-4" aria-labelledby="danger-zone-title">
         <h3 id="danger-zone-title" className="flex items-center gap-1.5 font-semibold text-red-700">
           <span aria-hidden="true">⚠</span> 시연 데이터 생성 · 삭제
@@ -224,6 +245,7 @@ export function SettingsPage() {
         {s.demoCreating ? <p className="text-sm font-semibold text-red-700">시연 데이터를 만드는 중에는 제거할 수 없습니다. 끝나면 사용할 수 있습니다.</p> : null}
         {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다.<br/>먼저 [시연 데이터 제거]를 누르세요.</p> : null}
       </section>
+      ) : null}
 
       <Modal
         open={s.periodicBusyOpen}

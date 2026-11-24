@@ -8,6 +8,8 @@ import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from 
 import { saveBackupFile } from '../services/backup/backupService';
 import { isRestoring } from '../services/backup/backupBusy';
 import { formatDateTime } from '../services/domain/dates';
+import { allowed } from '../services/auth/access';
+import type { Action } from '../services/auth/roles';
 import { desktop } from '../services/desktopBridge';
 
 export type PageKey = 'input' | 'members' | 'offerings' | 'reports' | 'settings' | 'help';
@@ -21,9 +23,19 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'help', label: '설명서' },
 ];
 
+/** 메뉴(페이지)마다 필요한 권한. 설정·설명서는 모두에게 열리고(설정은 화면 안에서 역할별로 줄임), 나머지는 역할 표(roles.ts)를 따릅니다. */
+const PAGE_ACTION: Record<PageKey, Action | null> = { input: 'donation:write', reports: 'report:summary', members: 'catalog:edit', offerings: 'catalog:edit', settings: null, help: null };
+export const pageAllowed = (key: PageKey): boolean => PAGE_ACTION[key] === null || allowed(PAGE_ACTION[key]);
+/** 지금 역할이 볼 수 있는 메뉴 */
+export const visiblePages = (): typeof PAGES => PAGES.filter((p) => pageAllowed(p.key));
+
 export function useAppNav() {
-  const [page, setPage] = useState<PageKey>('input');
-  return { page, setPage };
+  const [page, setRawPage] = useState<PageKey>(() => visiblePages()[0]?.key ?? 'help');
+  // 허용되지 않은 페이지로는 이동하지 않고, 어떻게든 들어오더라도 그리지 않고 첫 메뉴로 돌립니다(직접 여는 경로 차단).
+  const setPage = (key: PageKey): void => {
+    if (pageAllowed(key)) setRawPage(key);
+  };
+  return { page: pageAllowed(page) ? page : (visiblePages()[0]?.key ?? 'help'), setPage };
 }
 
 /**
@@ -140,7 +152,7 @@ export function useBackupReminder(autoBackupFailure: string | null, goSettings: 
     tone = 'error';
   } else if (demoBlocked) {
     text = null;
-  } else if (desktop() && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
+  } else if (desktop() && allowed('backup:create') && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
     text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
   }
 

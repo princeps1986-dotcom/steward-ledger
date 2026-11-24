@@ -30,6 +30,7 @@ import {
 } from '../storage/storageService';
 import { NDJSON_VERSION } from './validation';
 import { Sha256 } from './sha256';
+import { assertAllowed } from '../auth/access';
 
 /** 줄 단위 백업에서 한 번에 읽는 키 수(이력 키를 묶어 읽어 읽기 횟수를 줄임) */
 const BACKUP_READ_BATCH = 6;
@@ -216,6 +217,7 @@ export async function isCompleteYearBackup(year: string): Promise<boolean> {
  * 도중에 실패하면 아무것도 바뀌지 않습니다(월별 키마다 값이 따로라 한 값의 크기 한도에 걸리지도 않습니다).
  */
 export async function replaceAllData(payload: BackupPayload, extraWrites: Write[] = []): Promise<void> {
+  assertAllowed('backup:restore');
   await transact(async () => {
     const writes: Write[] = [];
     writes.push(...(await wipeDonationsWrites()));
@@ -244,6 +246,7 @@ export async function replaceAllData(payload: BackupPayload, extraWrites: Write[
  * 환경 설정(테마·백업 주기 등)은 유지합니다.
  */
 export async function resetAllData(extraWrites: Write[] = []): Promise<void> {
+  assertAllowed('data:reset');
   await replaceAllData({
     members: [],
     offeringTypes: DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() })),

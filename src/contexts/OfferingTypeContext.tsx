@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createContext, useContextSelector } from 'use-context-selector';
 import { newId } from '../services/domain/ids';
 import { DEFAULT_OFFERING_TYPES, type OfferingTypeDraft } from '../services/domain/offeringDefaults';
+import { isNotAllowed } from '../services/auth/access';
 import { countDonationsOfType, getItem, KEYS, transact } from '../services/storage/storageService';
 import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import type { OfferingType } from './types';
@@ -38,13 +39,18 @@ export function OfferingTypeProvider({ children }: { children: ReactNode }) {
     const stored = await getItem<OfferingType[]>(KEYS.offeringTypes);
     if (stored === null) {
       // 최초 실행 시 기본 헌금 종류 시드
-      const { result } = await transact(async (read) => {
-        const again = await read<OfferingType[]>(KEYS.offeringTypes);
-        if (again) return { writes: [], result: again };
-        const seeded = DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() }));
-        return { writes: [{ key: KEYS.offeringTypes, value: seeded }], result: seeded };
-      }, { markDirty: false });
-      setTypes(result);
+      try {
+        const { result } = await transact(async (read) => {
+          const again = await read<OfferingType[]>(KEYS.offeringTypes);
+          if (again) return { writes: [], result: again };
+          const seeded = DEFAULT_OFFERING_TYPES.map((t) => ({ ...t, id: newId() }));
+          return { writes: [{ key: KEYS.offeringTypes, value: seeded }], result: seeded };
+        }, { markDirty: false });
+        setTypes(result);
+      } catch (e) {
+        if (!isNotAllowed(e)) throw e;
+        setTypes([]); // 저장 권한이 없는 역할(열람자)은 기본값을 만들지 않고 빈 목록으로 둡니다(관리자가 처음 쓸 때 만들어짐).
+      }
     } else {
       setTypes(stored);
     }

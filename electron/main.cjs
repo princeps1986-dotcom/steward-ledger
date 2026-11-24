@@ -26,6 +26,7 @@ const DEV_URL = (!app.isPackaged && process.env.ELECTRON_DEV_URL) || null;
 const DIST = path.join(__dirname, '..', 'dist');
 // 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
+const NOT_ALLOWED = '이 작업을 할 권한이 없습니다.';
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -143,6 +144,7 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:begin', async (event, spec) => {
     await abortAutoSession();
     const kind = spec && spec.kind;
+    if (kind === 'manual' && !roleIs('admin', 'finance')) throw new Error(NOT_ALLOWED); // 직접 백업 만들기는 관리자·재정담당만
     if (kind === 'manual') {
       if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
       // 직접 백업은 사용자가 정한 암호로만 잠급니다(앱은 암호를 저장하지 않음).
@@ -553,6 +555,7 @@ if (!app.requestSingleInstanceLock()) {
   };
   ipcMain.handle('update:check', async () => {
     const current = app.getVersion();
+    if (!roleIs('admin', 'finance')) return { current, error: NOT_ALLOWED }; // 업데이트는 관리자·재정담당만
     if (!app.isPackaged) return { current, error: '설치한 앱에서만 업데이트를 확인할 수 있습니다.' };
     try {
       const res = await getUpdater().checkForUpdates();
@@ -564,6 +567,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   let downloading = null;
   ipcMain.handle('update:download', (event) => {
+    if (!roleIs('admin', 'finance')) return { error: NOT_ALLOWED };
     if (!app.isPackaged) return { error: '설치한 앱에서만 업데이트할 수 있습니다.' };
     if (downloading) return downloading; // 단추를 여러 번 눌러도 한 번만 내려받습니다.
     const u = getUpdater();
@@ -586,6 +590,7 @@ if (!app.requestSingleInstanceLock()) {
   // 환경변수는 개발 실행에서만 씁니다(설치한 앱은 authConfig.cjs 값만).
   const devEnv = (name) => (!app.isPackaged && process.env[name]) || '';
   const users = createUserStore({ dir: app.getPath('userData') });
+
   const auth = createAuth({
     admit: users.admit, // 계정 목록에 있는 사람만 들어오고, 목록이 비었을 때 처음 로그인한 사람은 관리자(electron/userStore.cjs)
     clientId: devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
@@ -648,6 +653,14 @@ if (!app.requestSingleInstanceLock()) {
     'data:key-replace',
     withSession(async (me) => (me.role === 'admin' ? { key: (await dataKeys.replaceUnreadable()).toString('base64') } : { error: '관리자만 할 수 있습니다. 관리자에게 문의하세요.' })),
   );
+  // main이 실제로 막는 역할 제한: 계정·역할 관리는 관리자만, 업데이트·직접 백업 만들기는 관리자·재정담당만.
+  // 헌금 저장·복원·초기화는 화면(렌더러)의 저장소 작업이라 main이 막을 수 없고 화면 규칙으로 막습니다(src/services/auth/access.ts).
+  const roleIs = (...roles) => roles.includes(auth.session()?.role);
+  const adminOnly = (fn) => withSession(async (me, ...args) => (me.role === 'admin' ? fn(me, ...args) : { error: NOT_ALLOWED }));
+  ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
+  ipcMain.handle('users:add', adminOnly(async (_me, u) => (await users.add({ email: u && u.email, role: u && u.role }), { ok: true })));
+  ipcMain.handle('users:set-role', adminOnly(async (_me, email, role) => (await users.setRole(email, role), { ok: true })));
+  ipcMain.handle('users:set-disabled', adminOnly(async (me, email, disabled) => (await users.setDisabled(email, !!disabled, me.email), { ok: true })));
   ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());
 
