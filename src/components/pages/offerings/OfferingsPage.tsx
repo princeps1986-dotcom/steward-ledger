@@ -14,7 +14,7 @@ export function OfferingsPage() {
         </h3>
         <Notice message={p.thresholdMessage} />
         <label className="block w-72">
-          <span className="label">큰 금액 확인 기준 (이 금액 초과 시 확인창)</span>
+          <span className="label">이 금액 초과 시 확인창이 뜹니다.</span>
           <input className="input text-right" inputMode="numeric" value={p.threshold} onChange={(e) => p.setThreshold(e.target.value)} />
         </label>
         <div className="flex items-center gap-3">

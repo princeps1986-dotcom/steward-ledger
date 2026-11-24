@@ -9,7 +9,7 @@ import { SettingsPage } from '../settings/SettingsPage';
 import { OfferingsPage } from './OfferingsPage';
 
 const renderPage = (ui: React.ReactElement) => render(<AppProviders>{ui}</AppProviders>);
-const input = () => screen.getByLabelText(/큰 금액 확인 기준/) as HTMLInputElement;
+const input = () => screen.getByLabelText(/이 금액 초과 시 확인창/) as HTMLInputElement;
 const saved = async () => ((await db.kv.get(KEYS.settings)) as { largeAmountThreshold?: number } | undefined)?.largeAmountThreshold;
 
 beforeEach(async () => {
