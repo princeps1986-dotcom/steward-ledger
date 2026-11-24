@@ -43,25 +43,14 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
   /** 저장소의 최신 기록을 보고 줄마다 상태를 정합니다. */
   const classify = useCallback(
     async (src: DonationImportRow[], date: string | null) => {
-      const draftsOf = (list: MatchedDonationRow[]) => list.flatMap((r) => (r.draft ? [r.draft] : []));
-      const first = matchDonationRows(src, {
-        members,
-        types: allTypes,
-        defaultDate: hasDateColumn ? null : date,
-        largeAmountThreshold: settings.largeAmountThreshold,
-      });
-      const drafts = draftsOf(first);
+      const ctx = { members, types: allTypes, defaultDate: hasDateColumn ? null : date, largeAmountThreshold: settings.largeAmountThreshold };
+      // 1차: 초안을 만들고, 2차: 저장소의 기존 기록을 붙여 상태를 정합니다.
+      const first = matchDonationRows(src, ctx);
+      const drafts = first.flatMap((r) => (r.draft ? [r.draft] : []));
       const found = drafts.length ? await actions.findDuplicates(drafts) : [];
-      // 기존 기록은 초안 순서대로 붙이므로 줄 번호에 맞춥니다.
+      // 기존 기록은 초안 순서대로 돌아오므로 같은 순서로 줄에 맞춥니다.
       let k = 0;
-      const existing = first.map((r) => (r.draft ? found[k++] : undefined));
-      return matchDonationRows(src, {
-        members,
-        types: allTypes,
-        defaultDate: hasDateColumn ? null : date,
-        largeAmountThreshold: settings.largeAmountThreshold,
-        existing,
-      });
+      return matchDonationRows(src, { ...ctx, existing: first.map((r) => (r.draft ? found[k++] : undefined)) });
     },
     [actions, allTypes, members, settings.largeAmountThreshold, hasDateColumn],
   );
