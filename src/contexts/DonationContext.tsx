@@ -53,7 +53,8 @@ interface DonationActions {
   ensureAuditYear(year: string): Promise<void>;
   /** 각 초안별 중복(동일 날짜+성도+종류) 기존 내역. 저장소 최신값 기준 */
   findDuplicates(drafts: DonationDraft[]): Promise<(Donation | undefined)[]>;
-  saveBatch(drafts: DonationDraft[], resolution: DuplicateResolution): Promise<SaveBatch>;
+  /** label: 복구하기·입력 이력에 보일 묶음 이름(없으면 첫 줄의 성도 이름). 여러 명을 한 묶음으로 저장할 때 씀 */
+  saveBatch(drafts: DonationDraft[], resolution: DuplicateResolution, label?: string): Promise<SaveBatch>;
   updateDonation(original: Donation, next: Donation, reason: string): Promise<void>;
   deleteDonation(target: Donation, reason: string): Promise<void>;
   undoLast(): Promise<SaveBatch | null>;
@@ -345,7 +346,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   const findDuplicates = useCallback(async (drafts: DonationDraft[]) => Promise.all(drafts.map((d) => findDuplicateRow(d))), []);
 
   const saveBatch = useCallback(
-    async (input: DonationDraft[], resolution: DuplicateResolution) => {
+    async (input: DonationDraft[], resolution: DuplicateResolution, label?: string) => {
       assertNotRestoring();
       let drafts = input;
       if (drafts.length === 0) throw new Error('저장할 금액이 없습니다.');
@@ -364,7 +365,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           batchId: newId(),
           savedAt: now,
           date,
-          donorDisplayName: drafts[0].donorDisplayName,
+          donorDisplayName: label ?? drafts[0].donorDisplayName,
           createdIds: [],
           createdAfter: [],
           mergedBefore: [],

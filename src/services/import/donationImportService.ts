@@ -114,7 +114,9 @@ export function matchDonationRows(rows: DonationImportRow[], ctx: DonationMatchC
       const sameName = activeMembers.filter((m) => compact(m.name) === compact(r.name));
       let candidates = sameName;
       if (r.phoneLast4) candidates = sameName.filter((m) => m.phoneLast4 === r.phoneLast4);
-      if (sameName.length === 0) fail(`성도 '${r.name}'이(가) 명단에 없습니다. 성도 정보에서 먼저 등록하세요.`);
+      const inactiveSame = ctx.members.some((m) => !m.isActive && compact(m.name) === compact(r.name));
+      if (sameName.length === 0 && inactiveSame) fail(`성도 '${r.name}'은(는) 비활성 상태입니다. 성도 정보에서 다시 활성화한 뒤 불러오세요.`);
+      else if (sameName.length === 0) fail(`성도 '${r.name}'이(가) 명단에 없습니다. 성도 정보에서 먼저 등록하세요.`);
       else if (candidates.length === 0) fail(`성도 '${r.name}'의 연락처 뒷4자리(${r.phoneLast4 || '없음'})가 명단과 맞지 않습니다.`);
       else if (candidates.length > 1) fail(`동명이인 '${r.name}'이(가) ${candidates.length}명 있습니다. 연락처 뒷4자리를 적어 주세요.`);
       else member = candidates[0];
@@ -165,4 +167,22 @@ export function matchDonationRows(rows: DonationImportRow[], ctx: DonationMatchC
     row.status = status;
     return row;
   });
+}
+
+/**
+ * 한 파일은 한 날짜만 담습니다. 한 번의 저장이 한 날짜 달에만 기록되므로, 날짜가 섞이면 저장을 막고 이유를 알려 줍니다.
+ * (저장이 한 번에 원자적으로 끝나야 실패해도 반쯤 저장되지 않고, [복구하기]가 파일 전체를 되돌릴 수 있습니다.)
+ */
+export function fileDateError(matched: MatchedDonationRow[]): string | null {
+  const dates = [...new Set(matched.flatMap((r) => (r.draft ? [r.draft.date] : [])))].sort();
+  if (dates.length <= 1) return null;
+  return `파일에 날짜가 ${dates.length}개(${dates.slice(0, 3).join(', ')}${dates.length > 3 ? ' …' : ''}) 있습니다. 한 파일에는 한 날짜만 넣어 주세요. 날짜별로 파일을 나눠 불러오세요.`;
+}
+
+/** 저장 묶음의 이름표: 한 사람이면 이름, 여러 명이면 "첫 이름 외 N명". */
+export function batchLabel(drafts: DonationDraft[], members: Member[]): string {
+  const ids = [...new Set(drafts.map((d) => d.memberId))];
+  const first = members.find((m) => m.id === ids[0]);
+  const name = first?.name ?? drafts[0]?.donorDisplayName ?? '';
+  return ids.length > 1 ? `${name} 외 ${ids.length - 1}명` : name;
 }

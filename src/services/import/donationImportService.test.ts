@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, Member, OfferingType } from '../../contexts/types';
-import { matchDonationRows, normalizeDonationRows } from './donationImportService';
+import { batchLabel, fileDateError, matchDonationRows, normalizeDonationRows } from './donationImportService';
 
 const member = (over: Partial<Member>) => ({ id: 'm1', name: '김철수', isActive: true, phoneLast4: '1234', familyGroupId: 'g1', ...over }) as Member;
 const type = (name: string, over: Partial<OfferingType> = {}) =>
@@ -82,5 +82,29 @@ describe('헌금 CSV 불러오기 판정', () => {
   it('파일 안에 같은 줄이 두 번 있으면 두 번째 줄은 오류', () => {
     const rs = matchDonationRows(csv([row({}), row({})]).rows, base);
     expect(rs.map((r) => r.status)).toEqual(['OK', 'ERROR']);
+  });
+});
+
+describe('파일 단위 규칙', () => {
+  it('날짜가 두 개 이상이면 저장을 막는 이유를 돌려준다', () => {
+    const rs = matchDonationRows(csv([row({ 날짜: '2026-11-22' }), row({ 날짜: '2026-11-29' })]).rows, base);
+    expect(fileDateError(rs)).toContain('한 날짜');
+  });
+
+  it('날짜가 하나면 통과한다', () => {
+    const rs = matchDonationRows(csv([row({}), row({ 헌금종류: '감사헌금' })]).rows, base);
+    expect(fileDateError(rs)).toBeNull();
+  });
+
+  it('여러 명이면 묶음 이름은 "첫 이름 외 N명"', () => {
+    const rs = matchDonationRows(csv([row({}), row({ 성도이름: '이영희', 연락처뒷4자리: '5678' })]).rows, base);
+    const drafts = rs.flatMap((r) => (r.draft ? [r.draft] : []));
+    expect(batchLabel(drafts, members)).toBe('김철수 외 1명');
+    expect(batchLabel([drafts[0]], members)).toBe('김철수');
+  });
+
+  it('비활성 성도는 비활성 안내를 준다', () => {
+    const rs = matchDonationRows(csv([row({ 성도이름: '박비활' })]).rows, { ...base, members: [...members, member({ id: 'm9', name: '박비활', isActive: false })] });
+    expect(rs[0].messages[0]).toContain('비활성');
   });
 });
