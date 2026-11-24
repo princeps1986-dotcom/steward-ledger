@@ -1,3 +1,4 @@
+import { desktop } from '../../../services/desktopBridge';
 import { usePaging } from '../../../hooks/usePaging';
 import { useAuditLogTab, type AuditDonationView, type ReportFilters } from '../../../hooks/useReports';
 import { DateText } from '../../shared/DateText';
@@ -20,6 +21,7 @@ const PAGE_SIZE = 50;
 export function AuditTab({ f }: { f: ReportFilters }) {
   const logs = useAuditLogTab(f);
   const paging = usePaging(logs.length, PAGE_SIZE, f.label);
+  const showActor = !!desktop(); // 작업자는 로그인이 있는 PC앱에서만(브라우저 시연 모드에는 없음)
   return (
     <section className="card space-y-3 p-0">
       <p className="px-4 pt-3 text-sm text-gray-600">
@@ -32,7 +34,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
               <th className="th">작업 일시</th>
               <th className="th">유형</th>
               <th className="th">사유</th>
-              <th className="th">작업자</th>
+              {showActor ? <th className="th">작업자</th> : null}
               <th className="th">변경 전</th>
               <th className="th">변경 후</th>
             </tr>
@@ -43,7 +45,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
                 <td className="td whitespace-nowrap">{l.time}</td>
                 <td className={`td font-semibold ${l.actionLabel === '삭제' ? 'text-red-600' : 'text-blue-700'}`}>{l.actionLabel}</td>
                 <td className="td">{l.reason}</td>
-                <td className="td text-xs text-gray-600">{l.actor || '-'}</td>
+                {showActor ? <td className="td text-xs text-gray-600">{l.actor || '-'}</td> : null}
                 <td className="td text-xs text-gray-600">
                   <DonationLine v={l.before} />
                 </td>
@@ -54,7 +56,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
             ))}
             {logs.length === 0 ? (
               <tr>
-                <td className="td text-center text-gray-500" colSpan={6}>
+                <td className="td text-center text-gray-500" colSpan={showActor ? 6 : 5}>
                   이 보고서 기간에 해당하는 수정·삭제 이력이 없습니다.
                 </td>
               </tr>

@@ -225,8 +225,9 @@ export function SettingsPage() {
         ) : null}
       </Modal>
 
-      <YearLockSection />
-      {allowed('donation:bulkDelete') ? <PeriodDeleteSection /> : null}
+      {/* 연도 잠금·기간 삭제는 계정이 있는 PC앱에서만(브라우저 시연 모드에는 없음) */}
+      {s.isDesktop ? <YearLockSection /> : null}
+      {s.isDesktop && allowed('donation:bulkDelete') ? <PeriodDeleteSection /> : null}
 
       {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
       {allowed('data:reset') ? (

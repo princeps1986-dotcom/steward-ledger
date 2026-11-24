@@ -85,6 +85,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const g = useAuthGate();
   const [confirmingRestart, setConfirmingRestart] = useState(false);
   const session = useMemo<Session | null>(() => (g.email && g.role ? { email: g.email, role: g.role, hasPin: g.hasPin, lock: g.lock, logout: () => void g.logout(), setPin: g.setPin } : null), [g.email, g.role, g.hasPin, g.lock, g.logout, g.setPin]);
+  if (g.phase === 'ready' && !g.email) return <>{children}</>; // 로그인이 없는 브라우저(시연) 모드: 래퍼 없이 예전 그대로
   if (g.phase === 'ready' || g.phase === 'locked') {
     const locked = g.phase === 'locked';
     return (

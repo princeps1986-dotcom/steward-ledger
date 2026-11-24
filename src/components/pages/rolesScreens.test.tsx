@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppProviders } from '../../contexts/AppProviders';
 import { setCurrentUser } from '../../services/auth/currentUser';
@@ -54,6 +54,29 @@ describe('역할별 보고서 탭', () => {
   it('브라우저(시연) 모드는 네 탭을 모두 본다', () => {
     renderPage(<ReportsPage />);
     expect(tabNames()).toHaveLength(4);
+  });
+});
+
+describe('브라우저(시연) 모드는 PC앱 전용 항목이 없다', () => {
+  const headers = () => screen.getAllByRole('columnheader').map((h) => h.textContent);
+
+  it('수정·삭제 이력 탭에 작업자 열이 없고, PC앱에는 있다', () => {
+    renderPage(<ReportsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: '수정·삭제 이력' }));
+    expect(headers()).toEqual(['작업 일시', '유형', '사유', '변경 전', '변경 후']);
+    cleanup();
+    login('admin');
+    renderPage(<ReportsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: '수정·삭제 이력' }));
+    expect(headers()).toContain('작업자');
+  });
+
+  it('설정 화면에 연도 잠금·기간 헌금 삭제가 없고 기존 영역은 그대로 있다', async () => {
+    renderPage(<SettingsPage />);
+    expect(await screen.findByRole('button', { name: '백업 파일 저장' })).toBeTruthy();
+    expect(screen.queryByText('연도 잠금')).toBeNull();
+    expect(screen.queryByText('기간 헌금 삭제')).toBeNull();
+    for (const name of ['백업 파일 복원', '전체 초기화', '시연 데이터 생성']) expect(screen.getByRole('button', { name })).toBeTruthy();
   });
 });
 
