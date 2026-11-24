@@ -79,6 +79,8 @@ export interface DonationMatchContext {
 }
 
 const compact = (s: string) => s.replace(/\s/g, '');
+/** 한 줄 금액 상한(1조 원). 이보다 큰 값은 입력 실수로 보고 막습니다. */
+const MAX_AMOUNT = 1_000_000_000_000;
 
 /** 줄마다 성도·종류·날짜·금액을 찾아 상태를 정합니다. 순수 함수. */
 export function matchDonationRows(rows: DonationImportRow[], ctx: DonationMatchContext): MatchedDonationRow[] {
@@ -129,6 +131,7 @@ export function matchDonationRows(rows: DonationImportRow[], ctx: DonationMatchC
     // 금액
     const amount = Number(r.amountRaw);
     if (!r.amountRaw || !/^\d+$/.test(r.amountRaw) || amount <= 0) fail(`금액이 올바르지 않습니다: '${r.amountRaw}'`);
+    else if (!Number.isSafeInteger(amount) || amount > MAX_AMOUNT) fail(`금액이 너무 큽니다: '${r.amountRaw}'`);
 
     if (status !== 'ERROR' && member && type) {
       const draft: DonationDraft = {

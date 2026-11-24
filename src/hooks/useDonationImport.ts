@@ -15,6 +15,7 @@ import {
   type MatchedDonationRow,
 } from '../services/import/donationImportService';
 import { downloadText } from '../services/downloadBridge';
+import { createExclusive } from './exclusive';
 
 const STATUS_LABEL = { OK: '저장', WARN: '확인', ERROR: '오류', SAVED: '이미 저장' } as const;
 
@@ -34,6 +35,8 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestRef = useRef(0);
+  const busyRef = useRef(false);
+  const exclusive = useMemo(() => createExclusive(busyRef), []);
 
   /** 저장소의 최신 기록을 보고 줄마다 상태를 정합니다. */
   const classify = useCallback(
@@ -98,35 +101,49 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
   const largeCount = matched.filter((r) => r.large).length;
   const canSave = !busy && rows !== null && errorCount === 0 && toSave.length > 0 && (largeCount === 0 || largeConfirmed);
 
-  const confirm = useCallback(async () => {
-    if (!rows || !canSave) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // 저장 직전에 한 번 더 판정합니다(미리보기 뒤에 저장소가 바뀌었을 수 있음).
-      const fresh = await classify(rows, defaultDate);
-      if (fresh.some((r) => r.status === 'ERROR')) {
-        setMatched(fresh);
-        setError('미리보기 이후 저장된 내역이 바뀌었습니다. 오류 항목을 확인한 뒤 다시 저장하세요. (아무것도 저장되지 않았습니다)');
-        return;
-      }
-      const drafts: DonationDraft[] = fresh.filter((r) => r.draft && r.status !== 'SAVED').map((r) => r.draft as DonationDraft);
-      if (drafts.length === 0) {
-        setError('저장할 내역이 없습니다.');
-        return;
-      }
-      const batch = await actions.saveBatch(drafts, 'SEPARATE');
-      const total = batch.lines.reduce((s, l) => s + l.amount, 0);
-      setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.`);
-      setRows(null);
-      setMatched([]);
-      setLargeConfirmed(false);
-    } catch (err) {
-      setError(`저장 실패: ${(err as Error).message} (아무것도 반영되지 않았을 수 있습니다. 헌금 내역을 확인하세요)`);
-    } finally {
-      setBusy(false);
-    }
-  }, [rows, canSave, classify, defaultDate, actions]);
+  // 연타로 두 번 저장되지 않도록 ref로 즉시 막습니다(상태 busy는 다음 렌더 뒤에야 바뀝니다).
+  const confirm = useCallback(
+    () =>
+      exclusive(async () => {
+        if (!rows || !canSave) return;
+        setBusy(true);
+        setError(null);
+        let savedCount = 0;
+        try {
+          // 저장 직전에 한 번 더 판정합니다(미리보기 뒤에 저장소가 바뀌었을 수 있음).
+          const fresh = await classify(rows, defaultDate);
+          if (fresh.some((r) => r.status === 'ERROR')) {
+            setMatched(fresh);
+            setError('미리보기 이후 저장된 내역이 바뀌었습니다. 오류 항목을 확인한 뒤 다시 저장하세요. (아무것도 저장되지 않았습니다)');
+            return;
+          }
+          const drafts: DonationDraft[] = fresh.filter((r) => r.draft && r.status !== 'SAVED').map((r) => r.draft as DonationDraft);
+          if (drafts.length === 0) {
+            setError('저장할 내역이 없습니다.');
+            return;
+          }
+          // 한 묶음은 한 날짜만 담을 수 있습니다(저장 함수가 첫 줄의 날짜 달에만 씀). 날짜별로 나눠 저장합니다.
+          const byDate = new Map<string, DonationDraft[]>();
+          for (const d of drafts) byDate.set(d.date, [...(byDate.get(d.date) ?? []), d]);
+          let total = 0;
+          for (const group of byDate.values()) {
+            const batch = await actions.saveBatch(group, 'SEPARATE');
+            savedCount += group.length;
+            total += batch.lines.reduce((s, l) => s + l.amount, 0);
+          }
+          setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.`);
+          setRows(null);
+          setMatched([]);
+          setLargeConfirmed(false);
+        } catch (err) {
+          const note = savedCount > 0 ? `${savedCount}건은 먼저 저장되었습니다. 헌금 내역을 확인하세요.` : '아무것도 저장되지 않았습니다.';
+          setError(`저장 실패: ${(err as Error).message} (${note})`);
+        } finally {
+          setBusy(false);
+        }
+      }),
+    [exclusive, rows, canSave, classify, defaultDate, actions],
+  );
 
   const summary = useMemo(
     () => ({

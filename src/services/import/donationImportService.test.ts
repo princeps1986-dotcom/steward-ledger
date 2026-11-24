@@ -45,6 +45,11 @@ describe('헌금 CSV 불러오기 판정', () => {
     expect(withPhone.draft?.memberId).toBe('m4');
   });
 
+  it('금액 상한을 넘으면 오류', () => {
+    const [r] = matchDonationRows(csv([row({ 금액: '99999999999999999999' })]).rows, base);
+    expect(r.status).toBe('ERROR');
+  });
+
   it('금액이 0이거나 숫자가 아니면 오류, 날짜가 없고 기본 날짜도 없으면 오류', () => {
     const rs = matchDonationRows(csv([row({ 금액: '0' }), row({ 금액: 'abc' }), row({ 날짜: '' })]).rows, base);
     expect(rs.map((r) => r.status)).toEqual(['ERROR', 'ERROR', 'ERROR']);
