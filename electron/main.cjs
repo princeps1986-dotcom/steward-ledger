@@ -13,6 +13,8 @@ const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./dataPaths.cjs');
 const { createPcKeyStore } = require('./pcKey.cjs');
+const { createAuth } = require('./auth.cjs');
+const authConfig = require('./authConfig.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
@@ -577,6 +579,31 @@ if (!app.requestSingleInstanceLock()) {
       });
     return downloading;
   });
+
+  // 구글 로그인(electron/auth.cjs). 토큰은 저장하지 않고 화면에도 넘기지 않으며, 화면은 계정(이메일)만 받습니다.
+  // 환경변수는 개발 실행에서만 씁니다(설치한 앱은 authConfig.cjs 값만).
+  const devEnv = (name) => (!app.isPackaged && process.env[name]) || '';
+  const auth = createAuth({
+    clientId: devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
+    clientSecret: devEnv('STEWARD_GOOGLE_CLIENT_SECRET') || authConfig.clientSecret,
+    // 이 주소는 auth.cjs가 만들지만, 시스템 브라우저로 여는 곳이므로 구글 로그인 주소만 허용합니다.
+    openBrowser: async (url) => {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' || u.host !== 'accounts.google.com') throw new Error('허용하지 않는 로그인 주소입니다.');
+      await shell.openExternal(url);
+    },
+  });
+  ipcMain.handle('auth:status', () => auth.status());
+  ipcMain.handle('auth:login', async () => {
+    try {
+      const { email } = await auth.login();
+      return { email };
+    } catch (err) {
+      log.warn('auth login', err && err.message); // 이메일·토큰은 남기지 않고 사유 문구만
+      return { error: String((err && err.message) || err) };
+    }
+  });
+  ipcMain.handle('auth:logout', () => auth.logout());
 
   app.whenReady().then(() => {
     // 카메라·위치·알림 같은 권한은 모두 거부하고, 저장소가 자동 정리되지 않게 하는 영구 저장소(persistent-storage)만 허용합니다.

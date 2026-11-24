@@ -90,6 +90,16 @@ export interface DesktopApi {
   onUpdateProgress(handler: (percent: number) => void): () => void;
   /** 복원 기록을 main의 오류 로그에 남깁니다. */
   logRestore?(entry: RestoreLogEntry): void;
+  /** 구글 로그인 상태: configured=로그인 설정(클라이언트 ID)이 있음, email=지금 로그인한 계정(없으면 null) */
+  authStatus(): Promise<AuthStatus>;
+  /** 시스템 브라우저로 구글 로그인을 엽니다. 토큰은 화면에 넘기지 않고 계정(이메일)만 돌려줍니다. */
+  authLogin(): Promise<{ email: string } | { error: string }>;
+  authLogout(): Promise<void>;
+}
+
+export interface AuthStatus {
+  configured: boolean;
+  email: string | null;
 }
 
 export interface UpdateCheck {

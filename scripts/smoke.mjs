@@ -68,6 +68,10 @@ try {
   check('보안: 오른쪽 버튼 메뉴가 막힘', (await ev('(() => { const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented; })()')) === true);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
+  // 로그인 설정이 없는 환경(클라이언트 ID 없음)에서는 브라우저를 열지 않고 안내만 돌려준다. 화면에는 계정(이메일)만 오가고 토큰은 없다.
+  check('로그인 IPC: 설정이 없으면 안내만 돌려줌', JSON.stringify(await ev('window.desktop.authStatus()')) === '{"configured":false,"email":null}');
+  const loginResult = await ev('window.desktop.authLogin()');
+  check('로그인 IPC: 설정이 없으면 로그인 시도가 안내 문구로 실패', typeof loginResult?.error === 'string' && loginResult.error.includes('클라이언트 ID'), JSON.stringify(loginResult));
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
   if (!exe) {
