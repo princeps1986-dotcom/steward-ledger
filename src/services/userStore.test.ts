@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -273,5 +273,14 @@ describe('로그인 중인 계정의 현재 상태', () => {
     expect((await s.verifyPin(B.sub, '123456')).ok).toBe(true);
     await s.setDisabled(B.email, true, A.email);
     expect(await s.verifyPin(B.sub, '123456')).toEqual({ ok: false, disabled: true });
+  });
+});
+
+describe('거절 기록을 쓰지 못해도', () => {
+  it('원래의 거절 사유가 그대로 나온다', async () => {
+    const { s, d } = mk();
+    await s.admit(A);
+    mkdirSync(join(d, 'users.json.tmp')); // 임시 파일을 만들 수 없게 해 쓰기를 실패시킴
+    await expect(s.admit(B)).rejects.toThrow('등록되지 않은 계정입니다');
   });
 });

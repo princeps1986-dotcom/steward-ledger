@@ -62,6 +62,8 @@ function createUserStore({ dir, now = Date.now }) {
     curLog = [...curLog, ...notes.map(([who, text]) => ({ at: new Date(now()).toISOString(), who: mailOf(who), text }))].slice(-MAX_LOG);
     return writeKeyFile(file, JSON.stringify({ version: 1, users, log: curLog }, null, 2));
   };
+  // 거절 기록은 덤입니다: 기록을 쓰다 실패해도(디스크 오류 등) 원래의 거절 사유가 가려지지 않게 오류를 삼킵니다.
+  const note = (users, who, text) => write(users, [who, text]).catch(() => undefined);
   const find = (users, email) => users.find((u) => u.email === email);
   const adminCount = (users) => users.filter((u) => u.role === 'admin').length;
   const activeAdminCount = (users) => users.filter((u) => u.role === 'admin' && !u.disabled).length;
@@ -93,11 +95,11 @@ function createUserStore({ dir, now = Date.now }) {
           }
           // 거절도 기록합니다(구글 로그인을 마친 계정만 여기까지 오므로 아무나 기록을 채울 수는 없음).
           if (!user) {
-            await write(users, [mail, '로그인 거절(등록되지 않은 계정)']);
+            await note(users, mail, '로그인 거절(등록되지 않은 계정)');
             fail('등록되지 않은 계정입니다. 관리자에게 이메일 등록을 요청하세요.');
           }
           if (user.disabled) {
-            await write(users, [mail, '로그인 거절(사용 중지된 계정)']);
+            await note(users, mail, '로그인 거절(사용 중지된 계정)');
             fail('사용이 중지된 계정입니다. 관리자에게 문의하세요.');
           }
           if (user.email !== mail) {

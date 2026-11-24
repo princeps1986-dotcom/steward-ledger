@@ -35,7 +35,6 @@ export function useAuthGate() {
   }, [api, phase]);
 
   const finish = useCallback((r: PrepareOutcome) => {
-    const api = desktop();
     if (r.ok) {
       setCurrentUser(me.current);
       setPhase('ready');
@@ -44,7 +43,7 @@ export function useAuthGate() {
       setError(r.error);
       setPhase(r.keyLost ? 'keyLost' : 'failed');
     }
-  }, []);
+  }, [api]);
 
   const prepare = useCallback(
     async (who: CurrentUser) => {
@@ -160,8 +159,11 @@ export function useAuthGate() {
       await signOut('잠기기 전과 다른 계정입니다. 다시 로그인하세요.');
       return null;
     }
-    return resume();
-  }, [api, signOut, resume]);
+    // 방금 로그인했으니 사용 중지는 아니고, 역할이 바뀌었으면 다시 로그인시키지 않고 새 역할로 앱을 다시 엽니다.
+    if (r.role !== me.current?.role) await prepare({ email: r.email, role: r.role });
+    else setPhase('ready');
+    return null;
+  }, [api, signOut, prepare]);
   const setPin = useCallback(
     async (pin: string): Promise<string | null> => {
       const r = await api?.authSetPin(pin);
