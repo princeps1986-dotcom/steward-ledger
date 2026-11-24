@@ -17,19 +17,20 @@ interface Claims {
   sub?: string;
   email?: string;
   email_verified?: boolean | string;
+  auth_time?: number;
 }
 interface Identity {
   sub: string;
   email: string;
 }
 const { verifyIdToken } = req('../../electron/idToken.cjs') as {
-  verifyIdToken(t: string, o: { keys: unknown[]; clientId: string; nonce: string; now?: number }): Identity;
+  verifyIdToken(t: string, o: { keys: unknown[]; clientId: string; nonce: string; now?: number; minAuthTime?: number }): Identity;
 };
 interface Admitted extends Identity {
   role: string;
 }
 interface Auth {
-  login(): Promise<Admitted>;
+  login(o?: { reauth?: boolean }): Promise<Admitted>;
   cancel(): void;
   logout(): void;
   session(): Admitted | null;
@@ -323,5 +324,45 @@ describe('데이터 열쇠(electron/dataKey.cjs)', () => {
     const a = await store(dir, storage).getDataKey();
     state.reEncrypt = true;
     expect((await store(dir, storage).getDataKey()).equals(a)).toBe(true);
+  });
+});
+
+describe('재로그인(잠금 해제용)', () => {
+  const fresh = (nonce: string) => good(nonce, { auth_time: NOW / 1000 });
+
+  it('일반 로그인은 비밀번호를 다시 묻지 않지만, 재로그인은 prompt=login·max_age=0을 붙인다', async () => {
+    const a = harness();
+    await a.auth.login();
+    expect(a.seen.authUrl!.searchParams.get('prompt')).toBeNull();
+    const b = harness({ claims: fresh });
+    await b.auth.login({ reauth: true });
+    expect(b.seen.authUrl!.searchParams.get('prompt')).toBe('login');
+    expect(b.seen.authUrl!.searchParams.get('max_age')).toBe('0');
+  });
+
+  it('방금 인증하지 않은 토큰(auth_time 없음·오래됨)은 거절하고, 이전 로그인은 그대로 둔다', async () => {
+    const h = harness({ claims: (n) => good(n, { auth_time: NOW / 1000 - 3600 }) });
+    await expect(h.auth.login({ reauth: true })).rejects.toThrow('방금 다시 인증');
+    const h2 = harness();
+    await h2.auth.login();
+    const before = h2.auth.session();
+    const h3 = harness({ claims: (n) => good(n) });
+    await expect(h3.auth.login({ reauth: true })).rejects.toThrow('방금 다시 인증');
+    expect(h2.auth.session()).toEqual(before);
+  });
+
+  it('idToken: minAuthTime이 있으면 auth_time이 그 시각 직전(여유 60초) 이후여야 한다', () => {
+    const opts = { keys: [jwk], clientId: CLIENT, nonce: 'n1', now: NOW };
+    expect(() => verifyIdToken(jwt(good('n1')), { ...opts, minAuthTime: NOW / 1000 })).toThrow('방금 다시 인증');
+    expect(verifyIdToken(jwt(good('n1', { auth_time: NOW / 1000 - 30 })), { ...opts, minAuthTime: NOW / 1000 }).sub).toBe('1077');
+    expect(() => verifyIdToken(jwt(good('n1', { auth_time: NOW / 1000 - 600 })), { ...opts, minAuthTime: NOW / 1000 })).toThrow('방금 다시 인증');
+  });
+
+  it('다른 방식의 로그인이 진행 중일 때 재로그인이 끼어들지 못한다', async () => {
+    const h = harness({ noRedirect: true });
+    const p = h.auth.login();
+    await expect(h.auth.login({ reauth: true })).rejects.toThrow('다른 로그인이 진행 중');
+    h.auth.cancel();
+    await expect(p).rejects.toThrow('취소');
   });
 });

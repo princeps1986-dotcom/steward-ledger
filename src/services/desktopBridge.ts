@@ -94,7 +94,8 @@ export interface DesktopApi {
   /** 구글 로그인 상태: configured=로그인 설정(클라이언트 ID)이 있음, email=지금 로그인한 계정(없으면 null) */
   authStatus(): Promise<AuthStatus>;
   /** 시스템 브라우저로 구글 로그인을 엽니다. 토큰은 화면에 넘기지 않고 계정(이메일)만 돌려줍니다. */
-  authLogin(): Promise<{ email: string; role: Role } | { error: string }>;
+  /** reauth: 잠금 해제용 재로그인(구글이 비밀번호를 다시 묻게 함) */
+  authLogin(opts?: { reauth?: boolean }): Promise<{ email: string; role: Role } | { error: string }>;
   /** 자동 잠금 해제용 PIN(숫자 6자리)을 만듭니다. 로그인한 계정의 것만 다룹니다. */
   authSetPin(pin: string): Promise<{ ok: true } | { error: string }>;
   /** ok:false의 left=남은 시도 · locked=5회 실패로 로그아웃됨(구글 재로그인 필요) · noPin=PIN이 아직 없음 */

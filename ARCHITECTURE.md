@@ -390,6 +390,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **계정·역할(`electron/userStore.cjs`):** `users.json`(IndexedDB 밖, 백업 제외)에 계정·역할·PIN 해시(scrypt)·기록(최근 100건)을 둡니다. 빈 목록이면 처음 로그인한 사람이 관리자, 이메일 사전 등록은 첫 로그인에서 `sub`와 묶이고, 미등록·중지 계정은 거절(기록은 남김). 관리자 1~2명·최대 10명. 같은 Windows 계정이면 파일을 고칠 수 있다는 한계가 있습니다.
 * **데이터 열쇠(`electron/dataKey.cjs`, `src/services/storage/cipher.ts`):** 무작위 256비트 열쇠를 `safeStorage`(DPAPI)로 잠가 `data-key.bin`에 둡니다. 로그인한 사용자에게만 IPC `data:key`로 주고, 화면은 `extractable: false`로 가져와 메모리에만 둡니다(로그아웃·PIN 5회 실패에서 버림). 풀 수 없는 열쇠는 덮어쓰지 않고, 관리자가 두 번 확인해야만 `.old`로 옮기고 새로 시작합니다. 로그인 직후 `prepareData`가 열쇠 받기 → (필요하면) 이 PC 키 백업 → 달 단위 암호화 이전을 합니다.
 * **역할 판단(`src/services/auth/roles.ts`, `access.ts`):** `can(role, action)` 표 하나를 화면과 쓰기 길목이 함께 씁니다. **main이 실제로 막는 것**은 계정 관리 IPC, 업데이트, 직접 백업, 열쇠 교체뿐이고, 헌금 쓰기·복원·초기화·잠금은 데이터가 렌더러에 있어 화면·진입 함수·`transact` 규칙으로만 막습니다.
+* **재로그인·다시 불러오기(점검 반영):** PIN이 없는 잠금은 구글 재로그인으로 풀므로 이때만 `prompt=login`·`max_age=0`을 붙이고 ID 토큰의 `auth_time`이 방금인지 확인합니다(이미 로그인된 브라우저에서 계정만 눌러 통과하는 것을 막음). 앱 기본 메뉴는 없애(`Menu.setApplicationMenu(null)`) Ctrl+R을 막고, 화면이 두 번째로 불러와지면(충돌 뒤 재로드 포함) main이 로그인을 지워 잠금을 건너뛰지 못하게 합니다(`guards.cjs`). 로그인·역할 검사(`freshSession` 등)도 `guards.cjs`에 있어 단위 시험합니다.
 * **자동 잠금(`useIdleLock`, `AuthGate`):** 15분 무조작이면 잠금 화면이 앱을 `inert`로 가립니다(입력 내용·주기 백업 유지). PIN 또는 구글 재로그인으로 풀고, 열쇠 폐기는 로그아웃·PIN 5회 실패 때만입니다.
 
 ## 14. 저장소 버전

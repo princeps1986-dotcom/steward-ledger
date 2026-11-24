@@ -21,6 +21,7 @@ const PAGE = (msg) =>
 function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
   let session = null;
   let pending = null; // 로그인 중에 또 눌러도 같은 진행을 돌려줍니다.
+  let pendingReauth = false;
   let cancelWait = null; // 브라우저 응답을 기다리는 중일 때만 있음
   // fetch가 거절되는 것은 인터넷이 끊겼다는 뜻이므로 안내 문구로 바꿉니다(서버 응답 오류는 아래에서 따로 처리).
   const doFetch = (...args) =>
@@ -29,7 +30,7 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     });
 
   /** loopback 서버를 열고 브라우저를 띄운 뒤, state가 맞는 첫 응답에서 인증 코드를 받습니다. */
-  function waitForCode({ state, challenge, nonce }) {
+  function waitForCode({ state, challenge, nonce, reauth }) {
     return new Promise((resolve, reject) => {
       const server = http.createServer();
       let done = false;
@@ -73,6 +74,7 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
           code_challenge_method: 'S256',
           state,
           nonce,
+          ...(reauth ? { prompt: 'login', max_age: '0' } : {}), // 재로그인: 구글이 비밀번호를 다시 묻게 함
         }).toString();
         Promise.resolve(openBrowser(url.toString())).catch((e) => finish(e));
       });
@@ -85,14 +87,15 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     return res.json();
   }
 
-  async function run() {
+  async function run(reauth) {
     if (!clientId) throw new Error('로그인 설정(구글 클라이언트 ID)이 없습니다.');
     const verifier = crypto.randomBytes(32).toString('base64url');
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     const state = crypto.randomBytes(16).toString('base64url');
     const nonce = crypto.randomBytes(16).toString('base64url');
 
-    const { code, redirectUri } = await waitForCode({ state, challenge, nonce });
+    const startedAt = now();
+    const { code, redirectUri } = await waitForCode({ state, challenge, nonce, reauth });
     const tokens = await postForm(TOKEN_URL, {
       client_id: clientId,
       ...(clientSecret ? { client_secret: clientSecret } : {}),
@@ -106,17 +109,22 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     const { keys } = await jwksRes.json();
     // 액세스·리프레시 토큰은 쓰지 않고 버립니다. 계정 확인에는 검증을 통과한 ID 토큰만 씁니다.
     try {
-      const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now() });
+      const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now(), ...(reauth ? { minAuthTime: Math.floor(startedAt / 1000) } : {}) });
       session = await admit(who); // 이 앱을 써도 되는 계정인지·역할이 무엇인지(electron/userStore.cjs)
       return session;
     } catch (err) {
-      session = null; // 검증·허용에 실패한 로그인 시도 뒤에는 이전 로그인도 남기지 않습니다(그사이 사용 중지된 계정이 세션을 유지하지 못하게).
+      // 검증·허용에 실패한 로그인 시도 뒤에는 이전 로그인도 남기지 않습니다. 재로그인(잠금 해제)이 취소·실패한 경우는 잠금이 그대로라 유지합니다(사용 중지는 main이 매번 다시 확인).
+      if (!reauth) session = null;
       throw err;
     }
   }
 
   return {
-    login: () => (pending ??= run().finally(() => (pending = null))),
+    login: ({ reauth = false } = {}) => {
+      if (pending) return pendingReauth === reauth ? pending : Promise.reject(new Error('다른 로그인이 진행 중입니다. 잠시 뒤 다시 시도하세요.'));
+      pendingReauth = reauth;
+      return (pending = run(reauth).finally(() => (pending = null)));
+    },
     /** 브라우저 응답을 기다리는 로그인을 멈춥니다(인터넷이 끊겨 로그인 창이 안 뜰 때 3분을 기다리지 않게). */
     cancel: () => cancelWait?.(),
     logout: () => {

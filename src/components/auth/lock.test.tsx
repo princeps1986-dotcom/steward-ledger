@@ -94,11 +94,12 @@ describe('자동 잠금', () => {
   });
 
   it('PIN이 없으면 구글 재로그인으로 풀고, 같은 계정이어야 한다', async () => {
-    setDesktop({ hasPin: false });
+    const api = setDesktop({ hasPin: false });
     await lockIt();
     expect(screen.queryByLabelText('PIN 6자리')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '구글로 다시 로그인' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '잠금' })).toBeNull());
+    expect(api.authLogin).toHaveBeenCalledWith({ reauth: true }); // 이미 로그인된 브라우저에서 계정만 눌러 통과하지 못하게 비밀번호를 다시 묻는 로그인
   });
 
   it('다른 계정으로 다시 로그인하면 풀리지 않고 로그아웃된다', async () => {

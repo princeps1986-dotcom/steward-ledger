@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('desktop', {
   readBackup: (id) => ipcRenderer.invoke('backup:read', id),
   closeBackupReader: (id) => ipcRenderer.invoke('backup:close-reader', id),
   authStatus: () => ipcRenderer.invoke('auth:status'),
-  authLogin: () => ipcRenderer.invoke('auth:login'),
+  authLogin: (opts) => ipcRenderer.invoke('auth:login', opts),
   authSetPin: (pin) => ipcRenderer.invoke('auth:set-pin', pin),
   authVerifyPin: (pin) => ipcRenderer.invoke('auth:verify-pin', pin),
   usersList: () => ipcRenderer.invoke('users:list'),

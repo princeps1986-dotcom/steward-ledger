@@ -4,7 +4,7 @@
 // - 종료 시 자동 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
 process.env.TZ = 'Asia/Seoul'; // 날짜·시각은 PC 설정과 상관없이 서울 기준(화면 프로세스도 상속)
-const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
@@ -14,6 +14,7 @@ const { pathToFileURL } = require('node:url');
 const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./dataPaths.cjs');
 const { createPcKeyStore } = require('./pcKey.cjs');
 const { createAuth } = require('./auth.cjs');
+const { createGuards, createReloadGuard } = require('./guards.cjs');
 const authConfig = require('./authConfig.cjs');
 const { createUserStore } = require('./userStore.cjs');
 const { createDataKeyStore } = require('./dataKey.cjs');
@@ -377,6 +378,12 @@ if (!app.requestSingleInstanceLock()) {
       if (mainWindow === win) mainWindow = null;
     });
 
+    // 화면을 다시 불러오면(Ctrl+R·충돌 뒤 재로드) 로그인을 지워, 잠금 화면을 건너뛰지 못하게 합니다. 개발 서버의 자동 새로고침은 제외.
+    const reloadGuard = createReloadGuard(() => {
+      if (!DEV_URL) auth.logout();
+    });
+    win.webContents.on('did-finish-load', reloadGuard);
+
     if (DEV_URL) void win.loadURL(DEV_URL);
     else void win.loadURL('app://local/index.html');
     return win;
@@ -602,25 +609,16 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(url);
     },
   });
-  // 로그인할 때 복사해 둔 역할이 낡았을 수 있으므로(그 사이 관리자가 역할을 바꾸거나 계정을 중지) 호출마다 계정 목록에서 다시 읽습니다.
-  // 목록에서 빠졌거나 사용 중지된 계정이면 바로 로그아웃시키고 null을 돌려줍니다.
-  const freshSession = async () => {
-    const me = auth.session();
-    if (!me) return null;
-    const now = await users.current(me.sub).catch(() => null);
-    if (!now || now.disabled) {
-      auth.logout();
-      return null;
-    }
-    return { ...me, email: now.email, role: now.role };
-  };
+  // 로그인·역할 검사(electron/guards.cjs): 호출마다 계정 목록에서 역할·중지 여부를 다시 읽습니다.
+  const { freshSession, withSession, roleIs, adminOnly } = createGuards({ auth, users, notAllowed: NOT_ALLOWED });
   ipcMain.handle('auth:status', async () => {
     const me = await freshSession();
     return me ? { ...auth.status(), email: me.email, role: me.role, hasPin: await users.hasPin(me.sub) } : { ...auth.status(), email: null, role: null, hasPin: false };
   });
-  ipcMain.handle('auth:login', async () => {
+  ipcMain.handle('auth:login', async (_event, opts) => {
     try {
-      const { email, role } = await auth.login();
+      // reauth: 잠금 해제용 재로그인. 구글이 비밀번호를 다시 묻게 하고(prompt=login) 방금 인증했는지 확인합니다.
+      const { email, role } = await auth.login({ reauth: !!(opts && opts.reauth) });
       return { email, role };
     } catch (err) {
       log.warn('auth login', err && err.message); // 이메일·토큰은 남기지 않고 사유 문구만
@@ -628,15 +626,6 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   // 자동 잠금 해제용 PIN: 로그인한 계정의 것만 다룹니다. 5회 연속 실패하면 PIN을 지우고 로그아웃시켜 구글 재로그인으로 돌려보냅니다.
-  const withSession = (fn) => async (_event, ...args) => {
-    const me = await freshSession();
-    if (!me) return { error: '로그인이 필요합니다.' };
-    try {
-      return await fn(me, ...args);
-    } catch (err) {
-      return { error: String((err && err.message) || err) };
-    }
-  };
   ipcMain.handle('auth:set-pin', withSession(async (me, pin) => (await users.setPin(me.sub, pin), { ok: true })));
   ipcMain.handle(
     'auth:verify-pin',
@@ -667,8 +656,6 @@ if (!app.requestSingleInstanceLock()) {
   );
   // main이 실제로 막는 역할 제한: 계정·역할 관리는 관리자만, 업데이트·직접 백업 만들기는 관리자·재정담당만.
   // 헌금 저장·복원·초기화는 화면(렌더러)의 저장소 작업이라 main이 막을 수 없고 화면 규칙으로 막습니다(src/services/auth/access.ts).
-  const roleIs = async (...roles) => roles.includes((await freshSession())?.role);
-  const adminOnly = (fn) => withSession(async (me, ...args) => (me.role === 'admin' ? fn(me, ...args) : { error: NOT_ALLOWED }));
   ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
   ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log() })));
   ipcMain.handle('users:add', adminOnly(async (me, u) => (await users.add({ email: u && u.email, role: u && u.role }, me.email), { ok: true })));
@@ -697,6 +684,7 @@ if (!app.requestSingleInstanceLock()) {
       headers.set('X-Content-Type-Options', 'nosniff');
       return new Response(res.body, { status: res.status, headers });
     });
+    Menu.setApplicationMenu(null); // 기본 메뉴의 다시 불러오기(Ctrl+R)·확대 같은 단축키를 없앱니다(다시 불러오면 잠금 화면이 사라지므로)
     mainWindow = createWindow();
   });
 

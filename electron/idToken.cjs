@@ -21,7 +21,7 @@ const parseJson = (part, what) => {
  * 서명·발급자(iss)·대상(aud)·만료(exp)·nonce·이메일 확인을 모두 통과한 계정만 돌려줍니다.
  * keys: Google JWKS의 keys 배열 · now: 밀리초(시험에서 고정)
  */
-function verifyIdToken(token, { keys, clientId, nonce, now = Date.now() }) {
+function verifyIdToken(token, { keys, clientId, nonce, now = Date.now(), minAuthTime }) {
   const parts = typeof token === 'string' ? token.split('.') : [];
   if (parts.length !== 3) fail('토큰 형식이 올바르지 않습니다.');
   const [h, p, s] = parts;
@@ -46,6 +46,8 @@ function verifyIdToken(token, { keys, clientId, nonce, now = Date.now() }) {
   if (!nonce || c.nonce !== nonce) fail('요청과 맞지 않는 토큰입니다.');
   if (typeof c.sub !== 'string' || !c.sub) fail('계정 식별값이 없습니다.');
   if (typeof c.email !== 'string' || !c.email) fail('이메일 정보가 없습니다.');
+  // 재로그인(minAuthTime, 초): 구글에서 방금 인증한 토큰만 인정합니다(이미 로그인된 브라우저에서 계정만 눌러 통과하는 것을 막음).
+  if (minAuthTime !== undefined && !(typeof c.auth_time === 'number' && c.auth_time + SKEW_SEC >= minAuthTime)) fail('방금 다시 인증한 로그인이 아닙니다.');
   // 구글은 true 또는 "true"로 줍니다.
   if (c.email_verified !== true && c.email_verified !== 'true') fail('확인되지 않은 이메일입니다.');
   return { sub: c.sub, email: c.email.toLowerCase() };
