@@ -74,7 +74,7 @@ export interface DonationMatchContext {
   /** 날짜 열이 없을 때 화면에서 고른 날짜 */
   defaultDate: string | null;
   largeAmountThreshold: number;
-  /** 같은 날짜·성도·종류로 이미 저장된 헌금(줄마다, 없으면 undefined). findDuplicates 결과 */
+  /** 같은 날짜·성도·종류로 이미 저장된 헌금(줄마다, 없으면 undefined). 금액까지 같은 기록을 먼저 짝지어 줌(useDonationImport의 classify) */
   existing?: (Donation | undefined)[];
 }
 
