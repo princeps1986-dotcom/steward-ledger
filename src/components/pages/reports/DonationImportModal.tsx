@@ -69,7 +69,7 @@ function ImportBody({ onClose, initialDate }: { onClose(): void; initialDate: st
                     <td className="td">{r.draft?.date ?? r.date}</td>
                     <td className="td">{r.name}</td>
                     <td className="td">{r.typeName}</td>
-                    <td className="td text-right">{r.amountRaw ? Number(r.amountRaw).toLocaleString('ko-KR') : ''}</td>
+                    <td className="td text-right">{/^\d+$/.test(r.amountRaw) ? Number(r.amountRaw).toLocaleString('ko-KR') : r.amountRaw}</td>
                     <td className="td">{r.memo}</td>
                     <td className="td text-xs">{r.messages.join(' ')}</td>
                   </tr>

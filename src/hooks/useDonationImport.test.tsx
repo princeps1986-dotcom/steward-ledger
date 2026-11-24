@@ -66,4 +66,21 @@ describe('useDonationImport 저장 흐름', () => {
     expect(await readMonth('2026-12')).toHaveLength(0);
     expect(result.current.imp.result).toBeNull();
   });
+
+  it('같은 성도·종류에 금액이 다른 줄이 있는 파일을 다시 불러와도 또 저장하지 않습니다', async () => {
+    const result = await setup('정형돈', '9012');
+    const file = [
+      { 날짜: '2026-10-04', 성도이름: '정형돈', 연락처뒷4자리: '9012', 헌금종류: '십일조', 금액: '1000' },
+      { 날짜: '2026-10-04', 성도이름: '정형돈', 연락처뒷4자리: '9012', 헌금종류: '십일조', 금액: '2000' },
+    ];
+    await loadFile(result, file);
+    await waitFor(() => expect(result.current.imp.canSave).toBe(true));
+    await act(() => result.current.imp.confirm());
+    expect(await readMonth('2026-10')).toHaveLength(2);
+
+    await loadFile(result, file);
+    await waitFor(() => expect(result.current.imp.summary.saved).toBe(2));
+    expect(result.current.imp.canSave).toBe(false);
+    expect(await readMonth('2026-10')).toHaveLength(2);
+  });
 });

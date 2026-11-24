@@ -3,7 +3,7 @@ import { useDonationActions } from '../contexts/DonationContext';
 import { useMembers } from '../contexts/MemberContext';
 import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import { useSettings } from '../contexts/SettingsContext';
-import type { DonationDraft } from '../contexts/types';
+import type { Donation, DonationDraft } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
 import { lastSunday } from '../services/domain/dates';
 import { readImportFile } from '../services/import/memberImportService';
@@ -17,6 +17,7 @@ import {
   type MatchedDonationRow,
 } from '../services/import/donationImportService';
 import { downloadText } from '../services/downloadBridge';
+import { readDay } from '../services/storage/storageService';
 import { createExclusive } from './exclusive';
 
 const STATUS_LABEL = { OK: '저장', WARN: '확인', ERROR: '오류', SAVED: '이미 저장' } as const;
@@ -46,13 +47,21 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
       const ctx = { members, types: allTypes, defaultDate: hasDateColumn ? null : date, largeAmountThreshold: settings.largeAmountThreshold };
       // 1차: 초안을 만들고, 2차: 저장소의 기존 기록을 붙여 상태를 정합니다.
       const first = matchDonationRows(src, ctx);
-      const drafts = first.flatMap((r) => (r.draft ? [r.draft] : []));
-      const found = drafts.length ? await actions.findDuplicates(drafts) : [];
-      // 기존 기록은 초안 순서대로 돌아오므로 같은 순서로 줄에 맞춥니다.
-      let k = 0;
-      return matchDonationRows(src, { ...ctx, existing: first.map((r) => (r.draft ? found[k++] : undefined)) });
+      const dates = [...new Set(first.flatMap((r) => (r.draft ? [r.draft.date] : [])))];
+      const stored = (await Promise.all(dates.map(readDay))).flat();
+      // 같은 날짜·성도·종류 기록이 여러 건일 수 있어(별도 추가) 금액까지 같은 기록을 한 건씩 짝지어 "이미 저장"을 정합니다.
+      // 첫 1건만 보면 같은 파일을 다시 불러올 때 금액이 다른 줄이 또 저장됩니다.
+      const sameKey = (s: Donation, d: DonationDraft) => s.date === d.date && s.memberId === d.memberId && s.offeringTypeId === d.offeringTypeId;
+      const unused = [...stored];
+      const existing = first.map((r) => {
+        const d = r.draft;
+        if (!d) return undefined;
+        const i = unused.findIndex((s) => sameKey(s, d) && s.amount === d.amount);
+        return i >= 0 ? unused.splice(i, 1)[0] : stored.find((s) => sameKey(s, d));
+      });
+      return matchDonationRows(src, { ...ctx, existing });
     },
-    [actions, allTypes, members, settings.largeAmountThreshold, hasDateColumn],
+    [allTypes, members, settings.largeAmountThreshold, hasDateColumn],
   );
 
   // 파일이나 날짜가 바뀌면 다시 판정합니다.
