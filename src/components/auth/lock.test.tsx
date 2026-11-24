@@ -19,7 +19,7 @@ function setDesktop(o: { hasPin?: boolean; verify?: Verify; relogin?: string } =
     status,
     skipBackup: vi.fn(async () => undefined),
     authStatus: vi.fn(async () => ({ configured: true, email: status.email, role: status.email ? status.role : null, hasPin: o.hasPin ?? true })),
-    authLogin: vi.fn(async () => ({ email: o.relogin ?? 'a@b.c', role: 'finance' as const })),
+    authLogin: vi.fn(async () => ({ email: o.relogin ?? 'a@b.c', role: status.role })),
     authVerifyPin: vi.fn(async () => o.verify ?? ({ ok: true } as Verify)),
     authSetPin: vi.fn(async () => ({ ok: true as const })),
     authLogout: vi.fn(async () => undefined),
@@ -183,6 +183,24 @@ describe('잠금 보완', () => {
     fireEvent.click(screen.getByRole('button', { name: '잠금 풀기' }));
     expect(await screen.findByText(/역할이 바뀌었습니다/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '구글로 로그인' })).toBeTruthy();
+  });
+
+  it('구글로 풀 때 역할이 바뀌었으면 다시 로그인시키지 않고 새 역할로 연다', async () => {
+    const api = setDesktop({ hasPin: false });
+    await lockIt();
+    api.status.role = 'viewer';
+    fireEvent.click(screen.getByRole('button', { name: '구글로 다시 로그인' }));
+    await waitFor(() => expect(currentUser()?.role).toBe('viewer'));
+    expect(screen.queryByRole('dialog', { name: '잠금' })).toBeNull();
+    expect(api.authLogout).not.toHaveBeenCalled();
+    expect(api.authLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it('PIN 칸에는 숫자만 들어간다', async () => {
+    setDesktop();
+    await lockIt();
+    typePin('12a3b4');
+    expect((screen.getByLabelText('PIN 6자리') as HTMLInputElement).value).toBe('1234');
   });
 
   it('잠긴 채 창을 닫으면 잠금 화면에서 [백업 없이 종료]를 누를 수 있다', async () => {

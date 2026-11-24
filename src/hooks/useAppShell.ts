@@ -9,7 +9,7 @@ import { saveBackupFile } from '../services/backup/backupService';
 import { isRestoring } from '../services/backup/backupBusy';
 import { formatDateTime } from '../services/domain/dates';
 import { allowed } from '../services/auth/access';
-import { setClosingNotice } from '../services/auth/closing';
+import { setClosingNotice, useClosingNotice } from '../services/auth/closing';
 import type { Action } from '../services/auth/roles';
 import { desktop } from '../services/desktopBridge';
 
@@ -56,8 +56,8 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
   const [autoSave, setAutoSave] = useState<AutoSaveStatus>(null);
-  // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다.
-  const [closing, setClosing] = useState(false);
+  // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다(잠금 화면도 같은 값을 읽음).
+  const closing = useClosingNotice();
 
   useEffect(() => {
     const api = desktop();
@@ -65,14 +65,10 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     const offRequest = api.onBackupRequest(async () => {
       // 백업 파일 확인·복원 중에는 창을 닫지 않습니다(main이 '복원하고 있습니다' 안내만 띄움).
       if (isRestoring()) return { blocked: true as const };
-      setClosing(true);
       setClosingNotice(true);
       return buildAutoBackup();
     });
-    const offCancel = api.onBackupCancelled(() => {
-      setClosing(false);
-      setClosingNotice(false);
-    });
+    const offCancel = api.onBackupCancelled(() => setClosingNotice(false));
     return () => {
       offRequest();
       offCancel();

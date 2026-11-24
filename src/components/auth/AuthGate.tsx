@@ -57,7 +57,7 @@ function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: 
           </div>
         ) : hasPin ? (
           <form onSubmit={submit} className="flex justify-center gap-2">
-            <input type="password" inputMode="numeric" autoFocus maxLength={6} className="input w-32 text-center tracking-widest" aria-label="PIN 6자리" value={pin} onChange={(e) => setPin(e.target.value.replace(/D/g, ''))} />
+            <input type="password" inputMode="numeric" autoFocus maxLength={6} className="input w-32 text-center tracking-widest" aria-label="PIN 6자리" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
             <button type="submit" className="btn-primary" disabled={busy || pin.length !== 6}>
               잠금 풀기
             </button>
