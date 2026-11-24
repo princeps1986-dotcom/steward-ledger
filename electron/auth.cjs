@@ -105,9 +105,14 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     if (!jwksRes.ok) throw new Error(`서명 키를 받지 못했습니다(${jwksRes.status}).`);
     const { keys } = await jwksRes.json();
     // 액세스·리프레시 토큰은 쓰지 않고 버립니다. 계정 확인에는 검증을 통과한 ID 토큰만 씁니다.
-    const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now() });
-    session = await admit(who); // 이 앱을 써도 되는 계정인지·역할이 무엇인지(electron/userStore.cjs). 거절되면 계정을 남기지 않습니다.
-    return session;
+    try {
+      const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now() });
+      session = await admit(who); // 이 앱을 써도 되는 계정인지·역할이 무엇인지(electron/userStore.cjs)
+      return session;
+    } catch (err) {
+      session = null; // 검증·허용에 실패한 로그인 시도 뒤에는 이전 로그인도 남기지 않습니다(그사이 사용 중지된 계정이 세션을 유지하지 못하게).
+      throw err;
+    }
   }
 
   return {

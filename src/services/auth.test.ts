@@ -218,6 +218,17 @@ describe('구글 로그인 흐름(electron/auth.cjs)', () => {
     expect(h.auth.session()).toBeNull();
   });
 
+  it('이미 로그인한 상태에서 다시 로그인하다 거절되면 이전 로그인도 사라진다', async () => {
+    let reject = false;
+    const h = harness({ admit: async (id) => (reject ? Promise.reject(new Error('사용이 중지된 계정입니다.')) : { ...id, role: 'admin' }) });
+    await h.auth.login();
+    expect(h.auth.session()).not.toBeNull();
+    reject = true;
+    await expect(h.auth.login()).rejects.toThrow('사용이 중지된 계정');
+    expect(h.auth.session()).toBeNull();
+    expect(h.auth.status()).toMatchObject({ email: null, role: null });
+  });
+
   it('클라이언트 ID가 없으면 브라우저를 열지 않고 안내한다', async () => {
     const openBrowser = vi.fn();
     const auth = createAuth({ clientId: '', admit: admitAll, openBrowser, fetch: vi.fn() as unknown as typeof fetch });
