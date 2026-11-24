@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('desktop', {
   authSetPin: (pin) => ipcRenderer.invoke('auth:set-pin', pin),
   authVerifyPin: (pin) => ipcRenderer.invoke('auth:verify-pin', pin),
   usersList: () => ipcRenderer.invoke('users:list'),
+  usersLog: () => ipcRenderer.invoke('users:log'),
   usersAdd: (user) => ipcRenderer.invoke('users:add', user),
   usersSetRole: (email, role) => ipcRenderer.invoke('users:set-role', email, role),
   usersSetDisabled: (email, disabled) => ipcRenderer.invoke('users:set-disabled', email, disabled),

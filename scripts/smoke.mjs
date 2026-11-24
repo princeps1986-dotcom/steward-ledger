@@ -83,7 +83,7 @@ try {
   const keyReplace = await ev('window.desktop.dataKeyReplace()');
   check('열쇠 IPC: 로그인 없이는 열쇠 교체도 거절', keyReplace?.error === '로그인이 필요합니다.' && !('key' in keyReplace), JSON.stringify(keyReplace));
   // 계정·역할 관리는 로그인한 관리자만(로그인 없이는 목록·등록·역할 변경 모두 거절).
-  const userCalls = await ev('Promise.all([window.desktop.usersList(), window.desktop.usersAdd({ email: "x@y.co", role: "admin" }), window.desktop.usersSetRole("x@y.co", "viewer"), window.desktop.usersSetDisabled("x@y.co", true)])');
+  const userCalls = await ev('Promise.all([window.desktop.usersList(), window.desktop.usersAdd({ email: "x@y.co", role: "admin" }), window.desktop.usersSetRole("x@y.co", "viewer"), window.desktop.usersSetDisabled("x@y.co", true), window.desktop.usersLog()])');
   check('계정 관리 IPC: 로그인 없이는 모두 거절', userCalls.every((r) => r?.error === '로그인이 필요합니다.'), JSON.stringify(userCalls));
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);

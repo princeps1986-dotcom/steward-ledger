@@ -12,7 +12,7 @@ import { allowed } from '../services/auth/access';
 import type { Action } from '../services/auth/roles';
 import { desktop } from '../services/desktopBridge';
 
-export type PageKey = 'input' | 'members' | 'offerings' | 'reports' | 'settings' | 'help';
+export type PageKey = 'input' | 'members' | 'offerings' | 'reports' | 'settings' | 'admin' | 'help';
 
 export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'input', label: '헌금 입력' },
@@ -20,12 +20,14 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'members', label: '성도 정보' },
   { key: 'offerings', label: '헌금 종류' },
   { key: 'settings', label: '설정 정보' },
+  { key: 'admin', label: '관리자' },
   { key: 'help', label: '설명서' },
 ];
 
 /** 메뉴(페이지)마다 필요한 권한. 설정·설명서는 모두에게 열리고(설정은 화면 안에서 역할별로 줄임), 나머지는 역할 표(roles.ts)를 따릅니다. */
-const PAGE_ACTION: Record<PageKey, Action | null> = { input: 'donation:write', reports: 'report:summary', members: 'catalog:edit', offerings: 'catalog:edit', settings: null, help: null };
-export const pageAllowed = (key: PageKey): boolean => PAGE_ACTION[key] === null || allowed(PAGE_ACTION[key]);
+const PAGE_ACTION: Record<PageKey, Action | null> = { input: 'donation:write', reports: 'report:summary', members: 'catalog:edit', offerings: 'catalog:edit', settings: null, admin: 'admin:tab', help: null };
+// 관리자 탭은 계정이 있는 PC앱에만 있습니다(브라우저 시연 모드는 관리자와 같은 권한이지만 계정이 없음).
+export const pageAllowed = (key: PageKey): boolean => (key === 'admin' && !desktop() ? false : PAGE_ACTION[key] === null || allowed(PAGE_ACTION[key]));
 /** 지금 역할이 볼 수 있는 메뉴 */
 export const visiblePages = (): typeof PAGES => PAGES.filter((p) => pageAllowed(p.key));
 

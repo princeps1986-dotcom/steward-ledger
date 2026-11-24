@@ -18,10 +18,10 @@ afterEach(() => {
 });
 
 describe('역할별 메뉴', () => {
-  it('브라우저(시연) 모드와 관리자·재정담당은 모든 메뉴를 본다', () => {
+  it('브라우저(시연) 모드와 재정담당은 관리자 탭 말고 모든 메뉴를 보고, PC앱 관리자만 관리자 탭을 더 본다', () => {
     expect(keys()).toEqual(['input', 'reports', 'members', 'offerings', 'settings', 'help']);
     login('admin');
-    expect(keys()).toEqual(['input', 'reports', 'members', 'offerings', 'settings', 'help']);
+    expect(keys()).toEqual(['input', 'reports', 'members', 'offerings', 'settings', 'admin', 'help']);
     login('finance');
     expect(keys()).toEqual(['input', 'reports', 'members', 'offerings', 'settings', 'help']);
   });
@@ -31,6 +31,7 @@ describe('역할별 메뉴', () => {
     expect(keys()).toEqual(['reports', 'settings', 'help']);
     expect(pageAllowed('input')).toBe(false);
     expect(pageAllowed('members')).toBe(false);
+    expect(pageAllowed('admin')).toBe(false);
   });
 
   it('열람자는 보고서 화면으로 시작하고, 허용되지 않은 페이지로는 이동할 수 없다(직접 여는 경로 차단)', () => {

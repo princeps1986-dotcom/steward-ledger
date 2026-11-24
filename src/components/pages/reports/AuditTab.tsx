@@ -32,6 +32,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
               <th className="th">작업 일시</th>
               <th className="th">유형</th>
               <th className="th">사유</th>
+              <th className="th">작업자</th>
               <th className="th">변경 전</th>
               <th className="th">변경 후</th>
             </tr>
@@ -42,6 +43,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
                 <td className="td whitespace-nowrap">{l.time}</td>
                 <td className={`td font-semibold ${l.actionLabel === '삭제' ? 'text-red-600' : 'text-blue-700'}`}>{l.actionLabel}</td>
                 <td className="td">{l.reason}</td>
+                <td className="td text-xs text-gray-600">{l.actor || '-'}</td>
                 <td className="td text-xs text-gray-600">
                   <DonationLine v={l.before} />
                 </td>
@@ -52,7 +54,7 @@ export function AuditTab({ f }: { f: ReportFilters }) {
             ))}
             {logs.length === 0 ? (
               <tr>
-                <td className="td text-center text-gray-500" colSpan={5}>
+                <td className="td text-center text-gray-500" colSpan={6}>
                   이 보고서 기간에 해당하는 수정·삭제 이력이 없습니다.
                 </td>
               </tr>

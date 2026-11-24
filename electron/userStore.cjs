@@ -16,6 +16,7 @@ const MAX_ADMINS = 2;
 const PIN_MAX_FAILS = 5;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PIN_RE = /^\d{6}$/;
+const MAX_LOG = 100;
 const CORRUPT = '계정 목록 파일을 읽을 수 없습니다. 이 PC의 소유자가 파일(users.json)을 확인하세요.';
 
 const fail = (msg) => {
@@ -31,6 +32,7 @@ function createUserStore({ dir, now = Date.now }) {
     chain = run.catch(() => undefined);
     return run;
   };
+  let curLog = [];
   const pinFails = new Map(); // sub → 연속 실패 횟수(메모리에만: 앱을 다시 켜면 어차피 구글 로그인부터)
 
   /** 파일이 없을 때만 빈 목록입니다. 깨진 파일을 빈 목록으로 보면 아무나 관리자가 되므로 오류로 알립니다. */
@@ -39,7 +41,10 @@ function createUserStore({ dir, now = Date.now }) {
     try {
       text = await fs.readFile(file, 'utf8');
     } catch (err) {
-      if (err.code === 'ENOENT') return [];
+      if (err.code === 'ENOENT') {
+        curLog = [];
+        return [];
+      }
       throw err;
     }
     let data;
@@ -49,9 +54,14 @@ function createUserStore({ dir, now = Date.now }) {
       return fail(CORRUPT);
     }
     if (!data || !Array.isArray(data.users)) fail(CORRUPT);
+    curLog = Array.isArray(data.log) ? data.log : [];
     return data.users;
   }
-  const write = (users) => writeKeyFile(file, JSON.stringify({ version: 1, users }, null, 2));
+  // 기록(로그인·계정 변경, 최근 100건)은 계정 목록과 한 파일에 둡니다. 이메일·역할만 적고 토큰·PIN은 없습니다. 읽기→쓰기는 exclusive 안이라 curLog가 섞이지 않습니다.
+  const write = (users, ...notes) => {
+    curLog = [...curLog, ...notes.map(([who, text]) => ({ at: new Date(now()).toISOString(), who: mailOf(who), text }))].slice(-MAX_LOG);
+    return writeKeyFile(file, JSON.stringify({ version: 1, users, log: curLog }, null, 2));
+  };
   const find = (users, email) => users.find((u) => u.email === email);
   const adminCount = (users) => users.filter((u) => u.role === 'admin').length;
   const activeAdminCount = (users) => users.filter((u) => u.role === 'admin' && !u.disabled).length;
@@ -68,29 +78,26 @@ function createUserStore({ dir, now = Date.now }) {
       exclusive(async () => {
         const mail = mailOf(email);
         const users = await read();
-        let changed = false;
+        const first = users.length === 0;
         let user;
         if (users.length === 0) {
           user = newUser(sub, mail, 'admin');
           users.push(user);
-          changed = true;
         } else {
           user = users.find((u) => u.sub === sub);
           if (!user) {
             user = users.find((u) => !u.sub && u.email === mail); // 사전 등록: 첫 로그인에서 sub를 묶습니다.
             if (user) {
               user.sub = sub;
-              changed = true;
             }
           }
           if (!user) fail('등록되지 않은 계정입니다. 관리자에게 이메일 등록을 요청하세요.');
           if (user.disabled) fail('사용이 중지된 계정입니다. 관리자에게 문의하세요.');
           if (user.email !== mail) {
             user.email = mail; // 구글 계정의 이메일이 바뀐 경우 sub로 알아보고 표시만 고칩니다.
-            changed = true;
           }
         }
-        if (changed) await write(users);
+        await write(users, [mail, first ? '로그인(처음 관리자로 등록)' : '로그인']);
         pinFails.delete(sub);
         return { sub, email: user.email, role: user.role };
       }),
@@ -102,7 +109,7 @@ function createUserStore({ dir, now = Date.now }) {
       ),
 
     /** 이메일 사전 등록. 목록이 비어 있으면(처음 로그인한 사람이 관리자가 되는 중) 거절 */
-    add: ({ email, role }) =>
+    add: ({ email, role }, actorEmail) =>
       exclusive(async () => {
         const mail = mailOf(email);
         if (!EMAIL_RE.test(mail)) fail('이메일 형식이 올바르지 않습니다.');
@@ -113,10 +120,10 @@ function createUserStore({ dir, now = Date.now }) {
         if (find(users, mail)) fail('이미 등록된 이메일입니다.');
         if (role === 'admin' && adminCount(users) >= MAX_ADMINS) fail(`관리자는 최대 ${MAX_ADMINS}명입니다. 먼저 다른 관리자를 내리세요.`);
         users.push(newUser(null, mail, role));
-        await write(users);
+        await write(users, [actorEmail, `${mail} 등록(${role})`]);
       }),
 
-    setRole: (email, role) =>
+    setRole: (email, role, actorEmail) =>
       exclusive(async () => {
         if (!ROLES.includes(role)) fail('알 수 없는 역할입니다.');
         const users = await read();
@@ -124,8 +131,9 @@ function createUserStore({ dir, now = Date.now }) {
         if (u.role === role) return;
         if (role === 'admin' && adminCount(users) >= MAX_ADMINS) fail(`관리자는 최대 ${MAX_ADMINS}명입니다. 먼저 다른 관리자를 내리세요.`);
         if (u.role === 'admin' && !u.disabled && activeAdminCount(users) < 2) fail('마지막 관리자는 내릴 수 없습니다. 먼저 다른 관리자를 추가하세요.');
+        const was = u.role;
         u.role = role;
-        await write(users);
+        await write(users, [actorEmail, `${u.email} 역할 변경(${was} → ${role})`]);
       }),
 
     /** actorEmail: 이 동작을 하는 관리자(자기 자신은 사용 중지할 수 없음) */
@@ -136,8 +144,11 @@ function createUserStore({ dir, now = Date.now }) {
         if (disabled && u.email === mailOf(actorEmail)) fail('자기 자신은 사용 중지할 수 없습니다.');
         if (disabled && u.role === 'admin' && !u.disabled && activeAdminCount(users) < 2) fail('마지막 관리자는 사용 중지할 수 없습니다. 먼저 다른 관리자를 추가하세요.');
         u.disabled = !!disabled;
-        await write(users);
+        await write(users, [actorEmail, `${u.email} ${disabled ? '사용 중지' : '사용 재개'}`]);
       }),
+
+    /** 최근 기록(오래된 것부터) */
+    log: () => exclusive(async () => (await read(), curLog.slice())),
 
     hasPin: (sub) => exclusive(async () => !!(await read()).find((u) => u.sub === sub)?.pin),
 
@@ -170,7 +181,7 @@ function createUserStore({ dir, now = Date.now }) {
         const n = (pinFails.get(sub) ?? 0) + 1;
         if (n >= PIN_MAX_FAILS) {
           u.pin = null;
-          await write(users);
+          await write(users, [u.email, 'PIN 5회 실패로 잠김']);
           pinFails.delete(sub);
           return { ok: false, locked: true };
         }

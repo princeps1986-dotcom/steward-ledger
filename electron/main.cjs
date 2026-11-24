@@ -658,8 +658,9 @@ if (!app.requestSingleInstanceLock()) {
   const roleIs = (...roles) => roles.includes(auth.session()?.role);
   const adminOnly = (fn) => withSession(async (me, ...args) => (me.role === 'admin' ? fn(me, ...args) : { error: NOT_ALLOWED }));
   ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
-  ipcMain.handle('users:add', adminOnly(async (_me, u) => (await users.add({ email: u && u.email, role: u && u.role }), { ok: true })));
-  ipcMain.handle('users:set-role', adminOnly(async (_me, email, role) => (await users.setRole(email, role), { ok: true })));
+  ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log() })));
+  ipcMain.handle('users:add', adminOnly(async (me, u) => (await users.add({ email: u && u.email, role: u && u.role }, me.email), { ok: true })));
+  ipcMain.handle('users:set-role', adminOnly(async (me, email, role) => (await users.setRole(email, role, me.email), { ok: true })));
   ipcMain.handle('users:set-disabled', adminOnly(async (me, email, disabled) => (await users.setDisabled(email, !!disabled, me.email), { ok: true })));
   ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());

@@ -101,6 +101,7 @@ export interface DesktopApi {
   authVerifyPin(pin: string): Promise<{ ok: true } | { ok: false; left: number } | { ok: false; locked: true } | { ok: false; noPin: true } | { error: string }>;
   /** 계정·역할 관리(관리자만, main이 확인). 화면은 6단계 관리자 탭. 실패하면 { error }. */
   usersList(): Promise<{ users: UserEntry[] } | { error: string }>;
+  usersLog(): Promise<{ log: AccountLogEntry[] } | { error: string }>;
   usersAdd(user: { email: string; role: Role }): Promise<{ ok: true } | { error: string }>;
   usersSetRole(email: string, role: Role): Promise<{ ok: true } | { error: string }>;
   usersSetDisabled(email: string, disabled: boolean): Promise<{ ok: true } | { error: string }>;
@@ -121,6 +122,13 @@ export interface UserEntry {
   disabled: boolean;
   registered: boolean;
   hasPin: boolean;
+}
+
+/** 로그인·계정 변경 기록의 한 줄(who = 한 사람의 이메일) */
+export interface AccountLogEntry {
+  at: string;
+  who: string;
+  text: string;
 }
 
 export interface AuthStatus {

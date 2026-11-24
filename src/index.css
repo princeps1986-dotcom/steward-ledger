@@ -145,7 +145,7 @@ tr.row-sep > td { border-bottom: 2px solid var(--color-gray-400); }
   .print-spacer { display: table-row !important; }
   .print-foot { display: table-footer-group !important; }
   /* 한 페이지에 더 많은 행을 담기 위해 화면 높이 제한을 풀고 글자·행 높이를 줄입니다. */
-  html, body, #root, #root > div { height: auto !important; }
+  html, body, #root, #root > div, #root > div > div { height: auto !important; }
   .card { box-shadow: none; border: none; padding: 0; background: transparent; }
   table { page-break-inside: auto; }
   thead { display: table-header-group; } /* 페이지가 넘어가도 머리글 행 반복 */

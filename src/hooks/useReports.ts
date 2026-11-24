@@ -545,6 +545,7 @@ export function useAuditLogTab(f: ReportFilters) {
       time: formatDateTime(l.timestamp),
       actionLabel: l.action === 'UPDATE' ? '수정' : '삭제',
       reason: l.reason,
+      actor: l.actor ?? '',
       before: describe(l.beforeSnapshot),
       after: describe(l.afterSnapshot),
     }));

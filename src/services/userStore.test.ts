@@ -15,8 +15,9 @@ interface PinResult {
 interface Store {
   admit(id: { sub: string; email: string }): Promise<{ sub: string; email: string; role: Role }>;
   list(): Promise<{ email: string; role: Role; disabled: boolean; registered: boolean; hasPin: boolean }[]>;
-  add(u: { email: string; role: string }): Promise<void>;
-  setRole(email: string, role: string): Promise<void>;
+  add(u: { email: string; role: string }, actor?: string): Promise<void>;
+  setRole(email: string, role: string, actor?: string): Promise<void>;
+  log(): Promise<{ at: string; who: string; text: string }[]>;
   setDisabled(email: string, disabled: boolean, actor: string): Promise<void>;
   hasPin(sub: string): Promise<boolean>;
   setPin(sub: string, pin: string): Promise<void>;
@@ -200,5 +201,35 @@ describe('PIN', () => {
     await s.admit(B);
     await s.setPin('sub-a', '123456');
     expect(await s.verifyPin('sub-b', '123456')).toEqual({ ok: false, noPin: true });
+  });
+});
+
+describe('로그인·계정 변경 기록', () => {
+  it('로그인·등록·역할 변경·사용 중지를 사람과 함께 남기고, 토큰·PIN은 적지 않는다', async () => {
+    const { s, d } = mk();
+    await s.admit(A);
+    await s.add({ email: 'fin@church.org', role: 'finance' }, A.email);
+    await s.setRole('fin@church.org', 'viewer', A.email);
+    await s.setDisabled('fin@church.org', true, A.email);
+    await s.setPin(A.sub, '123456');
+    const log = await s.log();
+    expect(log.map((l) => l.text)).toEqual(['로그인(처음 관리자로 등록)', 'fin@church.org 등록(finance)', 'fin@church.org 역할 변경(finance → viewer)', 'fin@church.org 사용 중지']);
+    expect(log[1].who).toBe('admin@church.org');
+    expect(log[0].at).toBe(new Date(Date.UTC(2026, 10, 24)).toISOString());
+    expect(readFileSync(join(d, 'users.json'), 'utf8')).not.toContain('123456');
+  });
+
+  it('기록은 최근 100건만 남는다', async () => {
+    const { s } = mk();
+    await s.admit(A);
+    for (let i = 0; i < 105; i++) await s.admit(A);
+    expect(await s.log()).toHaveLength(100);
+  });
+
+  it('기록이 없는 예전 파일도 읽고 계정 목록은 그대로다', async () => {
+    const { s, d } = mk();
+    writeFileSync(join(d, 'users.json'), JSON.stringify({ version: 1, users: [{ sub: 'x', email: 'x@y.co', role: 'admin', addedAt: '2026-01-01', disabled: false, pin: null }] }));
+    expect(await s.log()).toEqual([]);
+    expect((await s.list()).map((u) => u.email)).toEqual(['x@y.co']);
   });
 });

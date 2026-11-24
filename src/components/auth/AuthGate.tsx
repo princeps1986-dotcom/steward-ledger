@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useAuthGate } from '../../hooks/useAuthGate';
+import { SessionContext, type Session } from '../../hooks/useSession';
 import { can } from '../../services/auth/roles';
 import { Notice } from '../shared/Notice';
 
@@ -14,11 +15,67 @@ function Card({ children }: { children: ReactNode }) {
   );
 }
 
+/** 자동 잠금 화면: PIN(6자리)으로 풀고, PIN이 없으면 구글 재로그인으로 풉니다. 아래 앱은 지우지 않고 가려만 두어 입력 중이던 내용이 남습니다. */
+function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: { email: string | null; hasPin: boolean; unlockWithPin(pin: string): Promise<string | null>; unlockWithGoogle(): Promise<string | null>; logout(): void }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (fn: () => Promise<string | null>) => {
+    setBusy(true);
+    setError(await fn());
+    setBusy(false);
+    setPin('');
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void run(() => unlockWithPin(pin));
+  };
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white p-4" role="dialog" aria-modal="true" aria-label="잠금">
+      <div className="w-[26rem] max-w-full space-y-4 rounded-lg border border-gray-200 p-6 shadow">
+        <h1 className="text-center text-xl font-bold">잠겨 있습니다</h1>
+        <p className="text-center text-sm text-gray-600">{email ?? ''} 계정이 한동안 쓰이지 않아 화면을 잠갔습니다. 입력하던 내용은 그대로입니다.</p>
+        <Notice message={error ? { kind: 'error', text: error } : null} />
+        {hasPin ? (
+          <form onSubmit={submit} className="flex justify-center gap-2">
+            <input type="password" inputMode="numeric" autoFocus maxLength={6} className="input w-32 text-center tracking-widest" aria-label="PIN 6자리" value={pin} onChange={(e) => setPin(e.target.value.replace(/D/g, ''))} />
+            <button type="submit" className="btn-primary" disabled={busy || pin.length !== 6}>
+              잠금 풀기
+            </button>
+          </form>
+        ) : (
+          <div className="flex justify-center">
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => void run(unlockWithGoogle)}>
+              구글로 다시 로그인
+            </button>
+          </div>
+        )}
+        <div className="text-center">
+          <button type="button" className="text-xs text-gray-500 underline" onClick={logout}>
+            로그아웃
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** PC앱은 구글 로그인을 마치고 저장 데이터 준비(열쇠·암호화 이전)가 끝나야 앱을 그립니다. 브라우저(시연) 모드는 그대로 통과합니다. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const g = useAuthGate();
   const [confirmingRestart, setConfirmingRestart] = useState(false);
-  if (g.phase === 'ready') return <>{children}</>;
+  const session = useMemo<Session | null>(() => (g.email && g.role ? { email: g.email, role: g.role, hasPin: g.hasPin, lock: g.lock, logout: () => void g.logout(), setPin: g.setPin } : null), [g.email, g.role, g.hasPin, g.lock, g.logout, g.setPin]);
+  if (g.phase === 'ready' || g.phase === 'locked') {
+    const locked = g.phase === 'locked';
+    return (
+      <SessionContext.Provider value={session}>
+        <div className="contents" inert={locked}>
+          {children}
+        </div>
+        {locked ? <LockScreen email={g.email} hasPin={g.hasPin} unlockWithPin={g.unlockWithPin} unlockWithGoogle={g.unlockWithGoogle} logout={() => void g.logout()} /> : null}
+      </SessionContext.Provider>
+    );
+  }
   if (g.phase === 'checking') return null; // 몇 십 밀리초 안에 끝나므로 깜빡임을 피해 비워 둡니다.
 
   if (g.phase === 'preparing') {
