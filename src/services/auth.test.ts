@@ -25,15 +25,18 @@ interface Identity {
 const { verifyIdToken } = req('../../electron/idToken.cjs') as {
   verifyIdToken(t: string, o: { keys: unknown[]; clientId: string; nonce: string; now?: number }): Identity;
 };
+interface Admitted extends Identity {
+  role: string;
+}
 interface Auth {
-  login(): Promise<Identity>;
+  login(): Promise<Admitted>;
   cancel(): void;
   logout(): void;
-  session(): Identity | null;
-  status(): { configured: boolean; email: string | null };
+  session(): Admitted | null;
+  status(): { configured: boolean; email: string | null; role: string | null };
 }
 const { createAuth } = req('../../electron/auth.cjs') as {
-  createAuth(o: { clientId: string; clientSecret?: string; openBrowser(u: string): Promise<void>; fetch: typeof fetch; now?: () => number; timeoutMs?: number }): Auth;
+  createAuth(o: { clientId: string; clientSecret?: string; openBrowser(u: string): Promise<void>; admit(id: Identity): Promise<Admitted>; fetch: typeof fetch; now?: () => number; timeoutMs?: number }): Auth;
 };
 const { createDataKeyStore } = req('../../electron/dataKey.cjs') as {
   createDataKeyStore(o: { safeStorage: FakeSafeStorage; dir: string; log: { warn(...a: unknown[]): void } }): { getDataKey(): Promise<Buffer> };
@@ -93,7 +96,8 @@ describe('ID 토큰 검증(electron/idToken.cjs)', () => {
 });
 
 /** 브라우저 대신 redirect_uri로 응답을 보내는 가짜 로그인: 요청 주소를 검사하고, 받은 nonce로 ID 토큰을 만든다. */
-function harness(o: { mutate?: (q: URLSearchParams) => void; claims?: (nonce: string) => Claims; tokenStatus?: number; timeoutMs?: number; noRedirect?: boolean } = {}) {
+const admitAll = async (id: Identity): Promise<Admitted> => ({ ...id, role: 'admin' });
+function harness(o: { admit?: (id: Identity) => Promise<Admitted>; mutate?: (q: URLSearchParams) => void; claims?: (nonce: string) => Claims; tokenStatus?: number; timeoutMs?: number; noRedirect?: boolean } = {}) {
   const seen: { authUrl?: URL; tokenBody?: URLSearchParams; redirect?: string } = {};
   const sendBack = (q: URLSearchParams, base: string) =>
     new Promise<number>((resolve) => get(`${base}/?${q}`, (r) => (r.resume(), resolve(r.statusCode ?? 0))));
@@ -114,16 +118,16 @@ function harness(o: { mutate?: (q: URLSearchParams) => void; claims?: (nonce: st
     }
     return { ok: true, status: 200, json: async () => ({ keys: [jwk] }) };
   });
-  const auth = createAuth({ clientId: CLIENT, clientSecret: 'shh', openBrowser, fetch: fetchFn as unknown as typeof fetch, now: () => NOW, timeoutMs: o.timeoutMs ?? 5000 });
+  const auth = createAuth({ clientId: CLIENT, clientSecret: 'shh', openBrowser, admit: o.admit ?? admitAll, fetch: fetchFn as unknown as typeof fetch, now: () => NOW, timeoutMs: o.timeoutMs ?? 5000 });
   return { auth, seen, fetchFn, sendBack };
 }
 
 describe('구글 로그인 흐름(electron/auth.cjs)', () => {
   it('PKCE·state·nonce를 담아 브라우저를 열고, 코드를 받아 계정을 확인한다(토큰은 저장하지 않음)', async () => {
     const h = harness();
-    expect(h.auth.status()).toEqual({ configured: true, email: null });
+    expect(h.auth.status()).toEqual({ configured: true, email: null, role: null });
     const who = await h.auth.login();
-    expect(who).toEqual({ sub: '1077', email: 'pastor@example.com' });
+    expect(who).toEqual({ sub: '1077', email: 'pastor@example.com', role: 'admin' });
     expect(h.auth.session()).toEqual(who);
     expect(h.auth.status().email).toBe('pastor@example.com');
 
@@ -188,7 +192,7 @@ describe('구글 로그인 흐름(electron/auth.cjs)', () => {
     const offline = vi.fn(async () => {
       throw new TypeError('fetch failed');
     });
-    const auth = createAuth({ clientId: CLIENT, openBrowser: async (u) => void setTimeout(() => void h.sendBack(new URLSearchParams({ code: 'C', state: new URL(u).searchParams.get('state')! }), new URL(u).searchParams.get('redirect_uri')!), 0), fetch: offline as unknown as typeof fetch });
+    const auth = createAuth({ clientId: CLIENT, admit: admitAll, openBrowser: async (u) => void setTimeout(() => void h.sendBack(new URLSearchParams({ code: 'C', state: new URL(u).searchParams.get('state')! }), new URL(u).searchParams.get('redirect_uri')!), 0), fetch: offline as unknown as typeof fetch });
     await expect(auth.login()).rejects.toThrow('인터넷에 연결할 수 없습니다');
     expect(auth.session()).toBeNull();
   });
@@ -208,9 +212,15 @@ describe('구글 로그인 흐름(electron/auth.cjs)', () => {
     await expect(h.auth.login()).resolves.toMatchObject({ sub: '1077' });
   });
 
+  it('등록되지 않은 계정이라고 거절되면 로그인이 실패하고 계정을 남기지 않는다', async () => {
+    const h = harness({ admit: async () => Promise.reject(new Error('등록되지 않은 계정입니다.')) });
+    await expect(h.auth.login()).rejects.toThrow('등록되지 않은 계정입니다.');
+    expect(h.auth.session()).toBeNull();
+  });
+
   it('클라이언트 ID가 없으면 브라우저를 열지 않고 안내한다', async () => {
     const openBrowser = vi.fn();
-    const auth = createAuth({ clientId: '', openBrowser, fetch: vi.fn() as unknown as typeof fetch });
+    const auth = createAuth({ clientId: '', admit: admitAll, openBrowser, fetch: vi.fn() as unknown as typeof fetch });
     expect(auth.status().configured).toBe(false);
     await expect(auth.login()).rejects.toThrow('클라이언트 ID');
     expect(openBrowser).not.toHaveBeenCalled();

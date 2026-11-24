@@ -15,9 +15,10 @@ const PAGE = (msg) =>
 
 /**
  * openBrowser(url): 로그인 주소를 시스템 브라우저로 엽니다(주소 검사는 호출하는 쪽).
+ * admit(신원): 검증을 통과한 구글 계정을 받아 { sub, email, role }을 돌려주거나(앱 사용 허용) 사유와 함께 거절합니다.
  * clientSecret은 선택입니다(구글 데스크톱 클라이언트의 비밀값은 비밀로 취급되지 않음).
  */
-function createAuth({ clientId, clientSecret, openBrowser, fetch: rawFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
+function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
   let session = null;
   let pending = null; // 로그인 중에 또 눌러도 같은 진행을 돌려줍니다.
   let cancelWait = null; // 브라우저 응답을 기다리는 중일 때만 있음
@@ -104,7 +105,8 @@ function createAuth({ clientId, clientSecret, openBrowser, fetch: rawFetch = fet
     if (!jwksRes.ok) throw new Error(`서명 키를 받지 못했습니다(${jwksRes.status}).`);
     const { keys } = await jwksRes.json();
     // 액세스·리프레시 토큰은 쓰지 않고 버립니다. 계정 확인에는 검증을 통과한 ID 토큰만 씁니다.
-    session = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now() });
+    const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now() });
+    session = await admit(who); // 이 앱을 써도 되는 계정인지·역할이 무엇인지(electron/userStore.cjs). 거절되면 계정을 남기지 않습니다.
     return session;
   }
 
@@ -116,7 +118,7 @@ function createAuth({ clientId, clientSecret, openBrowser, fetch: rawFetch = fet
       session = null;
     },
     session: () => session,
-    status: () => ({ configured: !!clientId, email: session ? session.email : null }),
+    status: () => ({ configured: !!clientId, email: session ? session.email : null, role: session ? session.role : null }),
   };
 }
 

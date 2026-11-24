@@ -38,7 +38,7 @@
 ## 데스크톱 셸(Electron)
 - `electron/main.cjs`(창, 백업·복원·PDF·업데이트 IPC, CSP, 권한·개발자 도구 차단, 종료 시 자동 백업), `preload.cjs`(노출 API, 오른쪽 버튼 차단·영구 저장소 요청, 타입은 `src/services/desktopBridge.ts`의 `DesktopApi`)
 - `electron/backupCrypto.cjs`(백업 암호화), `backupVerify.cjs`(백업 검증), `restoreLog.cjs`(복원 기록), `dataPaths.cjs`(데이터·백업 폴더), `pcKey.cjs`(자동 백업용 PC 키)
-- 구글 로그인(권한 체계 1단계, 계획 `docs/plans/권한-체계-계획.md`): `electron/auth.cjs`(OAuth+PKCE·loopback, 토큰 저장 안 함), `idToken.cjs`(ID 토큰 검증), `authConfig.cjs`(클라이언트 ID), `dataKey.cjs`(데이터 열쇠 DPAPI 저장소, 4단계에서 연결), IPC `auth:status|login|cancel|logout`(`desktopBridge.ts`의 `authStatus`·`authLogin`·`authCancel`·`authLogout`), 로그인 화면 `src/components/auth/AuthGate.tsx`(`src/main.tsx`에서 `AppProviders`를 감쌈, 브라우저 모드는 통과)·`src/hooks/useAuthGate.ts`, 시험 `src/services/auth.test.ts`·`AuthGate.test.tsx`
+- 구글 로그인(권한 체계 1단계, 계획 `docs/plans/권한-체계-계획.md`): `electron/auth.cjs`(OAuth+PKCE·loopback, 토큰 저장 안 함), `idToken.cjs`(ID 토큰 검증), `authConfig.cjs`(클라이언트 ID), `dataKey.cjs`(데이터 열쇠 DPAPI 저장소, 4단계에서 연결), `userStore.cjs`(계정·역할 목록 `users.json`·PIN, 로그인 때 `admit`으로 허용 여부 확인), 역할 표 `src/services/auth/roles.ts`(`can(role, action)`), IPC `auth:status|login|cancel|logout|set-pin|verify-pin`(`desktopBridge.ts`의 `authStatus`·`authLogin`·`authCancel`·`authLogout`·`authSetPin`·`authVerifyPin`), 로그인 화면 `src/components/auth/AuthGate.tsx`(`src/main.tsx`에서 `AppProviders`를 감쌈, 브라우저 모드는 통과)·`src/hooks/useAuthGate.ts`, 시험 `src/services/auth.test.ts`·`userStore.test.ts`·`auth/roles.test.ts`·`AuthGate.test.tsx`
 - 브라우저와 PC앱의 기능 차이는 `desktop()`(`desktopBridge.ts`)이 있는지로 갈립니다(`BrowserNotice.tsx`, `useAutoDemo.ts` 등).
 
 ## 앱 뼈대·공통 화면

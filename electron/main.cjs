@@ -15,6 +15,7 @@ const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./data
 const { createPcKeyStore } = require('./pcKey.cjs');
 const { createAuth } = require('./auth.cjs');
 const authConfig = require('./authConfig.cjs');
+const { createUserStore } = require('./userStore.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
@@ -583,7 +584,9 @@ if (!app.requestSingleInstanceLock()) {
   // 구글 로그인(electron/auth.cjs). 토큰은 저장하지 않고 화면에도 넘기지 않으며, 화면은 계정(이메일)만 받습니다.
   // 환경변수는 개발 실행에서만 씁니다(설치한 앱은 authConfig.cjs 값만).
   const devEnv = (name) => (!app.isPackaged && process.env[name]) || '';
+  const users = createUserStore({ dir: app.getPath('userData') });
   const auth = createAuth({
+    admit: users.admit, // 계정 목록에 있는 사람만 들어오고, 목록이 비었을 때 처음 로그인한 사람은 관리자(electron/userStore.cjs)
     clientId: devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
     clientSecret: devEnv('STEWARD_GOOGLE_CLIENT_SECRET') || authConfig.clientSecret,
     // 이 주소는 auth.cjs가 만들지만, 시스템 브라우저로 여는 곳이므로 구글 로그인 주소만 허용합니다.
@@ -593,16 +596,38 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(url);
     },
   });
-  ipcMain.handle('auth:status', () => auth.status());
+  ipcMain.handle('auth:status', async () => {
+    const me = auth.session();
+    return { ...auth.status(), hasPin: me ? await users.hasPin(me.sub) : false };
+  });
   ipcMain.handle('auth:login', async () => {
     try {
-      const { email } = await auth.login();
-      return { email };
+      const { email, role } = await auth.login();
+      return { email, role };
     } catch (err) {
       log.warn('auth login', err && err.message); // 이메일·토큰은 남기지 않고 사유 문구만
       return { error: String((err && err.message) || err) };
     }
   });
+  // 자동 잠금 해제용 PIN: 로그인한 계정의 것만 다룹니다. 5회 연속 실패하면 PIN을 지우고 로그아웃시켜 구글 재로그인으로 돌려보냅니다.
+  const withSession = (fn) => async (_event, ...args) => {
+    const me = auth.session();
+    if (!me) return { error: '로그인이 필요합니다.' };
+    try {
+      return await fn(me, ...args);
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  };
+  ipcMain.handle('auth:set-pin', withSession(async (me, pin) => (await users.setPin(me.sub, pin), { ok: true })));
+  ipcMain.handle(
+    'auth:verify-pin',
+    withSession(async (me, pin) => {
+      const r = await users.verifyPin(me.sub, pin);
+      if (r.locked) auth.logout();
+      return r;
+    }),
+  );
   ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());
 
