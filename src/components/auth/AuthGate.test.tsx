@@ -136,6 +136,17 @@ describe('AuthGate', () => {
     fireEvent.click(screen.getByRole('button', { name: '모두 지우고 새로 시작' }));
     expect(await screen.findByText('앱 내용')).toBeTruthy();
     expect(restart).toHaveBeenCalledTimes(1);
+    expect(restart.mock.calls[0][1]).toBe('admin'); // 관리자 역할로 호출
+  });
+
+  it('열쇠를 잃었어도 관리자가 아니면 [새로 시작]을 보여 주지 않고 관리자에게 문의하라고 안내한다', async () => {
+    const api = setDesktop({ email: 'a@b.c' });
+    api.authStatus.mockResolvedValue({ configured: true, email: 'a@b.c', role: 'finance' as never, hasPin: false });
+    prepare.mockResolvedValueOnce({ ok: false, keyLost: true, error: '데이터 열쇠를 풀 수 없습니다' });
+    render(app);
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: /새로 시작/ })).toBeNull();
+    expect(screen.getByText(/관리자만 할 수 있습니다/)).toBeTruthy();
   });
 
   it('앱이 열리기 전에 창을 닫으면 백업할 것이 없다고 답하고, 앱이 열리면 이 처리기를 뺀다', async () => {

@@ -643,7 +643,11 @@ if (!app.requestSingleInstanceLock()) {
       }
     }),
   );
-  ipcMain.handle('data:key-replace', withSession(async () => ({ key: (await dataKeys.replaceUnreadable()).toString('base64') })));
+  // 열쇠를 바꾸면 기존 데이터를 영구히 못 열게 되므로 관리자만 합니다(역할 표의 data:reset과 같은 권한).
+  ipcMain.handle(
+    'data:key-replace',
+    withSession(async (me) => (me.role === 'admin' ? { key: (await dataKeys.replaceUnreadable()).toString('base64') } : { error: '관리자만 할 수 있습니다. 관리자에게 문의하세요.' })),
+  );
   ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());
 

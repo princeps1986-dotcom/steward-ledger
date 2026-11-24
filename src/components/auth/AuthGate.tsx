@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useAuthGate } from '../../hooks/useAuthGate';
+import { can } from '../../services/auth/roles';
 import { Notice } from '../shared/Notice';
 
 function Card({ children }: { children: ReactNode }) {
@@ -54,7 +55,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <p className="text-sm leading-relaxed text-gray-600">
           이 PC나 Windows 계정이 바뀌어 저장된 데이터를 열 수 없습니다. 수동 백업 파일(백업 암호로 만든 파일)이 있으면 새로 시작한 뒤 [설정]에서 복원할 수 있습니다.
         </p>
-        {confirmingRestart ? (
+        {!can(g.role, 'data:reset') ? (
+          <p className="text-center text-sm font-semibold text-gray-700">모든 데이터를 지우는 일은 관리자만 할 수 있습니다. 관리자에게 문의하세요.</p>
+        ) : confirmingRestart ? (
           <div className="space-y-2">
             <p role="alert" className="text-sm font-semibold text-red-700">
               이 PC에 저장된 모든 데이터가 지워지고 되돌릴 수 없습니다. 정말 새로 시작할까요?

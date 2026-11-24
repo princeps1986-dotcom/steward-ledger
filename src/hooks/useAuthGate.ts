@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setCurrentUser, type CurrentUser } from '../services/auth/currentUser';
+import { can } from '../services/auth/roles';
 import { prepareData, startOver, type PrepareOutcome } from '../services/auth/prepareData';
 import { desktop } from '../services/desktopBridge';
 
@@ -18,6 +19,7 @@ export function useAuthGate() {
   const [phase, setPhase] = useState<AuthPhase>(api ? 'checking' : 'ready');
   const [configured, setConfigured] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
+  const [role, setRole] = useState<CurrentUser['role'] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const me = useRef<CurrentUser | null>(null);
@@ -44,6 +46,7 @@ export function useAuthGate() {
       if (!api) return;
       me.current = who;
       setEmail(who.email);
+      setRole(who.role);
       setError(null);
       setProgress(null);
       setPhase('preparing');
@@ -93,12 +96,12 @@ export function useAuthGate() {
   const retry = useCallback(() => (me.current ? prepare(me.current) : undefined), [prepare]);
   /** 열쇠를 잃은 데이터를 모두 지우고 새로 시작(화면이 확인을 받은 뒤에만 부름) */
   const restart = useCallback(async () => {
-    if (!api) return;
+    if (!api || !can(me.current?.role, 'data:reset')) return; // 관리자만(startOver·main도 한 번 더 확인)
     setError(null);
     setProgress(null);
     setPhase('preparing');
-    finish(await startOver(api, (done, total) => setProgress({ done, total })));
+    finish(await startOver(api, me.current?.role, (done, total) => setProgress({ done, total })));
   }, [api, finish]);
 
-  return { phase, configured, email, error, progress, login, cancel, retry, restart };
+  return { phase, configured, email, role, error, progress, login, cancel, retry, restart };
 }

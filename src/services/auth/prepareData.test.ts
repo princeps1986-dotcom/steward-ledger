@@ -105,13 +105,47 @@ describe('prepareData', () => {
 });
 
 describe('startOver', () => {
-  it('저장된 데이터를 모두 지우고 새 열쇠로 다시 시작한다', async () => {
+  const lost = { error: '풀 수 없음', code: 'DATA_KEY_UNREADABLE' };
+  const seedLost = async () => {
     await db.kv.put({ enc: new Uint8Array([1, 2, 3]) }, KEYS.members);
     await db.donations.put({ ...don('a', '2026-03-01'), amount: undefined as never, enc: new Uint8Array([9]) });
-    const { api, mock } = fakeApi({ dataKey: { error: '풀 수 없음', code: 'DATA_KEY_UNREADABLE' } });
-    expect(await startOver(api)).toEqual({ ok: true });
-    expect(mock.dataKeyReplace).toHaveBeenCalledTimes(1);
+  };
+
+  it('관리자가 열쇠를 잃은 데이터를 지우고 새 열쇠로 다시 시작한다(교체가 먼저, 삭제는 그 뒤)', async () => {
+    await seedLost();
+    const { api, mock } = fakeApi({ dataKey: lost });
+    const order: string[] = [];
+    mock.dataKeyReplace.mockImplementation(async () => (order.push('replace'), { key: KEY_B64 }));
+    expect(await startOver(api, 'admin')).toEqual({ ok: true });
+    expect(order[0]).toBe('replace');
     expect(await db.donations.count()).toBe(0);
+    expect(await db.kv.get(KEYS.members)).toBeUndefined();
     expect(hasDataKey()).toBe(true);
+  });
+
+  it('관리자가 아니면 아무것도 지우지 않고 열쇠도 바꾸지 않는다', async () => {
+    await seedLost();
+    for (const role of ['finance', 'viewer', null] as const) {
+      const { api, mock } = fakeApi({ dataKey: lost });
+      expect(await startOver(api, role)).toMatchObject({ ok: false, keyLost: true });
+      expect(mock.dataKeyReplace).not.toHaveBeenCalled();
+    }
+    expect(await db.donations.count()).toBe(1);
+    expect(hasDataKey()).toBe(false);
+  });
+
+  it('열쇠가 정상으로 풀리면 지우지 않는다', async () => {
+    await seedLost();
+    const { api, mock } = fakeApi(); // dataKey가 정상
+    expect(await startOver(api, 'admin')).toMatchObject({ ok: false, keyLost: true });
+    expect(mock.dataKeyReplace).not.toHaveBeenCalled();
+    expect(await db.donations.count()).toBe(1);
+  });
+
+  it('main이 열쇠 교체를 거절하면(관리자가 아님 등) 지우지 않는다', async () => {
+    await seedLost();
+    const { api } = fakeApi({ dataKey: lost, replace: { error: '관리자만 할 수 있습니다.' } });
+    expect(await startOver(api, 'admin')).toEqual({ ok: false, keyLost: true, error: '관리자만 할 수 있습니다.' });
+    expect(await db.donations.count()).toBe(1);
   });
 });

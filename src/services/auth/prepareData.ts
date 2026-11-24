@@ -2,6 +2,7 @@
 // 이 일이 끝나기 전에는 앱 화면과 저장소를 그리지 않습니다(AuthGate).
 import { backupLines, hasAnyData } from '../backup/backupService';
 import type { DesktopApi } from '../desktopBridge';
+import { can, type Role } from './roles';
 import { keyFromBase64, setDataKey } from '../storage/cipher';
 import { encryptAllPlaintext, encryptionPending, storageHasRows, wipeAllStorage } from '../storage/storageService';
 
@@ -46,12 +47,28 @@ export async function prepareData(api: DesktopApi, onProgress?: (done: number, t
   }
 }
 
-/** 열쇠를 잃어 풀 수 없는 데이터를 모두 지우고 새로 시작합니다(수동 백업이 있어야 되살릴 수 있음). 호출 전에 사용자 확인이 필요합니다. */
-export async function startOver(api: DesktopApi, onProgress?: (done: number, total: number) => void): Promise<PrepareOutcome> {
+// 새 열쇠를 만든 뒤 데이터 삭제가 실패했을 때(이제 열쇠는 멀쩡해 보임) 다시 시도하면 삭제부터 이어 가게 하는 표시
+let wipePending = false;
+
+/**
+ * 열쇠를 잃어 풀 수 없는 데이터를 모두 지우고 새로 시작합니다(수동 백업이 있어야 되살릴 수 있음). 호출 전에 사용자 확인이 필요합니다.
+ * 관리자(data:reset)만 할 수 있고, 열쇠가 실제로 풀리지 않을 때만 진행하며, main이 새 열쇠를 만든 것을 확인한 뒤에야 데이터를 지웁니다.
+ */
+export async function startOver(api: DesktopApi, role: Role | null | undefined, onProgress?: (done: number, total: number) => void): Promise<PrepareOutcome> {
+  const refuse = (error: string): PrepareOutcome => ({ ok: false, keyLost: true, error });
+  if (!can(role, 'data:reset')) return refuse('모든 데이터를 지우는 일은 관리자만 할 수 있습니다.');
   try {
+    if (!wipePending) {
+      const cur = await api.dataKey();
+      if (!('error' in cur && cur.code === 'DATA_KEY_UNREADABLE')) return refuse('데이터 열쇠가 정상이라 지우지 않습니다. 앱을 다시 시작해 보세요.');
+      const rep = await api.dataKeyReplace();
+      if ('error' in rep) return refuse(rep.error);
+      wipePending = true;
+    }
     await wipeAllStorage();
+    wipePending = false;
   } catch (e) {
-    return { ok: false, keyLost: true, error: messageOf(e) };
+    return refuse(messageOf(e));
   }
   return prepareData(api, onProgress);
 }
