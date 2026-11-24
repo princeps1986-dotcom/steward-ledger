@@ -11,3 +11,4 @@ test-data/
 CLAUDE.local.md
 .claude/settings.local.json
 graphify-out/
+electron/authConfig.local.cjs
