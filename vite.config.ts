@@ -26,6 +26,8 @@ export default defineConfig({
     emitVersion,
   ],
   server: { port: 5173, strictPort: true },
+  // papaparse는 CSV를 처음 읽을 때만 동적으로 불러와, 미리 묶어 두지 않으면 개발 서버가 나중에 발견하며 캐시 주소(?v=)가 바뀌어 "Failed to fetch dynamically imported module"이 납니다.
+  optimizeDeps: { include: ['papaparse'] },
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 2000 },
   test: { environment: 'node', include: ['src/**/*.test.{ts,tsx}'] },
 } as never);
