@@ -3,6 +3,7 @@ import { useAdminPage } from '../../../hooks/useAdminPage';
 import { ROLES, ROLE_LABEL, type Role } from '../../../services/auth/roles';
 import { formatDateTime } from '../../../services/domain/dates';
 import { Notice } from '../../shared/Notice';
+import { PeriodDeleteSection } from '../settings/PeriodDeleteSection';
 
 /** 관리자 전용 탭(PC앱): 계정·역할 관리와 로그인·변경 기록. */
 export function AdminPage() {
@@ -22,7 +23,7 @@ export function AdminPage() {
         <h2 className="text-base font-semibold">계정·역할</h2>
         <p className="text-sm text-gray-600">
           이 앱은 여기에 등록한 구글 계정만 쓸 수 있습니다. 새 사람은 이메일을 먼저 등록하면 처음 로그인할 때 연결됩니다. 계정은 최대 10명, 관리자는 1~2명이며 마지막 관리자는 내리거나 중지할 수 없습니다.
-          백업 복원·전체 초기화는 [설정 정보]에서 관리자만 할 수 있습니다.
+          백업 복원·전체 초기화는 [설정 정보]에서, 기간 헌금 삭제는 이 탭 아래에서 관리자만 할 수 있습니다.
         </p>
         <Notice message={a.error ? { kind: 'error', text: a.error } : null} />
         <table className="w-full">
@@ -84,6 +85,8 @@ export function AdminPage() {
           </button>
         </form>
       </section>
+
+      <PeriodDeleteSection />
 
       <section className="card space-y-2">
         <h2 className="text-base font-semibold">로그인·변경 기록</h2>

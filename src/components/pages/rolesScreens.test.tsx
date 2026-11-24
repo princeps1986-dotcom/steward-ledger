@@ -92,7 +92,7 @@ describe('역할별 설정 화면', () => {
     expect(has('시연 데이터 생성')).toBe(true);
     expect(has('업데이트 확인')).toBe(true);
     expect(screen.getByText('연도 잠금')).toBeTruthy();
-    expect(screen.getByText('기간 헌금 삭제')).toBeTruthy();
+    expect(screen.queryByText('기간 헌금 삭제')).toBeNull(); // 관리자 탭으로 옮김
   });
 
   it('재정담당은 백업 저장·업데이트는 보지만 복원·전체 초기화·시연 데이터는 보지 못한다', async () => {

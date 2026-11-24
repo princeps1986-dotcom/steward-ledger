@@ -5,6 +5,9 @@ import { setCurrentUser } from '../../../services/auth/currentUser';
 import type { DesktopApi, UserEntry } from '../../../services/desktopBridge';
 import { AdminPage } from './AdminPage';
 
+// 기간 헌금 삭제 영역은 헌금 저장소가 필요하므로 여기서는 자리만 확인합니다(동작은 yearLock.test.tsx).
+vi.mock('../../../contexts/DonationContext', () => ({ useDonationActions: () => ({ deletePeriod: vi.fn() }) }));
+
 const user = (email: string, o: Partial<UserEntry> = {}): UserEntry => ({ email, role: 'finance', addedAt: '2026-11-24T00:00:00Z', disabled: false, registered: true, hasPin: false, ...o });
 function setDesktop(add: () => Promise<{ ok: true } | { error: string }> = async () => ({ ok: true })) {
   const api = {
@@ -37,6 +40,12 @@ describe('관리자 탭', () => {
     expect(screen.getByText('로그인 전(등록만 됨)')).toBeTruthy();
     const rows = screen.getAllByRole('row').map((r) => r.textContent ?? '');
     expect(rows.findIndex((t) => t.includes('최근 기록'))).toBeLessThan(rows.findIndex((t) => t.includes('오래된 기록')));
+  });
+
+  it('기간 헌금 삭제 영역이 있다(설정 화면에서 옮겨 옴)', async () => {
+    setDesktop();
+    render(<AdminPage />);
+    expect(await screen.findByText('기간 헌금 삭제')).toBeTruthy();
   });
 
   it('자기 자신에게는 사용 중지 단추가 없다', async () => {
