@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('desktop', {
   closeBackupReader: (id) => ipcRenderer.invoke('backup:close-reader', id),
   authStatus: () => ipcRenderer.invoke('auth:status'),
   authLogin: () => ipcRenderer.invoke('auth:login'),
+  authCancel: () => ipcRenderer.invoke('auth:cancel'),
   authLogout: () => ipcRenderer.invoke('auth:logout'),
   skipBackup: () => ipcRenderer.send('backup:skip'),
   logRestore: (entry) => ipcRenderer.send('restore:log', entry),

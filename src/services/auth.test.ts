@@ -27,6 +27,7 @@ const { verifyIdToken } = req('../../electron/idToken.cjs') as {
 };
 interface Auth {
   login(): Promise<Identity>;
+  cancel(): void;
   logout(): void;
   session(): Identity | null;
   status(): { configured: boolean; email: string | null };
@@ -170,6 +171,26 @@ describe('구글 로그인 흐름(electron/auth.cjs)', () => {
   it('시간 안에 응답이 없으면 실패한다', async () => {
     const h = harness({ noRedirect: true, timeoutMs: 50 });
     await expect(h.auth.login()).rejects.toThrow('시간이 지났습니다');
+  });
+
+  it('기다리는 중에 취소하면 바로 끝나고, 다시 로그인할 수 있다', async () => {
+    const h = harness({ noRedirect: true });
+    const p = h.auth.login();
+    await vi.waitFor(() => expect(h.seen.redirect).toBeTruthy());
+    h.auth.cancel();
+    await expect(p).rejects.toThrow('로그인을 취소했습니다.');
+    h.auth.cancel(); // 기다리는 로그인이 없을 때 불러도 아무 일 없음
+    await expect(harness().auth.login()).resolves.toMatchObject({ sub: '1077' });
+  });
+
+  it('인터넷이 끊겨 구글에 닿지 못하면 안내 문구로 실패한다', async () => {
+    const h = harness();
+    const offline = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const auth = createAuth({ clientId: CLIENT, openBrowser: async (u) => void setTimeout(() => void h.sendBack(new URLSearchParams({ code: 'C', state: new URL(u).searchParams.get('state')! }), new URL(u).searchParams.get('redirect_uri')!), 0), fetch: offline as unknown as typeof fetch });
+    await expect(auth.login()).rejects.toThrow('인터넷에 연결할 수 없습니다');
+    expect(auth.session()).toBeNull();
   });
 
   it('토큰 교환 실패·검증 실패(nonce 불일치)는 계정을 남기지 않는다', async () => {

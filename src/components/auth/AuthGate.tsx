@@ -1,0 +1,35 @@
+import type { ReactNode } from 'react';
+import { useAuthGate } from '../../hooks/useAuthGate';
+import { Notice } from '../shared/Notice';
+
+/** PC앱은 구글 로그인을 마쳐야 앱을 그립니다. 브라우저(시연) 모드는 그대로 통과합니다. */
+export function AuthGate({ children }: { children: ReactNode }) {
+  const g = useAuthGate();
+  if (g.phase === 'ready') return <>{children}</>;
+  if (g.phase === 'checking') return null; // 몇 십 밀리초 안에 끝나므로 깜빡임을 피해 비워 둡니다.
+
+  const pending = g.phase === 'pending';
+  return (
+    <main className="flex min-h-screen items-center justify-center p-4">
+      <div className="w-[26rem] max-w-full space-y-4 rounded-lg border border-gray-200 bg-white p-6 shadow">
+        <h1 className="text-center text-xl font-bold">청지기 장부</h1>
+        <p className="text-center text-sm leading-relaxed text-gray-600">
+          {pending ? '열린 브라우저에서 구글 로그인을 마치세요. 끝나면 이 창으로 자동으로 돌아옵니다.' : '앱을 쓰려면 구글 계정으로 로그인하세요. 로그인할 때만 인터넷이 필요하고, 헌금 자료는 밖으로 나가지 않습니다.'}
+        </p>
+        {!g.configured ? <Notice message={{ kind: 'error', text: '로그인 설정(구글 클라이언트 ID)이 없어 로그인할 수 없습니다. 관리자에게 문의하세요.' }} /> : null}
+        <Notice message={g.error ? { kind: 'error', text: g.error } : null} />
+        <div className="flex justify-center gap-2">
+          {pending ? (
+            <button type="button" className="btn" onClick={g.cancel}>
+              취소
+            </button>
+          ) : (
+            <button type="button" className="btn-primary" disabled={!g.configured} onClick={() => void g.login()}>
+              구글로 로그인
+            </button>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}

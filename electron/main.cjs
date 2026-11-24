@@ -603,6 +603,7 @@ if (!app.requestSingleInstanceLock()) {
       return { error: String((err && err.message) || err) };
     }
   });
+  ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());
 
   app.whenReady().then(() => {

@@ -17,9 +17,15 @@ const PAGE = (msg) =>
  * openBrowser(url): 로그인 주소를 시스템 브라우저로 엽니다(주소 검사는 호출하는 쪽).
  * clientSecret은 선택입니다(구글 데스크톱 클라이언트의 비밀값은 비밀로 취급되지 않음).
  */
-function createAuth({ clientId, clientSecret, openBrowser, fetch: doFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
+function createAuth({ clientId, clientSecret, openBrowser, fetch: rawFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
   let session = null;
   let pending = null; // 로그인 중에 또 눌러도 같은 진행을 돌려줍니다.
+  let cancelWait = null; // 브라우저 응답을 기다리는 중일 때만 있음
+  // fetch가 거절되는 것은 인터넷이 끊겼다는 뜻이므로 안내 문구로 바꿉니다(서버 응답 오류는 아래에서 따로 처리).
+  const doFetch = (...args) =>
+    rawFetch(...args).catch(() => {
+      throw new Error('인터넷에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.');
+    });
 
   /** loopback 서버를 열고 브라우저를 띄운 뒤, state가 맞는 첫 응답에서 인증 코드를 받습니다. */
   function waitForCode({ state, challenge, nonce }) {
@@ -31,12 +37,14 @@ function createAuth({ clientId, clientSecret, openBrowser, fetch: doFetch = fetc
         if (done) return;
         done = true;
         clearTimeout(timer);
+        cancelWait = null;
         server.close();
         server.closeAllConnections?.();
         if (err) reject(err);
         else resolve(value);
       };
       timer = setTimeout(() => finish(new Error('로그인 시간이 지났습니다. 다시 시도하세요.')), timeoutMs);
+      cancelWait = () => finish(new Error('로그인을 취소했습니다.'));
       server.on('error', (e) => finish(e));
       server.on('request', (req, res) => {
         const u = new URL(req.url || '/', 'http://127.0.0.1');
@@ -102,6 +110,8 @@ function createAuth({ clientId, clientSecret, openBrowser, fetch: doFetch = fetc
 
   return {
     login: () => (pending ??= run().finally(() => (pending = null))),
+    /** 브라우저 응답을 기다리는 로그인을 멈춥니다(인터넷이 끊겨 로그인 창이 안 뜰 때 3분을 기다리지 않게). */
+    cancel: () => cancelWait?.(),
     logout: () => {
       session = null;
     },

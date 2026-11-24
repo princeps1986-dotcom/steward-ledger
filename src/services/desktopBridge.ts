@@ -94,6 +94,8 @@ export interface DesktopApi {
   authStatus(): Promise<AuthStatus>;
   /** 시스템 브라우저로 구글 로그인을 엽니다. 토큰은 화면에 넘기지 않고 계정(이메일)만 돌려줍니다. */
   authLogin(): Promise<{ email: string } | { error: string }>;
+  /** 브라우저 응답을 기다리는 로그인을 멈춥니다(그 로그인은 '취소했습니다' 오류로 끝남). */
+  authCancel(): Promise<void>;
   authLogout(): Promise<void>;
 }
 
