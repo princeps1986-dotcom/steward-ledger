@@ -11,6 +11,7 @@ interface PinResult {
   left?: number;
   locked?: true;
   noPin?: true;
+  disabled?: true;
 }
 interface Store {
   admit(id: { sub: string; email: string }): Promise<{ sub: string; email: string; role: Role }>;
@@ -19,6 +20,7 @@ interface Store {
   setRole(email: string, role: string, actor?: string): Promise<void>;
   log(): Promise<{ at: string; who: string; text: string }[]>;
   setDisabled(email: string, disabled: boolean, actor: string): Promise<void>;
+  current(sub: string): Promise<{ email: string; role: Role; disabled: boolean } | null>;
   hasPin(sub: string): Promise<boolean>;
   setPin(sub: string, pin: string): Promise<void>;
   verifyPin(sub: string, pin: string): Promise<PinResult>;
@@ -246,5 +248,30 @@ describe('거절된 로그인 기록', () => {
     const texts = (await s.log()).map((l) => l.text);
     expect(texts).toContain('로그인 거절(등록되지 않은 계정)');
     expect(texts).toContain('로그인 거절(사용 중지된 계정)');
+  });
+});
+
+describe('로그인 중인 계정의 현재 상태', () => {
+  it('current는 역할 변경·사용 중지를 바로 보여 주고, 목록에서 없는 sub는 null이다', async () => {
+    const { s } = mk();
+    await s.admit(A);
+    await s.add({ email: B.email, role: 'finance' }, A.email);
+    await s.admit(B);
+    expect(await s.current(B.sub)).toEqual({ email: 'fin@church.org', role: 'finance', disabled: false });
+    await s.setRole(B.email, 'viewer', A.email);
+    await s.setDisabled(B.email, true, A.email);
+    expect(await s.current(B.sub)).toMatchObject({ role: 'viewer', disabled: true });
+    expect(await s.current('nobody')).toBeNull();
+  });
+
+  it('사용 중지된 계정은 PIN이 있어도 확인되지 않는다', async () => {
+    const { s } = mk();
+    await s.admit(A);
+    await s.add({ email: B.email, role: 'finance' }, A.email);
+    await s.admit(B);
+    await s.setPin(B.sub, '123456');
+    expect((await s.verifyPin(B.sub, '123456')).ok).toBe(true);
+    await s.setDisabled(B.email, true, A.email);
+    expect(await s.verifyPin(B.sub, '123456')).toEqual({ ok: false, disabled: true });
   });
 });

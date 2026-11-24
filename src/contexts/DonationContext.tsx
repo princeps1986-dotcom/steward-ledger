@@ -402,7 +402,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const w: Write[] = [rowWrite(ym, { puts: [...touched.values()], deletes: [] })];
         if (logs.length) w.push(auditAppend(year, logs));
         return { writes: w, result: batch };
-      }, { lockYears: true });
+      });
       applyWrites(writes);
       setHistory((prev) => [result, ...prev].slice(0, HISTORY_LIMIT));
       return result;
@@ -434,7 +434,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         else w.push(rowWrite(oldYm, { puts: [], deletes: [[before.date, before.id]] }), rowWrite(newYm, { puts: [after], deletes: [] }));
         w.push(auditAppend(newYear, [makeAudit('UPDATE', before, after, reason)]));
         return { writes: w, result: undefined };
-      }, { lockYears: true });
+      });
       applyWrites(writes);
     },
     [applyWrites],
@@ -449,7 +449,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
         const before = await readRow(target.date, target.id);
         if (!before) throw new Error('삭제할 내역을 찾을 수 없습니다. 다른 창에서 변경되었을 수 있습니다.');
         return { writes: [rowWrite(ym, { puts: [], deletes: [[before.date, before.id]] }), auditAppend(year, [makeAudit('DELETE', before, null, reason)])], result: undefined };
-      }, { lockYears: true });
+      });
       applyWrites(writes);
     },
     [applyWrites],
@@ -499,7 +499,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       for (const [m, o] of ops) w.push(rowWrite(m, o));
       for (const [y, l] of logs) w.push(auditAppend(y, l));
       return { writes: w, result: undefined };
-    }, { lockYears: true });
+    });
     applyWrites(writes);
     setHistory((prev) => prev.filter((b) => b.batchId !== batch.batchId));
     return batch;
@@ -527,7 +527,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
           const now = nowIso();
           const logs = rows.map((r) => makeAudit('DELETE', r, null, reason, now));
           return { writes: [rowWrite(ym, { puts: [], deletes: rows.map((r) => [r.date, r.id] as const) }), auditAppend(ym.slice(0, 4), logs)], result: rows.length };
-        }, { lockYears: true });
+        });
         applyWrites(writes);
         total += result;
       }

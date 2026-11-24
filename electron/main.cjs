@@ -144,7 +144,7 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:begin', async (event, spec) => {
     await abortAutoSession();
     const kind = spec && spec.kind;
-    if (kind === 'manual' && !roleIs('admin', 'finance')) throw new Error(NOT_ALLOWED); // 직접 백업 만들기는 관리자·재정담당만
+    if (kind === 'manual' && !(await roleIs('admin', 'finance'))) throw new Error(NOT_ALLOWED); // 직접 백업 만들기는 관리자·재정담당만
     if (kind === 'manual') {
       if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
       // 직접 백업은 사용자가 정한 암호로만 잠급니다(앱은 암호를 저장하지 않음).
@@ -555,7 +555,7 @@ if (!app.requestSingleInstanceLock()) {
   };
   ipcMain.handle('update:check', async () => {
     const current = app.getVersion();
-    if (!roleIs('admin', 'finance')) return { current, error: NOT_ALLOWED }; // 업데이트는 관리자·재정담당만
+    if (!(await roleIs('admin', 'finance'))) return { current, error: NOT_ALLOWED }; // 업데이트는 관리자·재정담당만
     if (!app.isPackaged) return { current, error: '설치한 앱에서만 업데이트를 확인할 수 있습니다.' };
     try {
       const res = await getUpdater().checkForUpdates();
@@ -566,8 +566,8 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   let downloading = null;
-  ipcMain.handle('update:download', (event) => {
-    if (!roleIs('admin', 'finance')) return { error: NOT_ALLOWED };
+  ipcMain.handle('update:download', async (event) => {
+    if (!(await roleIs('admin', 'finance'))) return { error: NOT_ALLOWED };
     if (!app.isPackaged) return { error: '설치한 앱에서만 업데이트할 수 있습니다.' };
     if (downloading) return downloading; // 단추를 여러 번 눌러도 한 번만 내려받습니다.
     const u = getUpdater();
@@ -602,9 +602,21 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(url);
     },
   });
-  ipcMain.handle('auth:status', async () => {
+  // 로그인할 때 복사해 둔 역할이 낡았을 수 있으므로(그 사이 관리자가 역할을 바꾸거나 계정을 중지) 호출마다 계정 목록에서 다시 읽습니다.
+  // 목록에서 빠졌거나 사용 중지된 계정이면 바로 로그아웃시키고 null을 돌려줍니다.
+  const freshSession = async () => {
     const me = auth.session();
-    return { ...auth.status(), hasPin: me ? await users.hasPin(me.sub) : false };
+    if (!me) return null;
+    const now = await users.current(me.sub).catch(() => null);
+    if (!now || now.disabled) {
+      auth.logout();
+      return null;
+    }
+    return { ...me, email: now.email, role: now.role };
+  };
+  ipcMain.handle('auth:status', async () => {
+    const me = await freshSession();
+    return me ? { ...auth.status(), email: me.email, role: me.role, hasPin: await users.hasPin(me.sub) } : { ...auth.status(), email: null, role: null, hasPin: false };
   });
   ipcMain.handle('auth:login', async () => {
     try {
@@ -617,7 +629,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   // 자동 잠금 해제용 PIN: 로그인한 계정의 것만 다룹니다. 5회 연속 실패하면 PIN을 지우고 로그아웃시켜 구글 재로그인으로 돌려보냅니다.
   const withSession = (fn) => async (_event, ...args) => {
-    const me = auth.session();
+    const me = await freshSession();
     if (!me) return { error: '로그인이 필요합니다.' };
     try {
       return await fn(me, ...args);
@@ -655,7 +667,7 @@ if (!app.requestSingleInstanceLock()) {
   );
   // main이 실제로 막는 역할 제한: 계정·역할 관리는 관리자만, 업데이트·직접 백업 만들기는 관리자·재정담당만.
   // 헌금 저장·복원·초기화는 화면(렌더러)의 저장소 작업이라 main이 막을 수 없고 화면 규칙으로 막습니다(src/services/auth/access.ts).
-  const roleIs = (...roles) => roles.includes(auth.session()?.role);
+  const roleIs = async (...roles) => roles.includes((await freshSession())?.role);
   const adminOnly = (fn) => withSession(async (me, ...args) => (me.role === 'admin' ? fn(me, ...args) : { error: NOT_ALLOWED }));
   ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
   ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log() })));

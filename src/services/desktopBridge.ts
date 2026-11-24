@@ -98,7 +98,7 @@ export interface DesktopApi {
   /** 자동 잠금 해제용 PIN(숫자 6자리)을 만듭니다. 로그인한 계정의 것만 다룹니다. */
   authSetPin(pin: string): Promise<{ ok: true } | { error: string }>;
   /** ok:false의 left=남은 시도 · locked=5회 실패로 로그아웃됨(구글 재로그인 필요) · noPin=PIN이 아직 없음 */
-  authVerifyPin(pin: string): Promise<{ ok: true } | { ok: false; left: number } | { ok: false; locked: true } | { ok: false; noPin: true } | { error: string }>;
+  authVerifyPin(pin: string): Promise<{ ok: true } | { ok: false; left: number } | { ok: false; locked: true } | { ok: false; noPin: true } | { ok: false; disabled: true } | { error: string }>;
   /** 계정·역할 관리(관리자만, main이 확인). 화면은 6단계 관리자 탭. 실패하면 { error }. */
   usersList(): Promise<{ users: UserEntry[] } | { error: string }>;
   usersLog(): Promise<{ log: AccountLogEntry[] } | { error: string }>;

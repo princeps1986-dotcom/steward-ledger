@@ -238,7 +238,7 @@ export async function replaceAllData(payload: BackupPayload, extraWrites: Write[
     for (const [y, list] of Object.entries(payload.auditLogsByYear)) writes.push({ key: auditKey(y), value: list });
     writes.push(...extraWrites);
     return { writes, result: undefined };
-  });
+  }, { ignoreYearLocks: true });
 }
 
 /**

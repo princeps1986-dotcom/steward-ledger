@@ -49,7 +49,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.members, value: plan.members }, { key: KEYS.offeringTypes, value: plan.offeringTypes });
     return { writes, result: undefined };
-  });
+  }, { ignoreYearLocks: true });
   let done = 0;
   const total = plan.months.length;
   const audits = async (recent: Donation[]) => {
@@ -59,7 +59,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
   setDemoCreating({ done: 0, total });
   opts.onProgress?.(0, total);
   for (const { ym, donations } of plan.generate()) {
-    await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }));
+    await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }), { ignoreYearLocks: true });
     done++;
     opts.onProgress?.(done, total);
     if (done === 1) await audits(donations); // 이력은 가장 최근 달에서 선택합니다.

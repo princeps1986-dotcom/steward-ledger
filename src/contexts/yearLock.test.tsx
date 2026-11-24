@@ -29,7 +29,8 @@ const audits = async (year: string) => (await getItem<AuditLog[]>(`audit_logs_${
 
 beforeEach(async () => {
   await resetAllData();
-  await transact(async () => ({ writes: [monthWrite('2025-01', [don('a', '2025-01-05')]), monthWrite('2025-02', [don('b', '2025-02-02'), don('c', '2025-02-09')]), monthWrite('2026-01', [don('d', '2026-01-04')])], result: 0 }));
+  // 설정(잠긴 연도)은 초기화해도 남으므로 지우고, 시험 자료는 잠금 검사를 건너뛰어 넣습니다.
+  await transact(async () => ({ writes: [{ key: 'settings', value: null }, monthWrite('2025-01', [don('a', '2025-01-05')]), monthWrite('2025-02', [don('b', '2025-02-02'), don('c', '2025-02-09')]), monthWrite('2026-01', [don('d', '2026-01-04')])], result: 0 }), { ignoreYearLocks: true });
 });
 afterEach(() => {
   delete window.desktop;
@@ -113,5 +114,16 @@ describe('기간 헌금 삭제', () => {
     await expect(result.current.d.deletePeriod('2025-02', '2025-01', '정리 목적 삭제')).rejects.toThrow('끝 달');
     await expect(result.current.d.deletePeriod('2025', '2025-01', '정리 목적 삭제')).rejects.toThrow('YYYY-MM');
     expect(await readMonth('2025-02')).toHaveLength(2);
+  });
+});
+
+describe('잠금은 기본으로 켜져 있다', () => {
+  it('옵션을 주지 않은 새 쓰기 길목도 잠긴 연도에는 쓰지 못하고, 건너뛰기를 명시해야만 쓴다', async () => {
+    const { result } = setup();
+    await act(() => result.current.s.update({ lockedYears: ['2025'] }));
+    const put = (): Promise<unknown> => transact(async () => ({ writes: [monthWrite('2025-05', [don('z', '2025-05-01')])], result: 0 }));
+    await expect(put()).rejects.toThrow('2025년은 잠겨');
+    await transact(async () => ({ writes: [monthWrite('2025-05', [don('z', '2025-05-01')])], result: 0 }), { ignoreYearLocks: true });
+    expect(await readMonth('2025-05')).toHaveLength(1);
   });
 });

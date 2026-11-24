@@ -1,7 +1,10 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuthGate } from '../../hooks/useAuthGate';
 import { SessionContext, type Session } from '../../hooks/useSession';
+import { useClosingNotice } from '../../services/auth/closing';
 import { can } from '../../services/auth/roles';
+import { desktop } from '../../services/desktopBridge';
 import { Notice } from '../shared/Notice';
 
 function Card({ children }: { children: ReactNode }) {
@@ -20,6 +23,15 @@ function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: 
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const closing = useClosingNotice();
+  // 열려 있던 대화상자(Radix)는 body 쪽에 따로 붙어 포커스를 붙잡으므로, 잠금 화면 말고 body의 다른 요소는 모두 inert로 막았다가 풀 때 되돌립니다.
+  useEffect(() => {
+    const others = [...document.body.children].filter((el) => !el.hasAttribute('data-lock-screen') && !el.hasAttribute('inert'));
+    for (const el of others) el.setAttribute('inert', '');
+    return () => {
+      for (const el of others) el.removeAttribute('inert');
+    };
+  }, []);
   const run = async (fn: () => Promise<string | null>) => {
     setBusy(true);
     setError(await fn());
@@ -30,13 +42,20 @@ function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: 
     e.preventDefault();
     void run(() => unlockWithPin(pin));
   };
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white p-4" role="dialog" aria-modal="true" aria-label="잠금">
+  return createPortal(
+    <div data-lock-screen className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-white p-4" role="dialog" aria-modal="true" aria-label="잠금">
       <div className="w-[26rem] max-w-full space-y-4 rounded-lg border border-gray-200 p-6 shadow">
         <h1 className="text-center text-xl font-bold">잠겨 있습니다</h1>
         <p className="text-center text-sm text-gray-600">{email ?? ''} 계정이 한동안 쓰이지 않아 화면을 잠갔습니다. 입력하던 내용은 그대로입니다.</p>
         <Notice message={error ? { kind: 'error', text: error } : null} />
-        {hasPin ? (
+        {closing ? (
+          <div className="space-y-2 text-center" role="status">
+            <p className="text-sm font-semibold">종료 전에 데이터를 백업하고 있습니다. 끝나면 앱이 자동으로 종료됩니다.</p>
+            <button type="button" className="btn" onClick={() => void desktop()?.skipBackup()}>
+              백업 없이 종료
+            </button>
+          </div>
+        ) : hasPin ? (
           <form onSubmit={submit} className="flex justify-center gap-2">
             <input type="password" inputMode="numeric" autoFocus maxLength={6} className="input w-32 text-center tracking-widest" aria-label="PIN 6자리" value={pin} onChange={(e) => setPin(e.target.value.replace(/D/g, ''))} />
             <button type="submit" className="btn-primary" disabled={busy || pin.length !== 6}>
@@ -56,7 +75,8 @@ function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

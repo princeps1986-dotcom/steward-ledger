@@ -9,6 +9,7 @@ import { saveBackupFile } from '../services/backup/backupService';
 import { isRestoring } from '../services/backup/backupBusy';
 import { formatDateTime } from '../services/domain/dates';
 import { allowed } from '../services/auth/access';
+import { setClosingNotice } from '../services/auth/closing';
 import type { Action } from '../services/auth/roles';
 import { desktop } from '../services/desktopBridge';
 
@@ -65,9 +66,13 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
       // 백업 파일 확인·복원 중에는 창을 닫지 않습니다(main이 '복원하고 있습니다' 안내만 띄움).
       if (isRestoring()) return { blocked: true as const };
       setClosing(true);
+      setClosingNotice(true);
       return buildAutoBackup();
     });
-    const offCancel = api.onBackupCancelled(() => setClosing(false));
+    const offCancel = api.onBackupCancelled(() => {
+      setClosing(false);
+      setClosingNotice(false);
+    });
     return () => {
       offRequest();
       offCancel();

@@ -220,14 +220,15 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
  */
 export function transact<R>(
   build: (read: Reader) => Promise<{ writes: Write[]; result: R }>,
-  opts: { markDirty?: boolean; lockYears?: boolean } = {},
+  opts: { markDirty?: boolean; ignoreYearLocks?: boolean } = {},
 ): Promise<{ writes: Write[]; result: R }> {
   return serialize(async () => {
     try {
       const out = await db.transaction('rw', db.kv, db.donations, db.audits, async () => {
         const { writes, result } = await build(getItem);
-        // 연도 잠금(헌금 입력·수정·삭제·복구·기간 삭제가 켬): 잠긴 연도의 헌금은 바꿀 수 없습니다. 복원·초기화·시연은 관리자 전용 진입 함수가 따로 다룹니다.
-        if (opts.lockYears) {
+        // 연도 잠금: 잠긴 연도의 헌금 쓰기는 기본으로 모두 거절합니다(새 쓰기 길목도 자동으로 막힘).
+        // 복원·초기화·시연만 관리자 전용 진입 함수가 확인하므로 ignoreYearLocks를 명시합니다.
+        if (!opts.ignoreYearLocks) {
           const years = new Set(writes.flatMap((w) => DONATION_KEY_RE.exec(w.key)?.[1].slice(0, 4) ?? []));
           if (years.size) {
             const locked = (await getItem<Partial<AppSettings>>(KEYS.settings))?.lockedYears ?? [];

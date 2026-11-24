@@ -157,6 +157,13 @@ function createUserStore({ dir, now = Date.now }) {
     /** 최근 기록(오래된 것부터) */
     log: () => exclusive(async () => (await read(), curLog.slice())),
 
+    /** 로그인한 계정의 지금 상태(역할·중지 여부). 목록에서 빠졌으면 null. 로그인 때 복사해 둔 값이 낡았을 수 있어 호출 때마다 다시 읽습니다. */
+    current: (sub) =>
+      exclusive(async () => {
+        const u = (await read()).find((x) => x.sub === sub);
+        return u ? { email: u.email, role: u.role, disabled: !!u.disabled } : null;
+      }),
+
     hasPin: (sub) => exclusive(async () => !!(await read()).find((u) => u.sub === sub)?.pin),
 
     /** 6자리 숫자. scrypt 해시+솔트만 저장합니다(백업에는 들어가지 않음). */
@@ -179,7 +186,8 @@ function createUserStore({ dir, now = Date.now }) {
       exclusive(async () => {
         const users = await read();
         const u = users.find((x) => x.sub === sub);
-        if (!u || !u.pin) return { ok: false, noPin: true };
+        if (!u || u.disabled) return { ok: false, disabled: true };
+        if (!u.pin) return { ok: false, noPin: true };
         const hash = await scrypt(String(pin), Buffer.from(u.pin.salt, 'base64'), 32);
         if (crypto.timingSafeEqual(hash, Buffer.from(u.pin.hash, 'base64'))) {
           pinFails.delete(sub);

@@ -169,7 +169,7 @@ interface BackupEnvelope {    // 백업 파일
 | (테이블 `donations`) | **한 건이 한 행**인 헌금. 기본키 `[date, id]`, 색인 `memberId`·`offeringTypeId`·`[date+memberId+offeringTypeId]`. 쓰기 목록(`Write`)의 `donations_YYYY-MM` 키는 '그 달의 행이 바뀐다'는 표시일 뿐 값은 저장되지 않음 |
 | (테이블 `audits`, v2) | **한 건이 한 행**인 수정·삭제 이력. 기본키 자동 증가 `seq`(기록 순서), 색인 `year`. `audit_logs_YYYY` 키는 '그 해의 이력'을 가리키는 이름이며 `getItem`이 그 해 행을 배열로 모아 돌려줌. 쓰기는 `auditAppend`(행만 덧붙임; 저장·수정·삭제·복구하기) 또는 값 교체(그 해 전체; 복원·초기화·시연) |
 | (암호화) | PC앱은 `donations`의 금액·표기명·메모, `audits`의 사유·변경 전후·작업자, `members` 값을 `enc`(IV 12바이트 + AES-256-GCM, 행 id를 인증 데이터로 묶음)에 담는다. 색인 칸(날짜·id·memberId·종류)은 평문. 읽기·쓰기는 `storageService`에서만 잠그고 풀며, 트랜잭션 안 비동기 암호화는 `Dexie.waitFor`로 기다린다. 열쇠가 없는 브라우저(시연)는 평문 |
-| `settings.lockedYears` | 잠긴(마감한) 연도 목록. `transact(…, { lockYears: true })`가 그 연도의 헌금 쓰기를 거절 |
+| `settings.lockedYears` | 잠긴(마감한) 연도 목록. `transact`가 기본으로 그 연도의 헌금 쓰기를 거절(복원·초기화·시연만 `ignoreYearLocks`로 건너뜀) |
 | `meta_encrypted` | 기존 평문 데이터를 암호화로 옮기는 일을 끝냈다는 표식(중단되면 남은 달부터 이어함, 백업 대상 아님) |
 | `meta_dirty_since_backup` | 마지막 백업 이후 데이터가 바뀌었는지(백업 대상 아님) |
 | `meta_dirty_years` | 마지막 전체 백업 이후 헌금·이력이 바뀐 연도 목록(주기 백업이 그 연도만 담음, 전체 백업 때 지움, 백업 대상 아님) |

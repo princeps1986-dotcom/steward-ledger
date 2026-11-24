@@ -113,16 +113,30 @@ export function useAuthGate() {
     [api],
   );
   const lock = useCallback(() => setPhase((p) => (p === 'ready' ? 'locked' : p)), []);
-  useIdleLock(phase === 'ready', lock);
+  useIdleLock(!!api && phase === 'ready', lock); // 로그인이 없는 브라우저(시연) 모드는 잠그지 않습니다(풀 방법이 없음).
+
+  // 풀기 직전에 main의 최신 계정 상태를 확인합니다: 그 사이 사용 중지됐거나 역할이 바뀌었으면 풀지 않고 다시 로그인하게 합니다.
+  const resume = useCallback(async (): Promise<string | null> => {
+    const s = await api?.authStatus();
+    if (!s?.email) await signOut('사용이 중지되었거나 등록이 취소된 계정입니다. 관리자에게 문의하세요.');
+    else if (s.role !== me.current?.role) await signOut('역할이 바뀌었습니다. 다시 로그인하세요.');
+    else setPhase('ready');
+    return null;
+  }, [api, signOut]);
 
   /** 잠금 해제: PIN. 오류 문구를 돌려줍니다(성공이면 null). 5회 실패하면 로그아웃됩니다. */
   const unlockWithPin = useCallback(
     async (pin: string): Promise<string | null> => {
       if (!api) return null;
       const r = await api.authVerifyPin(pin);
-      if ('error' in r) return r.error;
-      if (r.ok) {
-        setPhase('ready');
+      if ('error' in r) {
+        // main이 계정이 중지됐다며 로그아웃시킨 경우에도 여기로 오므로, 로그인이 남아 있는지 보고 아니면 로그인 화면으로 보냅니다.
+        if (!(await api.authStatus()).email) await signOut(r.error);
+        return r.error;
+      }
+      if (r.ok) return resume();
+      if ('disabled' in r) {
+        await signOut('사용이 중지된 계정입니다. 관리자에게 문의하세요.');
         return null;
       }
       if ('locked' in r) {
@@ -135,7 +149,7 @@ export function useAuthGate() {
       }
       return `PIN이 맞지 않습니다. (남은 시도 ${r.left}회)`;
     },
-    [api, signOut],
+    [api, signOut, resume],
   );
   /** 잠금 해제: 구글 재로그인(PIN이 없을 때). 처음 로그인한 계정이 아니면 로그아웃합니다. */
   const unlockWithGoogle = useCallback(async (): Promise<string | null> => {
@@ -146,9 +160,8 @@ export function useAuthGate() {
       await signOut('잠기기 전과 다른 계정입니다. 다시 로그인하세요.');
       return null;
     }
-    setPhase('ready');
-    return null;
-  }, [api, signOut]);
+    return resume();
+  }, [api, signOut, resume]);
   const setPin = useCallback(
     async (pin: string): Promise<string | null> => {
       const r = await api?.authSetPin(pin);

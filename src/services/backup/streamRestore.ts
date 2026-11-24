@@ -261,7 +261,7 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     if (plan.addMembers.length || lists.updatedMembers) writes.push({ key: KEYS.members, value: lists.members });
     if (plan.addTypes.length || lists.updatedTypes) writes.push({ key: KEYS.offeringTypes, value: lists.offeringTypes });
     return { writes, result: undefined };
-  });
+  }, { ignoreYearLocks: true });
   // 본문: 달마다 따로 저장(한 달치만 메모리에 둠)
   for await (const line of readFileLines(file)) {
     // 선택하지 않은 연도의 달은 해석(JSON.parse)하지 않고 건너뜁니다(여러 해가 든 자동 백업에서 복원이 빨라짐).
@@ -272,7 +272,7 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     if (o.t === 'donations' && typeof o.ym === 'string' && want.has(o.ym.slice(0, 4))) {
       for (const d of o.data as Donation[]) ids.add(d.id);
       const write = monthWrite(o.ym, full ? (o.data as Donation[]) : remapDonations(o.data as Donation[], plan));
-      await transact(async () => ({ writes: [write], result: undefined }));
+      await transact(async () => ({ writes: [write], result: undefined }), { ignoreYearLocks: true });
       setRestoreProgress({ done: ++done, total });
     } else if (o.t === 'audit' && typeof o.year === 'string' && want.has(o.year)) {
       const mapped = full ? fillReason(o.data as AuditLog[]) : remapAudits(fillReason(o.data as AuditLog[]), plan);
@@ -281,7 +281,7 @@ async function restoreFromFileNow(file: ReadableBackup, scan: BackupScan, years:
     }
   }
   // 끝: 다른 연도에 남은 같은 내역을 지우고 '복원 중' 표시를 내립니다(한 트랜잭션). 중간에 꺼지면 표시가 남아 다시 복원하게 됩니다.
-  await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }));
+  await transact(async () => ({ writes: [...(await strayRowWrites(ids, want)), { key: KEYS.restoreMarker, value: null }], result: undefined }), { ignoreYearLocks: true });
   if (full) return { addedMembers: scan.members.length, addedTypes: scan.offeringTypes.length, updatedMembers: 0, updatedTypes: 0 };
   return { addedMembers: plan.addMembers.length, addedTypes: plan.addTypes.length, updatedMembers: updated.members, updatedTypes: updated.types };
 }
