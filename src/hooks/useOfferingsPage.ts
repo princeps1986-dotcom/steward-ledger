@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOfferingActions, useOfferingTypes, type OfferingTypeDraft } from '../contexts/OfferingTypeContext';
+import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
 import type { OfferingType } from '../contexts/types';
-import { formatNumber } from '../services/domain/amount';
+import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 
 interface FormState {
   id?: string;
@@ -36,6 +37,26 @@ export function useOfferingsPage() {
   const { save, countUsage, remove, reorder } = useOfferingActions();
   const sorted = useMemo(() => [...types].sort((a, b) => a.sortOrder - b.sortOrder), [types]);
   const nextOrder = (sorted.at(-1)?.sortOrder ?? 0) + 1;
+  // 큰 금액 확인 기준: 입력값을 쥐고 있다가 [저장]을 눌러야 설정에 반영합니다.
+  const settings = useSettings();
+  const { update } = useSettingsActions();
+  const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
+  const [thresholdMessage, setThresholdMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
+  useEffect(() => {
+    setThreshold(formatNumber(settings.largeAmountThreshold));
+  }, [settings.largeAmountThreshold]);
+  const cancelThreshold = useCallback(() => setThreshold(formatNumber(settings.largeAmountThreshold)), [settings.largeAmountThreshold]);
+  const saveThreshold = useCallback(async () => {
+    const t = parseAmount(threshold);
+    if (t.kind !== 'ok') return setThresholdMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
+    await update({ largeAmountThreshold: t.value });
+    setThresholdMessage({ kind: 'info', text: '큰 금액 확인 기준을 저장했습니다.' });
+  }, [threshold, update]);
+  // 저장 때 정규화되는 값(공백·앞자리 0·쉼표)은 정규화한 뒤 비교해, 저장 후에도 변경으로 남지 않게 합니다.
+  const thresholdDirty = (() => {
+    const t = parseAmount(threshold);
+    return t.kind !== 'ok' || t.value !== settings.largeAmountThreshold;
+  })();
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 삭제 흐름: 입력된 헌금이 있으면 안내(notice)만, 없으면 확인(confirming) 후 삭제 */
@@ -133,6 +154,12 @@ export function useOfferingsPage() {
   }, [confirming, remove]);
 
   return {
+    threshold,
+    setThreshold: (v: string) => setThreshold(formatAmountInput(v)),
+    saveThreshold,
+    cancelThreshold,
+    thresholdDirty,
+    thresholdMessage,
     rows: sorted.map((t) => ({
       type: t,
       areaLabel: t.displayArea === 'PRIMARY' ? '기본 나열' : '기타 드롭다운',

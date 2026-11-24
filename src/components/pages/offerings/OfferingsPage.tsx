@@ -1,12 +1,33 @@
 import { useOfferingsPage } from '../../../hooks/useOfferingsPage';
 import { Modal } from '../../shared/Modal';
 import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { Notice } from '../../shared/Notice';
 
 export function OfferingsPage() {
   const p = useOfferingsPage();
   const f = p.form;
   return (
     <div className="space-y-4">
+      <section className="card space-y-3">
+        <h3 className="font-semibold">
+          큰 금액 확인 기준 <span className="ml-1 text-xs font-normal text-gray-500">[저장]을 눌러야 적용됩니다</span>
+        </h3>
+        <Notice message={p.thresholdMessage} />
+        <label className="block w-72">
+          <span className="label">큰 금액 확인 기준 (이 금액 초과 시 확인창)</span>
+          <input className="input text-right" inputMode="numeric" value={p.threshold} onChange={(e) => p.setThreshold(e.target.value)} />
+        </label>
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" onClick={() => void p.saveThreshold()} disabled={!p.thresholdDirty}>
+            저장
+          </button>
+          <button className="btn" onClick={p.cancelThreshold} disabled={!p.thresholdDirty}>
+            입력 취소
+          </button>
+          {p.thresholdDirty ? <span className="text-sm text-amber-700">저장하지 않은 변경이 있습니다.</span> : null}
+        </div>
+      </section>
+
       <section className="card flex items-center justify-between">
         <p className="text-sm text-gray-600">
           '기본 나열'은 입력 화면에 항상 표시되고, '기타 드롭다운'은 선택해서 입력합니다. 행을 끌어서 순서를 바꿀 수 있습니다.
