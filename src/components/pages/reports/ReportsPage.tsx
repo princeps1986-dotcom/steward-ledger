@@ -6,6 +6,7 @@ import type { PeriodType } from '../../../services/domain/dates';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
 import { AuditTab } from './AuditTab';
+import { DonationImportModal } from './DonationImportModal';
 import { ListTab } from './ListTab';
 import { PersonalTab } from './PersonalTab';
 import { PrintHeader } from './PrintHeader';
@@ -23,6 +24,7 @@ const TAB_ACTION: Record<ReportTab, Action> = { SUMMARY: 'report:summary', LIST:
 export function ReportsPage() {
   const tabs = ALL_TABS.filter((t) => allowed(TAB_ACTION[t.key]));
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
+  const [importOpen, setImportOpen] = useState(false);
   // 전체 입력 내역 탭은 기간의 헌금을 메모리에 올리지 않고 달 단위로 직접 읽습니다(큰 연도에서도 메모리가 작음).
   const f = useReportFilters(tab !== 'LIST');
   // 표시할 헌금 종류(종합 보고서 전용). 기본값은 헌금 종류의 활성 여부(활성=체크, 비활성=해제)이고,
@@ -123,6 +125,12 @@ export function ReportsPage() {
             <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || exportDisabled}>
               PDF 저장
             </button>
+            {/* 헌금 CSV 불러오기는 일별 보고서에서만 엽니다(보고 있는 날짜를 기본 날짜로 씀). 헌금을 입력할 수 있는 역할만 보입니다(열람자는 이 탭을 봐도 저장할 수 없음). */}
+            {f.sel.periodType === 'DAY' && allowed('donation:write') ? (
+              <button className="btn" onClick={() => setImportOpen(true)}>
+                CSV 불러오기
+              </button>
+            ) : null}
           </>
         ) : null}
       </section>
@@ -188,6 +196,7 @@ export function ReportsPage() {
         {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
         {tab === 'AUDIT' ? <AuditTab f={f} /> : null}
       </div>
+      <DonationImportModal open={importOpen} onClose={() => setImportOpen(false)} initialDate={f.weekDate} />
 
     </div>
   );

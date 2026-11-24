@@ -12,7 +12,7 @@ describe('useAuditLogTab', () => {
     const before = { id: 'd1', date: '2024-03-03', memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: 'c' } as Donation;
     const log: AuditLog = { id: 'l1', targetId: 'd1', action: 'DELETE', beforeSnapshot: before, afterSnapshot: null, reason: '잘못 입력한 내역', timestamp: '2024-03-03T01:00:00.000Z' };
     await transact(async () => ({ writes: [auditAppend('2024', [log])], result: 0 })); // 2024년에는 헌금이 하나도 없음
-    const { result } = renderHook(() => {
+    const { result, unmount } = renderHook(() => {
       const f = useReportFilters();
       return { f, logs: useAuditLogTab(f) };
     }, { wrapper: AppProviders });
@@ -24,5 +24,8 @@ describe('useAuditLogTab', () => {
     await act(() => new Promise<void>((r) => setTimeout(r, REPORT_DELAY_MS + 50)));
     await waitFor(() => expect(result.current.logs.map((l) => l.id)).toEqual(['l1']));
     expect(result.current.logs[0].actionLabel).toBe('삭제');
+    // 남은 예약 작업이 jsdom 환경이 닫힌 뒤 실행되어 "window is not defined"가 나지 않도록 기다린 뒤 해제
+    await act(() => new Promise<void>((r) => setTimeout(r, REPORT_DELAY_MS + 50)));
+    unmount();
   });
 });
