@@ -52,6 +52,9 @@ export function useMemberForm(opts: { initial: MemberDraft; editingId?: string; 
         setError(null);
         opts.onSaved(res.saved);
       }
+    } catch (e) {
+      // 저장소 오류(공간 부족·권한 없음 등)도 입력 창에 보여 줍니다(아무것도 저장되지 않음).
+      setError(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       savingRef.current = false;
       setSaving(false);

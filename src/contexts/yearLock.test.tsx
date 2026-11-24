@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { act, renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { YearLockSection } from '../components/pages/settings/YearLockSection';
 import { setCurrentUser } from '../services/auth/currentUser';
 import type { Role } from '../services/auth/roles';
 import { resetAllData } from '../services/backup/backupService';
@@ -72,6 +73,18 @@ describe('연도 잠금', () => {
     const { result } = setup();
     login('viewer');
     await act(() => result.current.s.update({ theme: 'DARK' }));
+  });
+
+  it('[잠그기]를 연달아 눌러도 앞서 잠근 연도가 풀리지 않는다', async () => {
+    render(<YearLockSection />, { wrapper });
+    const buttons = await screen.findAllByRole('button', { name: '잠그기' });
+    expect(buttons).toHaveLength(2); // 2026, 2025
+    // 첫 저장이 끝나기 전에 두 번째를 누릅니다(화면의 잠금 목록은 아직 비어 있음).
+    await act(async () => {
+      fireEvent.click(buttons[0]);
+      fireEvent.click(buttons[1]);
+    });
+    await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2025', '2026']));
   });
 });
 

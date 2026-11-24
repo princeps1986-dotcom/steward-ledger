@@ -121,7 +121,7 @@ export function restoredLists(
     return [list, n];
   };
   const [members, updatedMembers] = overwrite.members
-    ? replace(current.members, backup.members, plan.memberIdMap, (m) => (m.familyGroupId ? { ...m, familyGroupId: plan.memberIdMap.get(m.familyGroupId) ?? m.familyGroupId } : m))
+    ? replace(current.members, backup.members, plan.memberIdMap, (m) => (m.familyGroupId ? { ...m, familyGroupId: plan.groupIdMap.get(m.familyGroupId) ?? m.familyGroupId } : m))
     : [[...current.members], 0];
   const [offeringTypes, updatedTypes] = overwrite.types ? replace(current.offeringTypes, backup.offeringTypes, plan.typeIdMap, (t) => t) : [[...current.offeringTypes], 0];
   return { members: [...members, ...plan.addMembers], offeringTypes: [...offeringTypes, ...plan.addTypes], updatedMembers, updatedTypes };

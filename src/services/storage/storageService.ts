@@ -457,6 +457,22 @@ export async function storageHasRows(): Promise<boolean> {
 export const wipeAllStorage = (): Promise<void> =>
   serialize(() => db.transaction('rw', db.kv, db.donations, db.audits, async () => void (await Promise.all([db.kv.clear(), db.donations.clear(), db.audits.clear()]))));
 
+/**
+ * 지금 열쇠로 저장된 암호문이 풀리는지(성도 목록과 맨 앞 헌금 한 건으로 확인). 평문이면 확인할 것이 없어 true.
+ * 열쇠 파일이 지워져 main이 새 열쇠를 만든 경우처럼, 열쇠는 멀쩡히 읽히지만 데이터와 맞지 않는 상태를 잡습니다.
+ * 암호화 이전은 달 오름차순이므로 이전이 조금이라도 됐다면 맨 앞 행이 암호문입니다.
+ */
+export async function dataKeyOpensStorage(): Promise<boolean> {
+  try {
+    await getItem(KEYS.members);
+    const row = await db.donations.toCollection().first();
+    if (row?.enc) await openDonations([row]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 건별 암호화 이전이 끝났는지(열쇠가 있는데 표식이 없으면 이전이 필요하거나 중간에 멈춘 것) */
 export const encryptionPending = async (): Promise<boolean> => hasDataKey() && (await getItem<boolean>(KEYS.encrypted)) !== true;
 

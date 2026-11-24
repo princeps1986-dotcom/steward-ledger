@@ -33,7 +33,7 @@
 
 ## 저장소(IndexedDB)
 - `src/services/storage/db.ts`(Dexie 정의), `storageService.ts`(원자적 트랜잭션·월 키), `keys.ts`, `storageErrors.ts`, `tabSyncChannel.ts`(창 간 동기화)
-- 건별 암호화(권한 체계 4단계): `src/services/storage/cipher.ts`(AES-GCM·열쇠 보관), `storageService.ts`의 `sealDonations`·`openDonations`·`sealAudits`·`openAudits`·`sealMembers`(저장·읽기 때 잠그고 풂, 트랜잭션 안은 `Dexie.waitFor`), `encryptAllPlaintext`(첫 암호화 이전·이어하기), `storageHasRows`·`wipeAllStorage`(열쇠를 잃었을 때). 로그인 직후 준비는 `src/services/auth/prepareData.ts`(열쇠 받기 → 백업 → 암호화 이전), 이력의 고친 사람은 `src/services/auth/currentUser.ts`
+- 건별 암호화(권한 체계 4단계): `src/services/storage/cipher.ts`(AES-GCM·열쇠 보관), `storageService.ts`의 `sealDonations`·`openDonations`·`sealAudits`·`openAudits`·`sealMembers`(저장·읽기 때 잠그고 풂, 트랜잭션 안은 `Dexie.waitFor`), `encryptAllPlaintext`(첫 암호화 이전·이어하기), `storageHasRows`·`wipeAllStorage`(열쇠를 잃었을 때), `dataKeyOpensStorage`(받은 열쇠가 저장된 데이터와 맞는지, 열쇠 파일을 잃어 새 열쇠가 온 경우를 막음). 로그인 직후 준비는 `src/services/auth/prepareData.ts`(열쇠 받기 → 백업 → 암호화 이전), 이력의 고친 사람은 `src/services/auth/currentUser.ts`
 - 상태 보관: `src/contexts/DonationContext.tsx`(달 단위 메모리 모델), `AppProviders.tsx`, 데이터 모델 `types.ts`
 
 ## 데스크톱 셸(Electron)
@@ -54,4 +54,4 @@
 ## 개발 도구
 - 실행: `npm run dev`(브라우저 모드), `npm run dev:app`(`scripts/dev-app.mjs`, 개발 서버 + Electron 창)
 - 시험 데이터: `scripts/generate-test-data.mjs`, `testdata-core.mjs` · 스모크 시험: `scripts/smoke.mjs`
-- 배포: `.github/workflows/pages.yml`(시연 페이지), `npm run dist`(설치 파일)
+- 배포: `.github/workflows/pages.yml`(시연 페이지), `npm run dist`(설치 파일, 먼저 `scripts/check-release.mjs`가 구글 클라이언트 ID가 비었으면 멈춤)

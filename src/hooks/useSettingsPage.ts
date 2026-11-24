@@ -139,7 +139,7 @@ export function useSettingsPage() {
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
       // 기록 저장이 실패해도 파일은 저장됐으므로 '백업 실패'로 안내하지 않습니다.
-      await update({ manualBackupAt: { ...settings.manualBackupAt, [backupYear]: new Date().toISOString() } }).catch(() => undefined);
+      await update((cur) => ({ manualBackupAt: { ...cur.manualBackupAt, [backupYear]: new Date().toISOString() } })).catch(() => undefined);
       closeBackup();
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {

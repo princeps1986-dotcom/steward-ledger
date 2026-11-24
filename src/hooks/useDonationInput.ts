@@ -381,8 +381,8 @@ export function useDonationInput() {
   // 전역 단축키: F2 무명 전환, 입력 칸이 비었을 때 Ctrl+Z 복구하기
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      // 이 화면의 모달뿐 아니라 수정창 같은 다른 대화상자가 열려 있을 때도 단축키를 막습니다.
-      if (modalOpen || document.querySelector('[role="dialog"][data-state="open"]')) return;
+      // 이 화면의 모달뿐 아니라 수정창 같은 다른 대화상자나 잠금 화면(inert는 창 전체 키 입력을 막지 못함)이 떠 있을 때도 단축키를 막습니다.
+      if (modalOpen || document.querySelector('[role="dialog"][data-state="open"], [data-lock-screen]')) return;
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
         e.preventDefault();
         void requestSave();

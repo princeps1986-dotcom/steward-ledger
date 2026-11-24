@@ -5,7 +5,7 @@ import type { DesktopApi } from '../desktopBridge';
 import { hasDataKey, setDataKey } from '../storage/cipher';
 import { db } from '../storage/db';
 import { encryptionPending, KEYS, readMonth, rowWrite, transact } from '../storage/storageService';
-import { prepareData, startOver } from './prepareData';
+import { KEY_MISMATCH, prepareData, startOver } from './prepareData';
 
 const KEY_B64 = Buffer.alloc(32, 7).toString('base64');
 const don = (id: string, date: string): Donation => ({ id, date, memberId: 'm1', donorDisplayName: '홍길동', offeringTypeId: 't1', amount: 5000, createdAt: `c${id}` });
@@ -98,6 +98,16 @@ describe('prepareData', () => {
     expect(await db.kv.get(KEYS.members)).toBeTruthy(); // 데이터는 그대로
   });
 
+  it('열쇠 파일을 잃어 새 열쇠가 오면(데이터와 맞지 않음) 열지 않고 keyLost로 알린다', async () => {
+    await setDataKey(Buffer.alloc(32, 1)); // 예전 열쇠로 암호화된 저장소
+    await put('2026-03', don('a', '2026-03-01'));
+    await setDataKey(null);
+    const { api } = fakeApi(); // main이 새로 만든 다른 열쇠
+    expect(await prepareData(api)).toEqual({ ok: false, keyLost: true, error: KEY_MISMATCH });
+    expect(hasDataKey()).toBe(false);
+    expect(await db.donations.count()).toBe(1); // 데이터는 그대로
+  });
+
   it('열쇠를 받지 못하는 다른 오류는 keyLost가 아니다', async () => {
     const { api } = fakeApi({ dataKey: { error: '이 PC에서 데이터 암호화를 쓸 수 없습니다.', code: 'DATA_KEY_UNAVAILABLE' } });
     expect(await prepareData(api)).toEqual({ ok: false, keyLost: false, error: '이 PC에서 데이터 암호화를 쓸 수 없습니다.' });
@@ -134,12 +144,25 @@ describe('startOver', () => {
     expect(hasDataKey()).toBe(false);
   });
 
-  it('열쇠가 정상으로 풀리면 지우지 않는다', async () => {
-    await seedLost();
+  it('열쇠가 정상으로 풀리고 데이터와 맞으면 지우지 않는다', async () => {
+    await setDataKey(Buffer.from(KEY_B64, 'base64')); // main이 주는 열쇠와 같은 열쇠로 암호화된 저장소
+    await put('2026-03', don('a', '2026-03-01'));
+    await setDataKey(null);
     const { api, mock } = fakeApi(); // dataKey가 정상
     expect(await startOver(api, 'admin')).toMatchObject({ ok: false, keyLost: true });
     expect(mock.dataKeyReplace).not.toHaveBeenCalled();
     expect(await db.donations.count()).toBe(1);
+  });
+
+  it('열쇠는 읽히지만 데이터와 맞지 않으면 열쇠를 바꾸지 않고 지운 뒤 그 열쇠로 다시 시작한다', async () => {
+    await setDataKey(Buffer.alloc(32, 1));
+    await put('2026-03', don('a', '2026-03-01'));
+    await setDataKey(null);
+    const { api, mock } = fakeApi();
+    expect(await startOver(api, 'admin')).toEqual({ ok: true });
+    expect(mock.dataKeyReplace).not.toHaveBeenCalled();
+    expect(await db.donations.count()).toBe(0);
+    expect(hasDataKey()).toBe(true);
   });
 
   it('main이 열쇠 교체를 거절하면(관리자가 아님 등) 지우지 않는다', async () => {

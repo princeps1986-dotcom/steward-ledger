@@ -7,7 +7,8 @@ import { subscribeExternalChanges } from '../services/storage/tabSyncChannel';
 import { DEFAULT_SETTINGS, type AppSettings, type FontScale } from './types';
 
 interface SettingsActions {
-  update(patch: Partial<AppSettings>): Promise<void>;
+  /** 함수로 주면 저장된 최신 설정(cur)으로 고칠 값을 만듭니다(목록·객체 값을 낡은 화면 값으로 덮어쓰지 않게). */
+  update(patch: Partial<AppSettings> | ((cur: AppSettings) => Partial<AppSettings>)): Promise<void>;
   /** 백업 성공 기록: 마지막 백업 시각만 갱신합니다(변경 표시는 백업이 직접 관리). */
   markBackupDone(at?: string): Promise<void>;
 }
@@ -49,9 +50,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, [load]);
 
-  const update = useCallback(async (patch: Partial<AppSettings>) => {
+  const update = useCallback(async (change: Partial<AppSettings> | ((cur: AppSettings) => Partial<AppSettings>)) => {
     const { result } = await transact(async (read) => {
       const cur = { ...DEFAULT_SETTINGS, ...((await read<Partial<AppSettings>>(KEYS.settings)) ?? {}) };
+      const patch = typeof change === 'function' ? change(cur) : change;
       const next = { ...cur, ...patch };
       // 연도 잠금: 걸기는 관리자·재정담당, 풀기는 관리자만(화면을 우회해도 막음)
       if (patch.lockedYears) {

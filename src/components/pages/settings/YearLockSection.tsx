@@ -15,7 +15,8 @@ export function YearLockSection() {
   const toggle = async (year: string, lock: boolean) => {
     setError(null);
     try {
-      await update({ lockedYears: lock ? [...lockedYears, year].sort() : lockedYears.filter((y) => y !== year) });
+      // 화면의 목록이 아니라 저장된 최신 목록에서 한 해만 더하거나 뺍니다(연달아 눌러도 앞의 잠금이 풀리지 않게).
+      await update((cur) => ({ lockedYears: lock ? [...new Set([...cur.lockedYears, year])].sort() : cur.lockedYears.filter((y) => y !== year) }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
