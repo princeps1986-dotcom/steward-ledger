@@ -16,6 +16,7 @@ const { createPcKeyStore } = require('./pcKey.cjs');
 const { createAuth } = require('./auth.cjs');
 const authConfig = require('./authConfig.cjs');
 const { createUserStore } = require('./userStore.cjs');
+const { createDataKeyStore } = require('./dataKey.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
 const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
@@ -628,6 +629,21 @@ if (!app.requestSingleInstanceLock()) {
       return r;
     }),
   );
+  // 저장 데이터를 잠그는 열쇠(electron/dataKey.cjs): 로그인한 사람에게만 화면(렌더러)으로 넘깁니다. 화면은 WebCrypto로 한 번 가져온 뒤 값을 버립니다.
+  // 열쇠를 풀 수 없으면 code를 함께 보내 화면이 '저장소가 비었으면 새로 시작 / 데이터가 있으면 안내'를 정하게 합니다.
+  const dataKeys = createDataKeyStore({ safeStorage, dir: app.getPath('userData'), log, stamp });
+  ipcMain.handle(
+    'data:key',
+    withSession(async () => {
+      try {
+        return { key: (await dataKeys.getDataKey()).toString('base64') };
+      } catch (err) {
+        log.warn('data key', err && err.code);
+        return { error: String((err && err.message) || err), code: err && err.code };
+      }
+    }),
+  );
+  ipcMain.handle('data:key-replace', withSession(async () => ({ key: (await dataKeys.replaceUnreadable()).toString('base64') })));
   ipcMain.handle('auth:cancel', () => auth.cancel());
   ipcMain.handle('auth:logout', () => auth.logout());
 

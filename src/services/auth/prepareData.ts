@@ -1,0 +1,57 @@
+// 로그인 직후 저장 데이터를 열 준비: 데이터 열쇠를 받아 저장소에 넣고, 평문으로 남은 데이터가 있으면 백업 뒤 건별 암호화로 옮깁니다.
+// 이 일이 끝나기 전에는 앱 화면과 저장소를 그리지 않습니다(AuthGate).
+import { backupLines, hasAnyData } from '../backup/backupService';
+import type { DesktopApi } from '../desktopBridge';
+import { keyFromBase64, setDataKey } from '../storage/cipher';
+import { encryptAllPlaintext, encryptionPending, storageHasRows, wipeAllStorage } from '../storage/storageService';
+
+/** keyLost: 열쇠를 풀 수 없는데 저장소에 데이터가 있어 자동으로 새로 시작할 수 없음(사용자가 새로 시작을 고르거나 수동 백업 복원) */
+export type PrepareOutcome = { ok: true } | { ok: false; keyLost: boolean; error: string };
+
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** 암호화로 옮기기 전에 지금(평문) 데이터를 이 PC의 키로 자동 백업합니다. 실패하면 옮기지 않고 오류로 알립니다. */
+async function backupBeforeEncrypt(api: DesktopApi): Promise<void> {
+  if (!(await hasAnyData())) return;
+  const id = await api.backupBegin({ kind: 'close' });
+  if (id === null) return;
+  try {
+    for await (const line of backupLines()) await api.backupWrite(id, line);
+    await api.backupEnd(id);
+  } catch (e) {
+    await api.backupAbort(id).catch(() => undefined);
+    throw new Error(`암호화하기 전 백업에 실패했습니다: ${messageOf(e)}`);
+  }
+}
+
+export async function prepareData(api: DesktopApi, onProgress?: (done: number, total: number) => void): Promise<PrepareOutcome> {
+  try {
+    let r = await api.dataKey();
+    if ('error' in r) {
+      if (r.code !== 'DATA_KEY_UNREADABLE') return { ok: false, keyLost: false, error: r.error };
+      // 새 열쇠를 만들면 기존 데이터를 영구히 열 수 없으므로, 저장소가 비어 있을 때만 자동으로 새로 만듭니다.
+      if (await storageHasRows()) return { ok: false, keyLost: true, error: r.error };
+      r = await api.dataKeyReplace();
+      if ('error' in r) return { ok: false, keyLost: false, error: r.error };
+    }
+    await setDataKey(keyFromBase64(r.key));
+    if (await encryptionPending()) {
+      await backupBeforeEncrypt(api);
+      await encryptAllPlaintext(onProgress);
+    }
+    return { ok: true };
+  } catch (e) {
+    await setDataKey(null);
+    return { ok: false, keyLost: false, error: messageOf(e) };
+  }
+}
+
+/** 열쇠를 잃어 풀 수 없는 데이터를 모두 지우고 새로 시작합니다(수동 백업이 있어야 되살릴 수 있음). 호출 전에 사용자 확인이 필요합니다. */
+export async function startOver(api: DesktopApi, onProgress?: (done: number, total: number) => void): Promise<PrepareOutcome> {
+  try {
+    await wipeAllStorage();
+  } catch (e) {
+    return { ok: false, keyLost: true, error: messageOf(e) };
+  }
+  return prepareData(api, onProgress);
+}

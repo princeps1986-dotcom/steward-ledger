@@ -39,7 +39,7 @@ const { createAuth } = req('../../electron/auth.cjs') as {
   createAuth(o: { clientId: string; clientSecret?: string; openBrowser(u: string): Promise<void>; admit(id: Identity): Promise<Admitted>; fetch: typeof fetch; now?: () => number; timeoutMs?: number }): Auth;
 };
 const { createDataKeyStore } = req('../../electron/dataKey.cjs') as {
-  createDataKeyStore(o: { safeStorage: FakeSafeStorage; dir: string; log: { warn(...a: unknown[]): void } }): { getDataKey(): Promise<Buffer> };
+  createDataKeyStore(o: { safeStorage: FakeSafeStorage; dir: string; log: { warn(...a: unknown[]): void }; stamp(): string }): { getDataKey(): Promise<Buffer>; replaceUnreadable(): Promise<Buffer> };
 };
 
 const CLIENT = 'test-client.apps.googleusercontent.com';
@@ -258,7 +258,7 @@ function fakeStorage() {
   return { storage, state };
 }
 const tmp = () => mkdtempSync(join(tmpdir(), 'steward-datakey-'));
-const store = (dir: string, storage: FakeSafeStorage) => createDataKeyStore({ safeStorage: storage, dir, log: { warn: vi.fn() } });
+const store = (dir: string, storage: FakeSafeStorage) => createDataKeyStore({ safeStorage: storage, dir, log: { warn: vi.fn() }, stamp: () => '20261124_000000' });
 
 describe('데이터 열쇠(electron/dataKey.cjs)', () => {
   it('처음에는 만들어 잠가 두고, 다시 열면 같은 열쇠를 쓴다(임시 파일 없음)', async () => {
@@ -283,6 +283,24 @@ describe('데이터 열쇠(electron/dataKey.cjs)', () => {
     await expect(store(dir, fakeStorage().storage).getDataKey()).rejects.toMatchObject({ code: 'DATA_KEY_UNREADABLE' });
     expect(readdirSync(dir)).toEqual(['data-key.bin']);
     expect(readFileSync(join(dir, 'data-key.bin'), 'utf8')).toBe('other-pc-garbage');
+  });
+
+  it('replaceUnreadable: 풀 수 없는 열쇠는 .old로 남기고 새로 만들고, 멀쩡한 열쇠는 그대로 둔다', async () => {
+    const dir = tmp();
+    const { storage } = fakeStorage();
+    const good = await store(dir, storage).getDataKey();
+    expect((await store(dir, storage).replaceUnreadable()).equals(good)).toBe(true); // 멀쩡하면 바꾸지 않음
+    expect(readdirSync(dir)).toEqual(['data-key.bin']);
+
+    writeFileSync(join(dir, 'data-key.bin'), 'other-pc-garbage');
+    const s = store(dir, storage);
+    await expect(s.getDataKey()).rejects.toMatchObject({ code: 'DATA_KEY_UNREADABLE' });
+    const fresh = await s.replaceUnreadable();
+    expect(fresh).toHaveLength(32);
+    expect(fresh.equals(good)).toBe(false);
+    expect(readdirSync(dir).sort()).toEqual(['data-key.bin', 'data-key.bin.20261124_000000.old']);
+    expect(readFileSync(join(dir, 'data-key.bin.20261124_000000.old'), 'utf8')).toBe('other-pc-garbage');
+    expect((await store(dir, storage).getDataKey()).equals(fresh)).toBe(true);
   });
 
   it('길이가 틀린 열쇠도 풀 수 없는 것으로 본다', async () => {

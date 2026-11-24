@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import type { AuditLog, Donation } from '../../contexts/types';
-import { db, type AuditRow } from './db';
+import { decryptJson, encryptJson, hasDataKey } from './cipher';
+import { db, type AuditRow, type Sealable } from './db';
 import { auditKey, donationKey, DONATION_KEY_RE, AUDIT_KEY_RE, KEYS } from './keys';
 import { toStorageError } from './storageErrors';
 import { broadcastChanged } from './tabSyncChannel';
@@ -56,9 +57,52 @@ type Reader = <T>(key: string) => Promise<T | null>;
 
 const stripRow = ({ year: _y, seq: _s, ...log }: AuditRow): AuditLog => log;
 
+// ── 건별 암호화(cipher.ts). 열쇠가 있을 때만 잠그고, 읽을 때는 enc가 있는 행만 풉니다(평문 행은 그대로).
+// 트랜잭션 안에서 부를 수 있도록 WebCrypto 대기는 Dexie.waitFor로 감쌉니다(그냥 기다리면 IndexedDB 트랜잭션이 먼저 끝남).
+const wait = <T>(p: Promise<T>): Promise<T> => Dexie.waitFor(p);
+type Secret = Pick<Donation, 'amount' | 'donorDisplayName' | 'memo'>;
+type AuditSecret = Pick<AuditLog, 'reason' | 'beforeSnapshot' | 'afterSnapshot' | 'actor'>;
+
+async function sealDonations(list: Donation[]): Promise<Donation[]> {
+  if (!hasDataKey() || list.length === 0) return list;
+  return wait(
+    Promise.all(
+      list.map(async ({ amount, donorDisplayName, memo, ...open }) => ({ ...open, enc: await encryptJson({ amount, donorDisplayName, memo } satisfies Secret, `d:${open.id}`) }) as unknown as Donation),
+    ),
+  );
+}
+
+async function openDonations<T extends Donation & Sealable>(rows: T[]): Promise<Donation[]> {
+  if (!rows.some((r) => r.enc)) return rows;
+  return wait(
+    Promise.all(
+      rows.map(async ({ enc, ...open }) => (enc ? ({ ...open, ...(await decryptJson<Secret>(enc, `d:${open.id}`)) } as Donation) : (open as unknown as Donation))),
+    ),
+  );
+}
+
+async function sealAudits(rows: AuditRow[]): Promise<AuditRow[]> {
+  if (!hasDataKey() || rows.length === 0) return rows;
+  return wait(
+    Promise.all(
+      rows.map(async ({ reason, beforeSnapshot, afterSnapshot, actor, ...open }) => ({ ...open, enc: await encryptJson({ reason, beforeSnapshot, afterSnapshot, actor } satisfies AuditSecret, `a:${open.id}`) }) as unknown as AuditRow),
+    ),
+  );
+}
+
+async function openAudits(rows: AuditRow[]): Promise<AuditRow[]> {
+  if (!rows.some((r) => r.enc)) return rows;
+  return wait(Promise.all(rows.map(async ({ enc, ...open }) => (enc ? ({ ...open, ...(await decryptJson<AuditSecret>(enc, `a:${open.id}`)) } as AuditRow) : (open as AuditRow)))));
+}
+
+/** 성도 목록은 kv에 통째로 한 값으로 들어 있어 { enc }로 감쌉니다(다른 kv 값은 설정·종류라 평문). */
+const sealMembers = async (list: unknown): Promise<unknown> => (hasDataKey() && Array.isArray(list) ? { enc: await wait(encryptJson(list, 'members')) } : list);
+const openKv = async (key: string, v: unknown): Promise<unknown> =>
+  key === KEYS.members && v && !Array.isArray(v) && (v as Sealable).enc ? wait(decryptJson((v as { enc: Uint8Array }).enc, 'members')) : v;
+
 /** 한 해의 이력을 기록한 순서대로 읽습니다(없으면 null). */
 async function readAuditYear(year: string): Promise<AuditLog[] | null> {
-  const rows = await db.audits.where('year').equals(year).sortBy('seq');
+  const rows = await openAudits(await db.audits.where('year').equals(year).sortBy('seq'));
   return rows.length ? rows.map(stripRow) : null;
 }
 
@@ -69,12 +113,13 @@ async function readAuditYear(year: string): Promise<AuditLog[] | null> {
 export const getItem = async <T>(key: string): Promise<T | null> => {
   const ay = AUDIT_KEY_RE.exec(key)?.[1];
   if (ay) return (await readAuditYear(ay)) as T | null;
-  return ((await db.kv.get(key)) as T | undefined) ?? null;
+  return ((await openKv(key, await db.kv.get(key))) as T | undefined) ?? null;
 };
 
 /** 여러 키를 한 번에 읽습니다(결과는 keys와 같은 순서, 없으면 null). 키마다 따로 부르는 것보다 빠릅니다. */
 export const getMany = async <T>(keys: string[]): Promise<(T | null)[]> => {
-  const kv = (await db.kv.bulkGet(keys.filter((k) => !AUDIT_KEY_RE.test(k)))) as (T | undefined)[];
+  const plain = keys.filter((k) => !AUDIT_KEY_RE.test(k));
+  const kv = await Promise.all((await db.kv.bulkGet(plain)).map((v, j) => openKv(plain[j], v))) as (T | undefined)[];
   let i = 0;
   return Promise.all(keys.map((k) => (AUDIT_KEY_RE.test(k) ? getItem<T>(k) : (kv[i++] ?? null))));
 };
@@ -93,7 +138,7 @@ const monthRange = (ym: string) => db.donations.where('[date+id]').between([`${y
 async function applyDonationWrite(w: Write, written: Set<string> | null): Promise<void> {
   if (w.rowOps) {
     if (w.rowOps.deletes.length) await db.donations.bulkDelete(w.rowOps.deletes);
-    if (w.rowOps.puts.length) await db.donations.bulkPut(w.rowOps.puts);
+    if (w.rowOps.puts.length) await db.donations.bulkPut(await sealDonations(w.rowOps.puts));
     return;
   }
   const ym = DONATION_KEY_RE.exec(w.key)![1];
@@ -101,7 +146,7 @@ async function applyDonationWrite(w: Write, written: Set<string> | null): Promis
   if (!written || written.has(ym)) await monthRange(ym).delete();
   written?.add(ym);
   const list = w.value as Donation[] | null;
-  if (list?.length) await db.donations.bulkPut(list);
+  if (list?.length) await db.donations.bulkPut(await sealDonations(list));
 }
 
 /**
@@ -112,7 +157,7 @@ async function applyAuditWrite(w: Write): Promise<void> {
   const year = AUDIT_KEY_RE.exec(w.key)![1];
   if (!w.auditPuts) await db.audits.where('year').equals(year).delete();
   const list = w.auditPuts ?? (w.value as AuditLog[] | null) ?? [];
-  if (list.length) await db.audits.bulkAdd(list.map((l) => ({ ...l, year })));
+  if (list.length) await db.audits.bulkAdd(await sealAudits(list.map((l) => ({ ...l, year }))));
 }
 
 async function applyWrites(writes: Write[]): Promise<void> {
@@ -133,7 +178,7 @@ async function applyWrites(writes: Write[]): Promise<void> {
     else puts.push(w);
   }
   if (removes.length) await db.kv.bulkDelete(removes);
-  if (puts.length) await db.kv.bulkPut(puts.map((w) => w.value), puts.map((w) => w.key));
+  if (puts.length) await db.kv.bulkPut(await Promise.all(puts.map((w) => (w.key === KEYS.members ? sealMembers(w.value) : w.value))), puts.map((w) => w.key));
 }
 
 /**
@@ -240,14 +285,18 @@ export function internDonations(rows: Donation[]): Donation[] {
 
 /** 한 달('YYYY-MM')의 헌금을 입력한 순서(만든 시각)대로 읽습니다. 날짜 범위만 읽습니다. */
 export async function readMonth(ym: string): Promise<Donation[]> {
-  return internDonations(await monthRange(ym).toArray()).sort(byEntryOrder);
+  return internDonations(await openDonations(await monthRange(ym).toArray())).sort(byEntryOrder);
 }
 
 /** 하루('YYYY-MM-DD')의 헌금만 기본키 범위로 읽습니다(달 전체를 읽지 않음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */
-export const readDay = (date: string): Promise<Donation[]> => db.donations.where('[date+id]').between([date, Dexie.minKey], [date, Dexie.maxKey], true, true).toArray();
+export const readDay = async (date: string): Promise<Donation[]> =>
+  openDonations(await db.donations.where('[date+id]').between([date, Dexie.minKey], [date, Dexie.maxKey], true, true).toArray());
 
 /** 기본키([날짜, id])로 한 건 읽기(없으면 null) */
-export const readRow = async (date: string, id: string): Promise<Donation | null> => (await db.donations.get([date, id])) ?? null;
+export const readRow = async (date: string, id: string): Promise<Donation | null> => {
+  const row = await db.donations.get([date, id]);
+  return row ? (await openDonations([row]))[0] : null;
+};
 
 /**
  * id만 아는 한 건 찾기(날짜가 바뀌었을 수 있을 때). 기본키([날짜, id])만 묶음으로 훑어(내역 본문은 읽지 않음) 찾으면 그 한 건만 읽습니다.
@@ -258,7 +307,7 @@ export async function findDonationById(id: string, chunk = 50_000): Promise<Dona
     const coll = after ? db.donations.where('[date+id]').above(after) : db.donations.toCollection();
     const keys = (await coll.limit(chunk).primaryKeys()) as unknown as [string, string][];
     const hit = keys.find((k) => k[1] === id);
-    if (hit) return (await db.donations.get(hit)) ?? null;
+    if (hit) return readRow(hit[0], hit[1]);
     if (keys.length < chunk) return null;
     after = keys[keys.length - 1];
   }
@@ -266,7 +315,7 @@ export async function findDonationById(id: string, chunk = 50_000): Promise<Dona
 
 /** 성도들의 헌금 전체(모든 연도)를 memberId 색인으로 읽습니다(전체를 훑지 않음). 기간은 부르는 쪽에서 거릅니다. */
 export const readMemberDonations = async (memberIds: readonly string[]): Promise<Donation[]> =>
-  memberIds.length ? db.donations.where('memberId').anyOf([...memberIds]).toArray() : [];
+  memberIds.length ? openDonations(await db.donations.where('memberId').anyOf([...memberIds]).toArray()) : [];
 
 /**
  * 연도 복원용: ids 중 years 밖(다른 연도)에 남아 있는 행을 지우는 쓰기 목록. 백업 뒤 날짜를 다른 연도로 옮긴 내역이
@@ -374,5 +423,62 @@ export async function restoreDirty(flag: boolean, years: readonly string[]): Pro
 }
 
 /** [날짜+성도+헌금 종류]가 같은 기존 내역을 색인으로 찾습니다(무명은 중복 없음). 트랜잭션 안에서 부르면 그 시점의 값입니다. */
-export const findDuplicateRow = (d: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>): Promise<Donation | undefined> =>
-  d.memberId === null ? Promise.resolve(undefined) : db.donations.where('[date+memberId+offeringTypeId]').equals([d.date, d.memberId, d.offeringTypeId]).first();
+export const findDuplicateRow = async (d: Pick<Donation, 'date' | 'memberId' | 'offeringTypeId'>): Promise<Donation | undefined> => {
+  if (d.memberId === null) return undefined;
+  const row = await db.donations.where('[date+memberId+offeringTypeId]').equals([d.date, d.memberId, d.offeringTypeId]).first();
+  return row ? (await openDonations([row]))[0] : undefined;
+};
+
+/** 열쇠 없이도 확인할 수 있는 '저장소에 데이터 행이 있는가'(성도 목록·헌금·이력 중 하나라도). 열쇠를 잃었을 때 새로 시작해도 되는지 판단하는 데 씁니다. */
+export async function storageHasRows(): Promise<boolean> {
+  const members = await db.kv.get(KEYS.members);
+  const hasMembers = Array.isArray(members) ? members.length > 0 : !!members;
+  return hasMembers || (await db.donations.count()) > 0 || (await db.audits.count()) > 0;
+}
+
+/** 저장된 모든 데이터를 지웁니다(열쇠를 잃어 풀 수 없을 때 새로 시작하는 용도. 수동 백업이 있어야 되살릴 수 있음). */
+export const wipeAllStorage = (): Promise<void> =>
+  serialize(() => db.transaction('rw', db.kv, db.donations, db.audits, async () => void (await Promise.all([db.kv.clear(), db.donations.clear(), db.audits.clear()]))));
+
+/** 건별 암호화 이전이 끝났는지(열쇠가 있는데 표식이 없으면 이전이 필요하거나 중간에 멈춘 것) */
+export const encryptionPending = async (): Promise<boolean> => hasDataKey() && (await getItem<boolean>(KEYS.encrypted)) !== true;
+
+/**
+ * 평문으로 남은 행을 모두 건별 암호화로 바꿉니다. 달·해 단위로 트랜잭션 하나씩 처리하므로 도중에 꺼져도 그 단위는 전부 반영되거나 전부 안 되고,
+ * 다시 실행하면 enc가 없는 행만 이어서 처리합니다. 다 끝나면 표식(KEYS.encrypted)을 남깁니다. 내용이 바뀌는 것이 아니므로 '백업 이후 변경' 표시는 건드리지 않습니다.
+ */
+export async function encryptAllPlaintext(onProgress?: (done: number, total: number) => void): Promise<void> {
+  if (!hasDataKey()) throw new Error('데이터 열쇠가 없어 암호화할 수 없습니다.');
+  const months = await listDonationMonths();
+  const years = (await db.audits.orderBy('year').uniqueKeys()) as string[];
+  const total = months.length + years.length + 1;
+  let done = 0;
+  const step = () => onProgress?.(++done, total);
+  onProgress?.(0, total);
+  for (const ym of months) {
+    await serialize(() =>
+      db.transaction('rw', db.donations, async () => {
+        const plain = (await monthRange(ym).toArray()).filter((r) => !r.enc);
+        if (plain.length) await db.donations.bulkPut(await sealDonations(plain));
+      }),
+    );
+    step();
+  }
+  for (const y of years) {
+    await serialize(() =>
+      db.transaction('rw', db.audits, async () => {
+        const plain = (await db.audits.where('year').equals(y).toArray()).filter((r) => !r.enc);
+        if (plain.length) await db.audits.bulkPut(await sealAudits(plain));
+      }),
+    );
+    step();
+  }
+  await serialize(() =>
+    db.transaction('rw', db.kv, async () => {
+      const members = await db.kv.get(KEYS.members);
+      if (Array.isArray(members)) await db.kv.put(await sealMembers(members), KEYS.members);
+      await db.kv.put(true, KEYS.encrypted);
+    }),
+  );
+  step();
+}

@@ -77,6 +77,11 @@ try {
   check('로그인 IPC: 로그인 없이는 PIN을 만들 수 없음', pinSet?.error === '로그인이 필요합니다.', JSON.stringify(pinSet));
   const pinCheck = await ev('window.desktop.authVerifyPin("123456")');
   check('로그인 IPC: 로그인 없이는 PIN 확인도 거절', pinCheck?.error === '로그인이 필요합니다.', JSON.stringify(pinCheck));
+  // 데이터 열쇠는 로그인한 사람에게만 넘긴다(로그인 전에 열쇠를 요청해도 거절).
+  const keyAsk = await ev('window.desktop.dataKey()');
+  check('열쇠 IPC: 로그인 없이는 데이터 열쇠를 주지 않음', keyAsk?.error === '로그인이 필요합니다.' && !('key' in keyAsk), JSON.stringify(keyAsk));
+  const keyReplace = await ev('window.desktop.dataKeyReplace()');
+  check('열쇠 IPC: 로그인 없이는 열쇠 교체도 거절', keyReplace?.error === '로그인이 필요합니다.' && !('key' in keyReplace), JSON.stringify(keyReplace));
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
   if (!exe) {

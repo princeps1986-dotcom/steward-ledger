@@ -49,6 +49,8 @@ export interface AuditLog {
   /** 필수. 사용자 입력 또는 시스템 자동 기입(합산·복구하기) */
   reason: string;
   timestamp: string;
+  /** 고친 사람(구글 로그인 이메일). 로그인이 없는 브라우저 모드와 이전 이력에는 없습니다. */
+  actor?: string;
 }
 
 /** 버전 호환 JSON 백업 컨테이너 */

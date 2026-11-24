@@ -9,6 +9,8 @@ export const KEYS = {
   dirtyYears: 'meta_dirty_years',
   /** 줄 단위 복원이 진행 중이면 시작 시각 등이 들어 있고, 끝나면 지워집니다(남아 있으면 복원이 중간에 중단된 것). */
   restoreMarker: 'meta_restore_in_progress',
+  /** 기존 평문 데이터를 건별 암호화로 옮기는 일을 끝냈다는 표식(없으면 이전이 필요하거나 중간에 멈춘 것) */
+  encrypted: 'meta_encrypted',
   /** 이전 버전이 남긴 시연 복구 정보(지금은 쓰지 않고, 시연 데이터를 제거할 때 지웁니다). */
   demoRestore: 'meta_demo_restore',
 } as const;

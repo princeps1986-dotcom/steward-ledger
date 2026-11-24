@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('desktop', {
   authLogin: () => ipcRenderer.invoke('auth:login'),
   authSetPin: (pin) => ipcRenderer.invoke('auth:set-pin', pin),
   authVerifyPin: (pin) => ipcRenderer.invoke('auth:verify-pin', pin),
+  dataKey: () => ipcRenderer.invoke('data:key'),
+  dataKeyReplace: () => ipcRenderer.invoke('data:key-replace'),
   authCancel: () => ipcRenderer.invoke('auth:cancel'),
   authLogout: () => ipcRenderer.invoke('auth:logout'),
   skipBackup: () => ipcRenderer.send('backup:skip'),

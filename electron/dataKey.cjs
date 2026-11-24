@@ -8,7 +8,7 @@ const { writeKeyFile } = require('./pcKey.cjs');
 
 const coded = (code, msg) => Object.assign(new Error(msg), { code });
 
-function createDataKeyStore({ safeStorage, dir, log }) {
+function createDataKeyStore({ safeStorage, dir, log, stamp }) {
   const file = path.join(dir, 'data-key.bin');
   let promise = null; // 동시에 불려도 한 번만 만들고, 실패하면 다음 호출 때 다시 시도
   const getDataKey = () => (promise ??= load().catch((err) => ((promise = null), Promise.reject(err))));
@@ -47,7 +47,22 @@ function createDataKeyStore({ safeStorage, dir, log }) {
     return key;
   }
 
-  return { getDataKey };
+  /**
+   * 풀 수 없는 열쇠 파일을 .old로 남기고 새 열쇠를 만듭니다. 호출하는 쪽(화면)이 '저장소가 비었거나 사용자가 새로 시작하기로 함'을 확인한 뒤에만 부릅니다.
+   * 지금 열쇠가 멀쩡히 풀리면 아무것도 바꾸지 않고 그 열쇠를 돌려줍니다(쓸 수 있는 열쇠를 실수로 버리지 않게).
+   */
+  async function replaceUnreadable() {
+    try {
+      return await getDataKey();
+    } catch (err) {
+      if (err.code !== 'DATA_KEY_UNREADABLE') throw err;
+    }
+    await fs.rename(file, `${file}.${stamp()}.old`); // 지우지 않고 남겨 둡니다.
+    promise = null;
+    return getDataKey();
+  }
+
+  return { getDataKey, replaceUnreadable };
 }
 
 module.exports = { createDataKeyStore };

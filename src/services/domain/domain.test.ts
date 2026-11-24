@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, DonationDraft, Member } from '../../contexts/types';
+import { setCurrentUser } from '../auth/currentUser';
 import { formatAmountInput, parseAmount } from './amount';
 import { lastSunday, monthsOfPeriod, todayString, withWeekday } from './dates';
 import { buildDonation, makeAudit, mergeDonation, validateReason } from './donationOps';
@@ -91,6 +92,15 @@ describe('donationOps', () => {
   it('requires an audit reason', () => {
     expect(() => makeAudit('DELETE', existing, null, '   ')).toThrow();
     expect(makeAudit('DELETE', existing, null, '오기입').reason).toBe('오기입');
+  });
+  it('records who made the change only when someone is logged in', () => {
+    expect(makeAudit('DELETE', existing, null, '오기입')).not.toHaveProperty('actor'); // 브라우저 모드
+    setCurrentUser({ email: 'fin@church.org', role: 'finance' });
+    try {
+      expect(makeAudit('DELETE', existing, null, '오기입').actor).toBe('fin@church.org');
+    } finally {
+      setCurrentUser(null);
+    }
   });
 });
 
