@@ -46,11 +46,11 @@ describe('계정 허용(admit)', () => {
     expect(await s.list()).toMatchObject([{ email: 'admin@church.org', role: 'admin', registered: true, disabled: false, hasPin: false }]);
   });
 
-  it('목록에 없는 계정은 거절하고 목록은 그대로다', async () => {
-    const { s, d } = await withAdmin();
-    const before = readFileSync(join(d, 'users.json'), 'utf8');
+  it('목록에 없는 계정은 거절하고 계정 목록은 그대로다(거절 기록만 늘어남)', async () => {
+    const { s } = await withAdmin();
+    const before = await s.list();
     await expect(s.admit(B)).rejects.toThrow('등록되지 않은 계정입니다');
-    expect(readFileSync(join(d, 'users.json'), 'utf8')).toBe(before);
+    expect(await s.list()).toEqual(before);
   });
 
   it('사전 등록한 이메일은 첫 로그인에서 sub가 묶이고, 그 뒤에는 sub로 알아본다', async () => {
@@ -231,5 +231,20 @@ describe('로그인·계정 변경 기록', () => {
     writeFileSync(join(d, 'users.json'), JSON.stringify({ version: 1, users: [{ sub: 'x', email: 'x@y.co', role: 'admin', addedAt: '2026-01-01', disabled: false, pin: null }] }));
     expect(await s.log()).toEqual([]);
     expect((await s.list()).map((u) => u.email)).toEqual(['x@y.co']);
+  });
+});
+
+describe('거절된 로그인 기록', () => {
+  it('등록되지 않은 계정과 사용 중지된 계정의 로그인 시도도 기록에 남는다', async () => {
+    const { s } = mk();
+    await s.admit(A);
+    await expect(s.admit(B)).rejects.toThrow('등록되지 않은 계정');
+    await s.add({ email: B.email, role: 'viewer' }, A.email);
+    await s.admit(B);
+    await s.setDisabled(B.email, true, A.email);
+    await expect(s.admit(B)).rejects.toThrow('사용이 중지된 계정');
+    const texts = (await s.log()).map((l) => l.text);
+    expect(texts).toContain('로그인 거절(등록되지 않은 계정)');
+    expect(texts).toContain('로그인 거절(사용 중지된 계정)');
   });
 });

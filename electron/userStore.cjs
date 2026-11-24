@@ -91,8 +91,15 @@ function createUserStore({ dir, now = Date.now }) {
               user.sub = sub;
             }
           }
-          if (!user) fail('등록되지 않은 계정입니다. 관리자에게 이메일 등록을 요청하세요.');
-          if (user.disabled) fail('사용이 중지된 계정입니다. 관리자에게 문의하세요.');
+          // 거절도 기록합니다(구글 로그인을 마친 계정만 여기까지 오므로 아무나 기록을 채울 수는 없음).
+          if (!user) {
+            await write(users, [mail, '로그인 거절(등록되지 않은 계정)']);
+            fail('등록되지 않은 계정입니다. 관리자에게 이메일 등록을 요청하세요.');
+          }
+          if (user.disabled) {
+            await write(users, [mail, '로그인 거절(사용 중지된 계정)']);
+            fail('사용이 중지된 계정입니다. 관리자에게 문의하세요.');
+          }
           if (user.email !== mail) {
             user.email = mail; // 구글 계정의 이메일이 바뀐 경우 sub로 알아보고 표시만 고칩니다.
           }
