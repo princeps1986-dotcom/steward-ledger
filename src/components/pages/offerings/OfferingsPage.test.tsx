@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProviders } from '../../../contexts/AppProviders';
 import { KEYS } from '../../../services/storage/keys';
 import { db } from '../../../services/storage/db';
@@ -40,6 +40,20 @@ describe('헌금 종류 화면의 큰 금액 확인 기준', () => {
     // 다시 고치기 시작하면 저장 안내는 사라진다
     fireEvent.change(input(), { target: { value: '6000000' } });
     expect(screen.queryByText('큰 금액 확인 기준을 저장했습니다.')).toBeNull();
+  });
+
+  it('저장소 오류로 저장이 실패하면 한글 오류를 보여 주고, [입력 취소]를 누르면 안내가 사라진다', async () => {
+    const put = vi.spyOn(db.kv, 'bulkPut').mockRejectedValueOnce(new Error('QuotaExceededError'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderPage(<OfferingsPage />);
+    fireEvent.change(input(), { target: { value: '5000000' } });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(await screen.findByText('저장하지 못했습니다. 잠시 뒤 다시 시도하세요.')).toBeTruthy();
+    expect(await saved()).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: '입력 취소' }));
+    expect(screen.queryByText('저장하지 못했습니다. 잠시 뒤 다시 시도하세요.')).toBeNull();
+    put.mockRestore();
+    log.mockRestore();
   });
 
   it('비워서 저장하면 오류를 보여 주고 값은 바뀌지 않는다', async () => {

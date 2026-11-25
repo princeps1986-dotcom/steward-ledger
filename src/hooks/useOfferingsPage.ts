@@ -45,7 +45,10 @@ export function useOfferingsPage() {
   useEffect(() => {
     setThreshold(formatNumber(settings.largeAmountThreshold));
   }, [settings.largeAmountThreshold]);
-  const cancelThreshold = useCallback(() => setThreshold(formatNumber(settings.largeAmountThreshold)), [settings.largeAmountThreshold]);
+  const cancelThreshold = useCallback(() => {
+    setThreshold(formatNumber(settings.largeAmountThreshold));
+    setThresholdMessage(null); // 되돌리면 앞의 저장·오류 안내도 지웁니다.
+  }, [settings.largeAmountThreshold]);
   const saveThreshold = useCallback(async () => {
     const t = parseAmount(threshold);
     if (t.kind !== 'ok') return setThresholdMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
@@ -53,8 +56,9 @@ export function useOfferingsPage() {
       await update({ largeAmountThreshold: t.value });
       setThresholdMessage({ kind: 'info', text: '큰 금액 확인 기준을 저장했습니다.' });
     } catch (e) {
-      // 저장소 오류도 이 칸 옆에 보여 줍니다(기준은 바뀌지 않음).
-      setThresholdMessage({ kind: 'error', text: `저장 실패: ${e instanceof Error ? e.message : String(e)}` });
+      // 저장소 오류는 영어일 수 있어 화면에는 한글 문장만 보이고, 원문은 콘솔에 남깁니다(기준은 바뀌지 않음).
+      console.error('큰 금액 확인 기준 저장 실패', e);
+      setThresholdMessage({ kind: 'error', text: '저장하지 못했습니다. 잠시 뒤 다시 시도하세요.' });
     }
   }, [threshold, update]);
   // 저장 때 정규화되는 값(공백·앞자리 0·쉼표)은 정규화한 뒤 비교해, 저장 후에도 변경으로 남지 않게 합니다.
