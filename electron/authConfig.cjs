@@ -10,7 +10,8 @@ const config = {
 try {
   Object.assign(config, require('./authConfig.local.cjs'));
 } catch (e) {
-  if (e.code !== 'MODULE_NOT_FOUND') throw e;
+  // 파일이 없을 때만 넘어갑니다(그 파일 안에서 다른 모듈을 못 찾은 경우는 오류로 알립니다).
+  if (e.code !== 'MODULE_NOT_FOUND' || !String(e.message).split('\n')[0].includes('authConfig.local')) throw e;
 }
 
 module.exports = config;
