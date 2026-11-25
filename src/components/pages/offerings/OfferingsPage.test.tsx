@@ -36,6 +36,10 @@ describe('헌금 종류 화면의 큰 금액 확인 기준', () => {
     fireEvent.click(screen.getByRole('button', { name: '저장' }));
     await waitFor(async () => expect(await saved()).toBe(5_000_000));
     expect(input().value).toBe('5,000,000');
+    expect(await screen.findByText('큰 금액 확인 기준을 저장했습니다.')).toBeTruthy();
+    // 다시 고치기 시작하면 저장 안내는 사라진다
+    fireEvent.change(input(), { target: { value: '6000000' } });
+    expect(screen.queryByText('큰 금액 확인 기준을 저장했습니다.')).toBeNull();
   });
 
   it('비워서 저장하면 오류를 보여 주고 값은 바뀌지 않는다', async () => {
