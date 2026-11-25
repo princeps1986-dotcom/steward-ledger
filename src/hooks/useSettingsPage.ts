@@ -6,7 +6,6 @@ import { DEFAULT_OFFERING_TYPES } from '../services/domain/offeringDefaults';
 import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
 import type { AppTheme, FontScale, PrintTheme } from '../contexts/types';
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
-import { formatAmountInput, formatNumber, parseAmount } from '../services/domain/amount';
 import { formatDateTime } from '../services/domain/dates';
 import { isCompleteYearBackup, saveBackupFile } from '../services/backup/backupService';
 import { decryptedBackup, isNdjsonFile, payloadBackup, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
@@ -68,7 +67,6 @@ export function useSettingsPage() {
   const hasMembersOrDonations = members.length > 0 || years.length > 0;
   const hasData = hasMembersOrDonations || typesChanged;
 
-  const [threshold, setThreshold] = useState(formatNumber(settings.largeAmountThreshold));
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
   // 복원 창의 '성도/헌금 종류도 백업 내용으로 덮어쓰기' 선택(창을 열 때마다 꺼진 상태로 시작)
@@ -95,26 +93,6 @@ export function useSettingsPage() {
   const backupBlocked = demoActive || demoCreating;
   // 프로그램 업데이트(useAppUpdate.ts)
   const appUpdateApi = useAppUpdate();
-
-  useEffect(() => {
-    setThreshold(formatNumber(settings.largeAmountThreshold));
-  }, [settings.largeAmountThreshold]);
-
-  /** 저장하지 않은 입력을 버리고 저장된 값으로 복구합니다. */
-  const cancelGeneral = useCallback(() => setThreshold(formatNumber(settings.largeAmountThreshold)), [settings.largeAmountThreshold]);
-
-  const saveGeneral = useCallback(async () => {
-    const t = parseAmount(threshold);
-    if (t.kind !== 'ok') return setMessage({ kind: 'error', text: '큰 금액 확인 기준을 입력하세요.' });
-    await update({ largeAmountThreshold: t.value });
-    setMessage({ kind: 'info', text: '설정을 저장했습니다.' });
-  }, [threshold, update]);
-
-  /** 저장 시 정규화되는 값(공백 제거·앞자리 0·쉼표)은 정규화한 뒤 비교해, 저장 후에도 변경으로 남지 않게 합니다. */
-  function isGeneralDirty(): boolean {
-    const t = parseAmount(threshold);
-    return t.kind !== 'ok' || t.value !== settings.largeAmountThreshold;
-  }
 
   // 10분 백업이 저장 중일 때 끄려고 하면 끄지 않고 안내창을 띄웁니다(체크 상태는 그대로).
   const [periodicBusyOpen, setPeriodicBusyOpen] = useState(false);
@@ -329,12 +307,6 @@ export function useSettingsPage() {
 
   return {
     ...appUpdateApi,
-    threshold,
-    setThreshold: (v: string) => setThreshold(formatAmountInput(v)),
-    saveGeneral,
-    cancelGeneral,
-    /** [설정 저장]을 눌러야 반영되는 항목(큰 금액 기준·백업 주기)에 저장하지 않은 변경이 있는지 */
-    dirty: isGeneralDirty(),
     isDesktop,
     autoBackupEnabled: settings.autoBackupEnabled,
     toggleAutoBackup,

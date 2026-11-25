@@ -12,3 +12,20 @@ CLAUDE.local.md
 .claude/settings.local.json
 graphify-out/
 electron/authConfig.local.cjs
+# 인증서·키 (설치 파일 서명용 등)
+*.pfx
+*.p12
+*.pem
+*.key
+# 환경변수 파일 전체 (예시 파일만 허용)
+.env.*
+!.env.example
+# 빌드·도구 부산물
+*.tsbuildinfo
+coverage/
+.vite/
+*.tmp
+# OS·편집기 잡파일
+Thumbs.db
+desktop.ini
+*.swp

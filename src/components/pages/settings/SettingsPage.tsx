@@ -33,27 +33,6 @@ export function SettingsPage() {
 
       <section className="card space-y-3">
         <h3 className="font-semibold">
-          기본 설정 <span className="ml-1 text-xs font-normal text-gray-500">[설정 저장]을 눌러야 적용됩니다</span>
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
-          <label>
-            <span className="label">큰 금액 확인 기준 (이 금액 초과 시 확인창)</span>
-            <input className="input text-right" inputMode="numeric" value={s.threshold} onChange={(e) => s.setThreshold(e.target.value)} />
-          </label>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="btn-primary" onClick={() => void s.saveGeneral()} disabled={!s.dirty}>
-            설정 저장
-          </button>
-          <button className="btn" onClick={s.cancelGeneral} disabled={!s.dirty}>
-            입력 취소
-          </button>
-          {s.dirty ? <span className="text-sm text-amber-700">저장하지 않은 변경이 있습니다.</span> : null}
-        </div>
-      </section>
-
-      <section className="card space-y-3">
-        <h3 className="font-semibold">
           화면 · 입력 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
         </h3>
         <ThemePicker legend="화면 테마" value={s.theme} options={s.themeOptions} onChange={s.changeTheme} />
