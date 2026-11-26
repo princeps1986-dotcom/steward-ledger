@@ -102,7 +102,9 @@ export interface DesktopApi {
   authVerifyPin(pin: string): Promise<{ ok: true } | { ok: false; left: number } | { ok: false; locked: true } | { ok: false; noPin: true } | { ok: false; disabled: true } | { error: string }>;
   /** 계정·역할 관리(관리자만, main이 확인). 화면은 6단계 관리자 탭. 실패하면 { error }. */
   usersList(): Promise<{ users: UserEntry[] } | { error: string }>;
-  usersLog(): Promise<{ log: AccountLogEntry[] } | { error: string }>;
+  /** rebuiltAt: 데이터가 있던 PC에서 계정 목록을 새로 만든 시각(관리자가 확인하기 전까지) */
+  usersLog(): Promise<{ log: AccountLogEntry[]; rebuiltAt: string | null } | { error: string }>;
+  usersAckRebuilt(): Promise<{ ok: true } | { error: string }>;
   usersAdd(user: { email: string; role: Role }): Promise<{ ok: true } | { error: string }>;
   usersSetRole(email: string, role: Role): Promise<{ ok: true } | { error: string }>;
   usersSetDisabled(email: string, disabled: boolean): Promise<{ ok: true } | { error: string }>;
@@ -137,6 +139,8 @@ export interface AuthStatus {
   email: string | null;
   role: Role | null;
   hasPin: boolean;
+  /** 화면을 다시 불러와 잠김: PIN·구글 재로그인으로 풀기 전에는 main이 데이터 열쇠를 주지 않음 */
+  locked?: boolean;
 }
 
 export interface UpdateCheck {

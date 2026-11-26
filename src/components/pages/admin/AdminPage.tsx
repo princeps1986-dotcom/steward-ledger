@@ -26,6 +26,17 @@ export function AdminPage() {
           백업 복원·전체 초기화는 [설정 정보]에서, 기간 헌금 삭제는 이 탭 아래에서 관리자만 할 수 있습니다.
         </p>
         <Notice message={a.error ? { kind: 'error', text: a.error } : null} />
+        {a.rebuiltAt ? (
+          <div role="alert" className="space-y-2 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            <p>
+              {formatDateTime(a.rebuiltAt)}에 계정 목록이 새로 만들어졌습니다. 그 전부터 이 PC에는 헌금 데이터가 있었습니다. 관리자가 계정 목록을 복구한 것이 아니라면, 누군가
+              계정 목록 파일(users.json)을 바꿔 관리자가 되었을 수 있습니다. 아래 기록과 [보고서]의 수정·삭제 이력에서 그 뒤의 작업을 확인하세요.
+            </p>
+            <button type="button" className="btn" disabled={a.busy} onClick={() => void a.ackRebuilt()}>
+              확인했습니다
+            </button>
+          </div>
+        ) : null}
         <table className="w-full">
           <thead>
             <tr>

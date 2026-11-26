@@ -9,7 +9,7 @@ import { AdminPage } from './AdminPage';
 vi.mock('../../../contexts/DonationContext', () => ({ useDonationActions: () => ({ deletePeriod: vi.fn() }) }));
 
 const user = (email: string, o: Partial<UserEntry> = {}): UserEntry => ({ email, role: 'finance', addedAt: '2026-11-24T00:00:00Z', disabled: false, registered: true, hasPin: false, ...o });
-function setDesktop(add: () => Promise<{ ok: true } | { error: string }> = async () => ({ ok: true })) {
+function setDesktop(add: () => Promise<{ ok: true } | { error: string }> = async () => ({ ok: true }), rebuilt: { at: string | null } = { at: null }) {
   const api = {
     usersList: vi.fn(async () => ({ users: [user('me@b.c', { role: 'admin' }), user('fin@b.c'), user('new@b.c', { registered: false }), user('off@b.c', { disabled: true })] })),
     usersLog: vi.fn(async () => ({
@@ -17,7 +17,9 @@ function setDesktop(add: () => Promise<{ ok: true } | { error: string }> = async
         { at: '2026-11-24T01:00:00Z', who: 'me@b.c', text: '오래된 기록' },
         { at: '2026-11-24T02:00:00Z', who: 'me@b.c', text: '최근 기록' },
       ],
+      rebuiltAt: rebuilt.at,
     })),
+    usersAckRebuilt: vi.fn(async () => ((rebuilt.at = null), { ok: true as const })),
     usersAdd: vi.fn(add),
     usersSetRole: vi.fn(async () => ({ ok: true as const })),
     usersSetDisabled: vi.fn(async () => ({ ok: true as const })),
@@ -40,6 +42,15 @@ describe('관리자 탭', () => {
     expect(screen.getByText('로그인 전(등록만 됨)')).toBeTruthy();
     const rows = screen.getAllByRole('row').map((r) => r.textContent ?? '');
     expect(rows.findIndex((t) => t.includes('최근 기록'))).toBeLessThan(rows.findIndex((t) => t.includes('오래된 기록')));
+  });
+
+  it('계정 목록이 새로 만들어졌으면 경고를 보이고, [확인했습니다]를 누르면 사라진다', async () => {
+    const api = setDesktop(undefined, { at: '2026-11-24T03:00:00Z' });
+    render(<AdminPage />);
+    expect((await screen.findByRole('alert')).textContent).toContain('계정 목록이 새로 만들어졌습니다');
+    fireEvent.click(screen.getByRole('button', { name: '확인했습니다' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(api.usersAckRebuilt).toHaveBeenCalled();
   });
 
   it('기간 헌금 삭제 영역이 있다(설정 화면에서 옮겨 옴)', async () => {

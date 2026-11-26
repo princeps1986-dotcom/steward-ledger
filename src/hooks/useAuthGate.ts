@@ -10,8 +10,9 @@ import { messageOf, useLock } from './useLock';
  * checking = 로그인 상태 확인 중 · signedOut = 로그인 필요 · pending = 브라우저에서 로그인하는 중
  * preparing = 저장 데이터 열쇠를 받고(필요하면 암호화로 옮기는) 준비 중 · failed = 준비 실패(다시 시도) · keyLost = 열쇠를 풀 수 없는데 데이터가 있음
  * ready = 앱을 열어도 됨 · locked = 자동 잠금(앱은 그대로 두고 가려서, 입력 중이던 내용이 남음. PIN이나 구글 재로그인으로 풂)
+ * reloaded = 화면을 다시 불러와 잠김(로그인은 남았지만 앱은 아직 열지 않음. 풀면 데이터를 준비해 엶)
  */
-export type AuthPhase = 'checking' | 'signedOut' | 'pending' | 'preparing' | 'failed' | 'keyLost' | 'ready' | 'locked';
+export type AuthPhase = 'checking' | 'signedOut' | 'pending' | 'preparing' | 'failed' | 'keyLost' | 'ready' | 'locked' | 'reloaded';
 
 
 /** PC앱의 구글 로그인 상태. 브라우저(시연) 모드에서는 로그인 없이 바로 ready. 로그인 방식은 electron/auth.cjs, 데이터 준비는 services/auth/prepareData.ts. */
@@ -65,8 +66,15 @@ export function useAuthGate() {
       (s) => {
         if (!live) return;
         setConfigured(s.configured);
-        if (s.email && s.role) void prepare({ email: s.email, role: s.role }); // 화면만 다시 불러온 경우 main에 로그인이 남아 있으면 이어서 씁니다.
-        else setPhase('signedOut');
+        if (!s.email || !s.role) return setPhase('signedOut');
+        const who = { email: s.email, role: s.role };
+        if (!s.locked) return void prepare(who); // 화면만 다시 불러온 경우 main에 로그인이 남아 있으면 이어서 씁니다.
+        // 다시 불러와 잠긴 경우: 풀 때까지 앱을 열지 않고 잠금 화면만 보입니다(useLock이 풀면서 준비).
+        me.current = who;
+        setEmail(who.email);
+        setRole(who.role);
+        setHasPin(s.hasPin);
+        setPhase('reloaded');
       },
       (e) => {
         if (!live) return;

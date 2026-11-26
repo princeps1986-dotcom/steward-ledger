@@ -10,6 +10,7 @@ export function useAdminPage() {
   const api = desktop();
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [log, setLog] = useState<AccountLogEntry[]>([]);
+  const [rebuiltAt, setRebuiltAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,6 +22,7 @@ export function useAdminPage() {
       if ('error' in l) return setError(l.error);
       setUsers(u.users);
       setLog([...l.log].reverse()); // 최근 것이 위로
+      setRebuiltAt(l.rebuiltAt ?? null);
     } catch (e) {
       setError(messageOf(e));
     }
@@ -52,11 +54,13 @@ export function useAdminPage() {
   return {
     users,
     log,
+    rebuiltAt,
     error,
     busy,
     me: currentUser()?.email ?? null,
     add: (email: string, role: Role) => change(() => api?.usersAdd({ email, role })),
     setRole: (email: string, role: Role) => change(() => api?.usersSetRole(email, role)),
     setDisabled: (email: string, disabled: boolean) => change(() => api?.usersSetDisabled(email, disabled)),
+    ackRebuilt: () => change(() => api?.usersAckRebuilt()),
   };
 }

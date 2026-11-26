@@ -26,9 +26,10 @@ export function useLock({ api, phase, setPhase, me, signOut, prepare, setHasPin 
     const s = await api?.authStatus();
     if (!s?.email) await signOut('사용이 중지되었거나 등록이 취소된 계정입니다. 관리자에게 문의하세요.');
     else if (s.role !== me.current?.role) await signOut('역할이 바뀌었습니다. 다시 로그인하세요.');
+    else if (phase === 'reloaded' && me.current) await prepare(me.current); // 다시 불러온 뒤라 앱 데이터가 아직 없음
     else setPhase('ready');
     return null;
-  }, [api, signOut]);
+  }, [api, signOut, phase, prepare]);
 
   /** 잠금 해제: PIN. 오류 문구를 돌려줍니다(성공이면 null). 5회 실패하면 로그아웃됩니다. */
   const unlockWithPin = useCallback(
@@ -67,10 +68,10 @@ export function useLock({ api, phase, setPhase, me, signOut, prepare, setHasPin 
       return null;
     }
     // 방금 로그인했으니 사용 중지는 아니고, 역할이 바뀌었으면 다시 로그인시키지 않고 새 역할로 앱을 다시 엽니다.
-    if (r.role !== me.current?.role) await prepare({ email: r.email, role: r.role });
+    if (r.role !== me.current?.role || phase === 'reloaded') await prepare({ email: r.email, role: r.role });
     else setPhase('ready');
     return null;
-  }, [api, signOut, prepare]);
+  }, [api, signOut, prepare, phase]);
   const setPin = useCallback(
     async (pin: string): Promise<string | null> => {
       const r = await api?.authSetPin(pin);

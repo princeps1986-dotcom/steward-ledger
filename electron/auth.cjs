@@ -20,6 +20,7 @@ const PAGE = (msg) =>
  */
 function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetch = fetch, now = Date.now, timeoutMs = 180000 }) {
   let session = null;
+  let locked = false; // 화면을 다시 불러온 뒤: 로그인은 두되 PIN·구글 재로그인으로 풀기 전에는 데이터 열쇠를 주지 않습니다.
   let pending = null; // 로그인 중에 또 눌러도 같은 진행을 돌려줍니다.
   let pendingReauth = false;
   let cancelWait = null; // 브라우저 응답을 기다리는 중일 때만 있음
@@ -111,6 +112,7 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     try {
       const who = verifyIdToken(tokens.id_token, { keys, clientId, nonce, now: now(), ...(reauth ? { minAuthTime: Math.floor(startedAt / 1000) } : {}) });
       session = await admit(who); // 이 앱을 써도 되는 계정인지·역할이 무엇인지(electron/userStore.cjs)
+      locked = false;
       return session;
     } catch (err) {
       // 검증·허용에 실패한 로그인 시도 뒤에는 이전 로그인도 남기지 않습니다. 재로그인(잠금 해제)이 취소·실패한 경우는 잠금이 그대로라 유지합니다(사용 중지는 main이 매번 다시 확인).
@@ -129,9 +131,16 @@ function createAuth({ clientId, clientSecret, openBrowser, admit, fetch: rawFetc
     cancel: () => cancelWait?.(),
     logout: () => {
       session = null;
+      locked = false;
+    },
+    lock: () => {
+      if (session) locked = true;
+    },
+    unlock: () => {
+      locked = false;
     },
     session: () => session,
-    status: () => ({ configured: !!clientId, email: session ? session.email : null, role: session ? session.role : null }),
+    status: () => ({ configured: !!clientId, email: session ? session.email : null, role: session ? session.role : null, locked: !!session && locked }),
   };
 }
 

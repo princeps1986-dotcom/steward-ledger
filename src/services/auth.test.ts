@@ -33,8 +33,10 @@ interface Auth {
   login(o?: { reauth?: boolean }): Promise<Admitted>;
   cancel(): void;
   logout(): void;
+  lock(): void;
+  unlock(): void;
   session(): Admitted | null;
-  status(): { configured: boolean; email: string | null; role: string | null };
+  status(): { configured: boolean; email: string | null; role: string | null; locked: boolean };
 }
 const { createAuth } = req('../../electron/auth.cjs') as {
   createAuth(o: { clientId: string; clientSecret?: string; openBrowser(u: string): Promise<void>; admit(id: Identity): Promise<Admitted>; fetch: typeof fetch; now?: () => number; timeoutMs?: number }): Auth;
@@ -126,7 +128,7 @@ function harness(o: { admit?: (id: Identity) => Promise<Admitted>; mutate?: (q: 
 describe('구글 로그인 흐름(electron/auth.cjs)', () => {
   it('PKCE·state·nonce를 담아 브라우저를 열고, 코드를 받아 계정을 확인한다(토큰은 저장하지 않음)', async () => {
     const h = harness();
-    expect(h.auth.status()).toEqual({ configured: true, email: null, role: null });
+    expect(h.auth.status()).toEqual({ configured: true, email: null, role: null, locked: false });
     const who = await h.auth.login();
     expect(who).toEqual({ sub: '1077', email: 'pastor@example.com', role: 'admin' });
     expect(h.auth.session()).toEqual(who);
@@ -155,6 +157,23 @@ describe('구글 로그인 흐름(electron/auth.cjs)', () => {
     await h.auth.login();
     h.auth.logout();
     expect(h.auth.session()).toBeNull();
+  });
+
+  it('잠금(화면 다시 불러오기)은 로그인을 두고, 풀거나 다시 로그인하거나 로그아웃하면 사라진다', async () => {
+    const h = harness();
+    h.auth.lock();
+    expect(h.auth.status().locked).toBe(false); // 로그인 전에는 잠글 것이 없음
+    await h.auth.login();
+    h.auth.lock();
+    expect(h.auth.status()).toMatchObject({ email: 'pastor@example.com', locked: true });
+    h.auth.unlock();
+    expect(h.auth.status().locked).toBe(false);
+    h.auth.lock();
+    await h.auth.login(); // 다시 로그인하면 풀림
+    expect(h.auth.status().locked).toBe(false);
+    h.auth.lock();
+    h.auth.logout();
+    expect(h.auth.status().locked).toBe(false);
   });
 
   it('state가 다른 요청은 무시하고 계속 기다린다(다른 프로그램의 접속으로 로그인이 깨지지 않음)', async () => {

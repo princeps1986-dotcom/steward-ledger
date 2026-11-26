@@ -13,12 +13,12 @@ import { SessionBar } from './SessionBar';
 vi.mock('../../services/auth/prepareData', () => ({ prepareData: vi.fn(), startOver: vi.fn() }));
 
 type Verify = Awaited<ReturnType<DesktopApi['authVerifyPin']>>;
-function setDesktop(o: { hasPin?: boolean; verify?: Verify; relogin?: string } = {}) {
+function setDesktop(o: { hasPin?: boolean; verify?: Verify; relogin?: string; locked?: boolean } = {}) {
   const status = { email: 'a@b.c' as string | null, role: 'finance' as 'finance' | 'viewer' };
   const api = {
     status,
     skipBackup: vi.fn(async () => undefined),
-    authStatus: vi.fn(async () => ({ configured: true, email: status.email, role: status.email ? status.role : null, hasPin: o.hasPin ?? true })),
+    authStatus: vi.fn(async () => ({ configured: true, email: status.email, role: status.email ? status.role : null, hasPin: o.hasPin ?? true, locked: o.locked ?? false })),
     authLogin: vi.fn(async () => ({ email: o.relogin ?? 'a@b.c', role: status.role })),
     authVerifyPin: vi.fn(async () => o.verify ?? ({ ok: true } as Verify)),
     authSetPin: vi.fn(async () => ({ ok: true as const })),
@@ -52,6 +52,32 @@ afterEach(() => {
   setCurrentUser(null);
   setClosingNotice(false);
   vi.useRealTimers();
+});
+
+describe('화면을 다시 불러온 뒤', () => {
+  it('main이 잠겨 있으면 앱을 열지 않고 잠금 화면만 보이며, PIN으로 풀면 그때 데이터를 준비해 연다', async () => {
+    const api = setDesktop({ locked: true });
+    render(gate);
+    await screen.findByRole('dialog', { name: '잠금' });
+    expect(screen.queryByText('앱 내용')).toBeNull();
+    expect(prepareData).not.toHaveBeenCalled();
+    typePin('123456');
+    fireEvent.click(screen.getByRole('button', { name: '잠금 풀기' }));
+    expect(await screen.findByText('앱 내용')).toBeTruthy();
+    expect(api.authVerifyPin).toHaveBeenCalledWith('123456');
+    expect(prepareData).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: '잠금' })).toBeNull();
+  });
+
+  it('PIN이 없으면 구글 재로그인으로 풀고 데이터를 준비해 연다', async () => {
+    const api = setDesktop({ locked: true, hasPin: false });
+    render(gate);
+    await screen.findByRole('dialog', { name: '잠금' });
+    fireEvent.click(screen.getByRole('button', { name: /구글/ }));
+    expect(await screen.findByText('앱 내용')).toBeTruthy();
+    expect(api.authLogin).toHaveBeenCalledWith({ reauth: true });
+    expect(prepareData).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('자동 잠금', () => {

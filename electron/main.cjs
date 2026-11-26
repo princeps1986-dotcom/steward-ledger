@@ -379,9 +379,10 @@ if (!app.requestSingleInstanceLock()) {
       if (mainWindow === win) mainWindow = null;
     });
 
-    // 화면을 다시 불러오면(Ctrl+R·충돌 뒤 재로드) 로그인을 지워, 잠금 화면을 건너뛰지 못하게 합니다. 개발 서버의 자동 새로고침은 제외.
+    // 화면을 다시 불러오면(Ctrl+R·충돌 뒤 재로드) 로그인은 두고 잠급니다: PIN·구글 재로그인으로 풀기 전에는 데이터 열쇠를 주지 않아
+    // 잠금 화면을 건너뛰지 못합니다. 개발 서버의 자동 새로고침은 제외.
     const reloadGuard = createReloadGuard(() => {
-      if (!DEV_URL) auth.logout();
+      if (!DEV_URL) auth.lock();
     });
     win.webContents.on('did-finish-load', reloadGuard);
 
@@ -548,12 +549,14 @@ if (!app.requestSingleInstanceLock()) {
   // 구글 로그인(electron/auth.cjs). 토큰은 저장하지 않고 화면에도 넘기지 않으며, 화면은 계정(이메일)만 받습니다.
   // 환경변수는 개발 실행에서만 씁니다(설치한 앱은 authConfig.cjs 값만).
   const devEnv = (name) => (!app.isPackaged && process.env[name]) || '';
+  // 스모크 시험은 '로그인 설정이 없는 앱'을 시험하므로, authConfig.local.cjs가 있어도 설정을 비웁니다(개발 실행에서만).
+  const noLogin = devEnv('STEWARD_TEST_NO_LOGIN') === '1';
   const users = createUserStore({ dir: app.getPath('userData') });
 
   const auth = createAuth({
     admit: users.admit, // 계정 목록에 있는 사람만 들어오고, 목록이 비었을 때 처음 로그인한 사람은 관리자(electron/userStore.cjs)
-    clientId: devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
-    clientSecret: devEnv('STEWARD_GOOGLE_CLIENT_SECRET') || authConfig.clientSecret,
+    clientId: noLogin ? '' : devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
+    clientSecret: noLogin ? '' : devEnv('STEWARD_GOOGLE_CLIENT_SECRET') || authConfig.clientSecret,
     // 이 주소는 auth.cjs가 만들지만, 시스템 브라우저로 여는 곳이므로 구글 로그인 주소만 허용합니다.
     openBrowser: async (url) => {
       const u = new URL(url);
@@ -581,11 +584,15 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('auth:set-pin', withSession(async (me, pin) => (await users.setPin(me.sub, pin), { ok: true })));
   ipcMain.handle(
     'auth:verify-pin',
-    withSession(async (me, pin) => {
-      const r = await users.verifyPin(me.sub, pin);
-      if (r.locked) auth.logout();
-      return r;
-    }),
+    withSession(
+      async (me, pin) => {
+        const r = await users.verifyPin(me.sub, pin);
+        if (r.ok) auth.unlock();
+        if (r.locked) auth.logout();
+        return r;
+      },
+      { whileLocked: true },
+    ),
   );
   // 저장 데이터를 잠그는 열쇠(electron/dataKey.cjs): 로그인한 사람에게만 화면(렌더러)으로 넘깁니다. 화면은 WebCrypto로 한 번 가져온 뒤 값을 버립니다.
   // 열쇠를 풀 수 없으면 code를 함께 보내 화면이 '저장소가 비었으면 새로 시작 / 데이터가 있으면 안내'를 정하게 합니다.
@@ -609,7 +616,8 @@ if (!app.requestSingleInstanceLock()) {
   // main이 실제로 막는 역할 제한: 계정·역할 관리는 관리자만, 업데이트·직접 백업 만들기는 관리자·재정담당만.
   // 헌금 저장·복원·초기화는 화면(렌더러)의 저장소 작업이라 main이 막을 수 없고 화면 규칙으로 막습니다(src/services/auth/access.ts).
   ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
-  ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log() })));
+  ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log(), rebuiltAt: await users.rebuiltAt() })));
+  ipcMain.handle('users:ack-rebuilt', adminOnly(async (me) => (await users.ackRebuilt(me.email), { ok: true })));
   ipcMain.handle('users:add', adminOnly(async (me, u) => (await users.add({ email: u && u.email, role: u && u.role }, me.email), { ok: true })));
   ipcMain.handle('users:set-role', adminOnly(async (me, email, role) => (await users.setRole(email, role, me.email), { ok: true })));
   ipcMain.handle('users:set-disabled', adminOnly(async (me, email, disabled) => (await users.setDisabled(email, !!disabled, me.email), { ok: true })));

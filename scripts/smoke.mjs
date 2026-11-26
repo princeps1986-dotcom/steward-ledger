@@ -13,7 +13,7 @@ const appData = mkdtempSync(join(tmpdir(), 'steward-smoke-'));
 // SMOKE_EXE=설치 전 묶음(release\win-unpacked\StewardLedger.exe)을 주면 포장된 앱(퓨즈·asar 포함)을 시험합니다.
 const exe = process.env.SMOKE_EXE;
 const backupDir = join(appData, 'backups');
-const child = spawn(exe || electronPath, exe ? [`--remote-debugging-port=${PORT}`] : ['.', `--remote-debugging-port=${PORT}`], { env: { ...process.env, STEWARD_TEST_APPDATA: appData, STEWARD_TEST_BACKUP_DIR: backupDir }, stdio: 'ignore' });
+const child = spawn(exe || electronPath, exe ? [`--remote-debugging-port=${PORT}`] : ['.', `--remote-debugging-port=${PORT}`], { env: { ...process.env, STEWARD_TEST_APPDATA: appData, STEWARD_TEST_BACKUP_DIR: backupDir, STEWARD_TEST_NO_LOGIN: '1' }, stdio: 'ignore' });
 const failures = [];
 const check = (name, ok, detail = '') => {
   console.log(`${ok ? '통과' : '실패'}  ${name}${detail ? ` — ${detail}` : ''}`);
@@ -69,7 +69,7 @@ try {
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
   // 로그인 설정이 없는 환경(클라이언트 ID 없음)에서는 브라우저를 열지 않고 안내만 돌려준다. 화면에는 계정(이메일)만 오가고 토큰은 없다.
-  check('로그인 IPC: 설정이 없으면 안내만 돌려줌', JSON.stringify(await ev('window.desktop.authStatus()')) === '{"configured":false,"email":null,"role":null,"hasPin":false}');
+  check('로그인 IPC: 설정이 없으면 안내만 돌려줌', JSON.stringify(await ev('window.desktop.authStatus()')) === '{"configured":false,"email":null,"role":null,"locked":false,"hasPin":false}');
   const loginResult = await ev('window.desktop.authLogin()');
   check('로그인 IPC: 설정이 없으면 로그인 시도가 안내 문구로 실패', typeof loginResult?.error === 'string' && loginResult.error.includes('클라이언트 ID'), JSON.stringify(loginResult));
   // 로그인하지 않은 상태에서는 PIN 만들기·확인 모두 거절한다.

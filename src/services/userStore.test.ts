@@ -19,6 +19,8 @@ interface Store {
   add(u: { email: string; role: string }, actor?: string): Promise<void>;
   setRole(email: string, role: string, actor?: string): Promise<void>;
   log(): Promise<{ at: string; who: string; text: string }[]>;
+  rebuiltAt(): Promise<string | null>;
+  ackRebuilt(actor: string): Promise<void>;
   setDisabled(email: string, disabled: boolean, actor: string): Promise<void>;
   current(sub: string): Promise<{ email: string; role: Role; disabled: boolean } | null>;
   hasPin(sub: string): Promise<boolean>;
@@ -226,6 +228,26 @@ describe('로그인·계정 변경 기록', () => {
     await s.admit(A);
     for (let i = 0; i < 105; i++) await s.admit(A);
     expect(await s.log()).toHaveLength(100);
+  });
+
+  it('데이터가 이미 있는 PC에서 계정 목록이 새로 만들어지면 흔적을 남기고, 관리자가 확인하면 지운다', async () => {
+    const { s, d } = mk();
+    writeFileSync(join(d, 'data-key.bin'), 'x'); // 이 PC에서 이미 데이터를 썼음(electron/dataKey.cjs)
+    await s.admit(A);
+    expect(await s.rebuiltAt()).toBe('2026-11-24T00:00:00.000Z');
+    expect((await s.log()).at(-1)?.text).toContain('이미 데이터가 있었음');
+    expect(await createUserStore({ dir: d }).rebuiltAt()).toBe('2026-11-24T00:00:00.000Z'); // 파일에 남아 앱을 다시 켜도 보임
+    await s.admit(A); // 다른 변경을 써도 흔적은 그대로
+    expect(await s.rebuiltAt()).not.toBeNull();
+    await s.ackRebuilt(A.email);
+    expect(await s.rebuiltAt()).toBeNull();
+    expect((await s.log()).at(-1)).toMatchObject({ who: 'admin@church.org', text: '계정 목록을 새로 만든 경고 확인' });
+  });
+
+  it('처음 설치한 PC(데이터 없음)에서 첫 관리자가 생길 때는 흔적을 남기지 않는다', async () => {
+    const { s } = mk();
+    await s.admit(A);
+    expect(await s.rebuiltAt()).toBeNull();
   });
 
   it('기록이 없는 예전 파일도 읽고 계정 목록은 그대로다', async () => {

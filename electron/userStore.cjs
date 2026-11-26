@@ -33,6 +33,10 @@ function createUserStore({ dir, now = Date.now }) {
     return run;
   };
   let curLog = [];
+  // 데이터가 이미 있는 PC에서 계정 목록을 새로 만든 시각(관리자가 확인하면 지움). 누가 users.json을 바꿔 관리자가 된 흔적을 남깁니다.
+  let curRebuilt = null;
+  // 데이터 열쇠 파일(electron/dataKey.cjs)이 있으면 이 PC에서 이미 데이터를 쓴 적이 있습니다.
+  const hadData = () => fs.access(path.join(dir, 'data-key.bin')).then(() => true, () => false);
   const pinFails = new Map(); // sub → 연속 실패 횟수(메모리에만: 앱을 다시 켜면 어차피 구글 로그인부터)
 
   /** 파일이 없을 때만 빈 목록입니다. 깨진 파일을 빈 목록으로 보면 아무나 관리자가 되므로 오류로 알립니다. */
@@ -43,6 +47,7 @@ function createUserStore({ dir, now = Date.now }) {
     } catch (err) {
       if (err.code === 'ENOENT') {
         curLog = [];
+        curRebuilt = null;
         return [];
       }
       throw err;
@@ -55,12 +60,13 @@ function createUserStore({ dir, now = Date.now }) {
     }
     if (!data || !Array.isArray(data.users)) fail(CORRUPT);
     curLog = Array.isArray(data.log) ? data.log : [];
+    curRebuilt = typeof data.rebuiltAt === 'string' ? data.rebuiltAt : null;
     return data.users;
   }
   // 기록(로그인·계정 변경, 최근 100건)은 계정 목록과 한 파일에 둡니다. 이메일·역할만 적고 토큰·PIN은 없습니다. 읽기→쓰기는 exclusive 안이라 curLog가 섞이지 않습니다.
   const write = (users, ...notes) => {
     curLog = [...curLog, ...notes.map(([who, text]) => ({ at: new Date(now()).toISOString(), who: mailOf(who), text }))].slice(-MAX_LOG);
-    return writeKeyFile(file, JSON.stringify({ version: 1, users, log: curLog }, null, 2));
+    return writeKeyFile(file, JSON.stringify({ version: 1, users, log: curLog, ...(curRebuilt ? { rebuiltAt: curRebuilt } : {}) }, null, 2));
   };
   // 거절 기록은 덤입니다: 기록을 쓰다 실패해도(디스크 오류 등) 원래의 거절 사유가 가려지지 않게 오류를 삼킵니다.
   const note = (users, who, text) => write(users, [who, text]).catch(() => undefined);
@@ -82,9 +88,14 @@ function createUserStore({ dir, now = Date.now }) {
         const users = await read();
         const first = users.length === 0;
         let user;
+        let rebuilt = false;
         if (users.length === 0) {
           user = newUser(sub, mail, 'admin');
           users.push(user);
+          if (await hadData()) {
+            rebuilt = true;
+            curRebuilt = new Date(now()).toISOString();
+          }
         } else {
           user = users.find((u) => u.sub === sub);
           if (!user) {
@@ -106,7 +117,7 @@ function createUserStore({ dir, now = Date.now }) {
             user.email = mail; // 구글 계정의 이메일이 바뀐 경우 sub로 알아보고 표시만 고칩니다.
           }
         }
-        await write(users, [mail, first ? '로그인(처음 관리자로 등록)' : '로그인']);
+        await write(users, [mail, rebuilt ? '로그인(계정 목록이 없어 관리자로 등록. 이 PC에는 이미 데이터가 있었음)' : first ? '로그인(처음 관리자로 등록)' : '로그인']);
         pinFails.delete(sub);
         return { sub, email: user.email, role: user.role };
       }),
@@ -158,6 +169,18 @@ function createUserStore({ dir, now = Date.now }) {
 
     /** 최근 기록(오래된 것부터) */
     log: () => exclusive(async () => (await read(), curLog.slice())),
+
+    /** 데이터가 있던 PC에서 계정 목록을 새로 만든 시각(ISO). 없거나 관리자가 확인했으면 null */
+    rebuiltAt: () => exclusive(async () => (await read(), curRebuilt)),
+
+    /** 관리자가 위 경고를 확인함(기록에 남기고 경고를 지움) */
+    ackRebuilt: (actorEmail) =>
+      exclusive(async () => {
+        const users = await read();
+        if (!curRebuilt) return;
+        curRebuilt = null;
+        await write(users, [actorEmail, '계정 목록을 새로 만든 경고 확인']);
+      }),
 
     /** 로그인한 계정의 지금 상태(역할·중지 여부). 목록에서 빠졌으면 null. 로그인 때 복사해 둔 값이 낡았을 수 있어 호출 때마다 다시 읽습니다. */
     current: (sub) =>

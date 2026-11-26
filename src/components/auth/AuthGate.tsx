@@ -97,6 +97,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       </SessionContext.Provider>
     );
   }
+  // 화면을 다시 불러와 잠김: 앱은 아직 열지 않고 잠금 화면만(풀면 데이터를 준비해 엶)
+  if (g.phase === 'reloaded') return <LockScreen email={g.email} hasPin={g.hasPin} unlockWithPin={g.unlockWithPin} unlockWithGoogle={g.unlockWithGoogle} logout={() => void g.logout()} />;
   if (g.phase === 'checking') return null; // 몇 십 밀리초 안에 끝나므로 깜빡임을 피해 비워 둡니다.
 
   if (g.phase === 'preparing') {

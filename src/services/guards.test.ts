@@ -6,9 +6,9 @@ type Me = { sub: string; email: string; role: string };
 type Now = { email: string; role: string; disabled: boolean } | null;
 const req = createRequire(import.meta.url);
 const { createGuards, createReloadGuard } = req('../../electron/guards.cjs') as {
-  createGuards(o: { auth: { session(): Me | null; logout(): void }; users: { current(sub: string): Promise<Now> }; notAllowed: string }): {
+  createGuards(o: { auth: { session(): Me | null; logout(): void; status(): { locked: boolean } }; users: { current(sub: string): Promise<Now> }; notAllowed: string }): {
     freshSession(): Promise<Me | null>;
-    withSession<T>(fn: (me: Me, ...a: unknown[]) => Promise<T>): (e: unknown, ...a: unknown[]) => Promise<T | { error: string }>;
+    withSession<T>(fn: (me: Me, ...a: unknown[]) => Promise<T>, o?: { whileLocked?: boolean }): (e: unknown, ...a: unknown[]) => Promise<T | { error: string }>;
     roleIs(...roles: string[]): Promise<boolean>;
     adminOnly<T>(fn: (me: Me, ...a: unknown[]) => Promise<T>): (e: unknown, ...a: unknown[]) => Promise<T | { error: string }>;
   };
@@ -17,8 +17,8 @@ const { createGuards, createReloadGuard } = req('../../electron/guards.cjs') as 
 
 const NOT_ALLOWED = '이 작업을 할 권한이 없습니다.';
 function setup(session: Me | null, now: () => Now) {
-  const state = { session };
-  const auth = { session: () => state.session, logout: vi.fn(() => void (state.session = null)) };
+  const state = { session, locked: false };
+  const auth = { session: () => state.session, logout: vi.fn(() => void (state.session = null)), status: () => ({ locked: !!state.session && state.locked }) };
   const users = { current: vi.fn(async () => now()) };
   return { state, auth, users, g: createGuards({ auth, users, notAllowed: NOT_ALLOWED }) };
 }
@@ -63,6 +63,17 @@ describe('로그인·역할 검사(electron/guards.cjs)', () => {
   it('처리기가 던진 오류는 { error }로 바뀐다', async () => {
     const { g } = setup(fin, () => ({ email: 'a@b.c', role: 'finance', disabled: false }));
     expect(await g.withSession(async () => Promise.reject(new Error('깨짐')))(null)).toEqual({ error: '깨짐' });
+  });
+
+  it('화면을 다시 불러와 잠긴 동안은 PIN 확인(whileLocked) 말고 모두 거절한다', async () => {
+    const { g, state } = setup({ ...fin, role: 'admin' }, () => ({ email: 'a@b.c', role: 'admin', disabled: false }));
+    state.locked = true;
+    expect(await g.withSession(ok)(null)).toEqual({ error: '잠금을 먼저 푸세요.' }); // 데이터 열쇠 등
+    expect(await g.adminOnly(ok)(null)).toEqual({ error: '잠금을 먼저 푸세요.' });
+    expect(await g.roleIs('admin')).toBe(false); // 백업 읽기·직접 백업·업데이트
+    expect(await g.withSession(ok, { whileLocked: true })(null)).toBe('admin');
+    state.locked = false;
+    expect(await g.withSession(ok)(null)).toBe('admin');
   });
 });
 
