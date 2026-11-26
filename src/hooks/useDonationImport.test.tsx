@@ -42,8 +42,10 @@ describe('useDonationImport 저장 흐름', () => {
     await loadFile(result, [{ 날짜: '2026-09-06', 성도이름: '김철수', 연락처뒷4자리: '1234', 헌금종류: '십일조', 금액: '1000' }]);
     await waitFor(() => expect(result.current.imp.canSave).toBe(true));
 
-    const confirm = result.current.imp.confirm;
-    await act(() => Promise.all([confirm(), confirm()]));
+    const { confirm, onPaste, loadId } = result.current.imp;
+    // 저장 중에 들어온 붙여넣기는 무시합니다.
+    await act(() => Promise.all([confirm(), confirm(), onPaste('성도이름\t헌금종류\t금액\n김철수\t십일조\t5')]));
+    expect(result.current.imp.loadId).toBe(loadId);
 
     const rows = await readMonth('2026-09');
     expect(rows).toHaveLength(1);
@@ -64,6 +66,7 @@ describe('useDonationImport 저장 흐름', () => {
     await waitFor(() => expect(result.current.imp.preview.map((r) => r.rowNo)).toEqual([2, 4]));
     act(() => result.current.imp.setLargeConfirmed(true));
     await act(() => result.current.imp.confirm());
+    expect(result.current.imp.result).toContain('제거한 1건은 저장하지 않았습니다');
 
     expect((await readMonth('2026-07')).map((d) => d.amount).sort()).toEqual([1000, 99000000]);
   });
@@ -75,13 +78,16 @@ describe('useDonationImport 저장 흐름', () => {
     expect(result.current.imp.needsDate).toBe(true);
     expect(result.current.imp.canSave).toBe(false);
 
+    const firstLoad = result.current.imp.loadId;
     act(() => result.current.imp.setDefaultDate('2026-06-07'));
+    expect(result.current.imp.loadId).toBe(firstLoad);
     await waitFor(() => expect(result.current.imp.canSave).toBe(true));
 
     // 다음 자료를 불러오면 날짜를 다시 골라야 합니다.
     await act(() => result.current.imp.onFile(fileEvent));
     expect(result.current.imp.needsDate).toBe(true);
     expect(result.current.imp.preview).toHaveLength(0);
+    expect(result.current.imp.loadId).toBe(firstLoad + 1);
   });
 
   it('날짜가 섞인 파일은 저장하지 않습니다', async () => {

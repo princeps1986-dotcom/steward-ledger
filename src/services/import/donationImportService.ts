@@ -1,10 +1,13 @@
 import type { Donation, DonationDraft, Member, OfferingType } from '../../contexts/types';
 import { isDateInRange, isValidDateString } from '../domain/dates';
+import { LINE_KEY } from './memberImportService';
 
 /** 헌금 CSV 한 줄(긴 형식: 한 줄 = 헌금 1건). 값은 모두 문자열입니다. */
 export interface DonationImportRow {
-  /** 파일의 줄 번호(1행은 헤더이므로 첫 데이터는 2) */
+  /** 목록에서 줄을 구별하는 번호(첫 데이터는 2) */
   rowNo: number;
+  /** 화면에 보이는 원본의 줄 번호(1행은 제목). 성도 × 헌금종류 표는 한 줄이 여러 건이 되어 rowNo와 다릅니다. */
+  line: number;
   date: string;
   name: string;
   phoneLast4: string;
@@ -28,7 +31,7 @@ export interface MatchedDonationRow extends DonationImportRow {
   large: boolean;
 }
 
-const ALIASES: Record<keyof Omit<DonationImportRow, 'rowNo'>, string[]> = {
+const ALIASES: Record<keyof Omit<DonationImportRow, 'rowNo' | 'line'>, string[]> = {
   date: ['날짜', '헌금날짜', '일자'],
   name: ['성도이름', '성도 이름', '이름', '성명'],
   phoneLast4: ['연락처뒷4자리', '연락처 뒷4자리', '연락처뒷자리', '전화뒷자리'],
@@ -53,26 +56,34 @@ const pick = (rec: Record<string, string>, aliases: string[]): string => {
   return '';
 };
 
+/** 쉼표·공백·'원'과 맨 앞의 원화 기호를 뗍니다. 역슬래시는 CP949 CSV에서 ₩가 바뀌는 글자입니다. */
+const cleanAmount = (s: string) => s.replace(/[,\s원]/g, '').replace(/^[₩￦\\]/, '');
+
+/** 표의 빈 칸: 비었거나 '-'·0(원화 기호나 '원' 서식 포함, 예: ₩ -, 0원). '원'·쉼표만 있는 칸은 잘못 적은 값이라 오류로 남깁니다. */
+const isBlankAmount = (s: string) => /^(?:[-0]원?)?$/.test(s.replace(/\s/g, '').replace(/^[₩￦\\]/, ''));
+
 /**
  * 표 계산 프로그램에서 복사한 글(탭 구분)을 CSV를 읽은 것과 같은 행 목록으로 바꿉니다.
  * 첫 줄에 금액 열이 있으면 양식(한 줄 = 1건) 그대로, 없으면 성도 × 헌금종류 표로 보고 금액 칸마다 한 줄을 만듭니다.
  */
 export function parsePastedDonations(text: string): Record<string, string>[] {
   // 첫 칸이 빈 제목 줄은 탭으로 시작하므로, 나누기 전에 trim하지 않습니다.
-  const [header, ...body] = text
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .map((line) => line.split('\t').map((c) => c.trim()));
+  const lines = text.split(/\r?\n/);
+  // 줄 번호는 제목 줄을 1행으로 셉니다(중간의 빈 줄도 번호는 차지).
+  const first = lines.findIndex((l) => l.trim());
+  const table = lines.flatMap((l, i) => (l.trim() ? [{ line: i - first + 1, cells: l.split('\t').map((c) => c.trim()) }] : []));
+  const header = table[0]?.cells;
+  const body = table.slice(1);
   if (!header || header.length < 2) throw new Error('표를 읽지 못했습니다. 표 계산 프로그램에서 제목 줄까지 선택해 복사한 뒤 붙여넣으세요.');
   const toRecord = (cells: string[]) => Object.fromEntries(header.map((h, i) => [h, cells[i] ?? '']));
-  if (header.some((h) => ALIASES.amountRaw.includes(h))) return body.map(toRecord);
+  if (header.some((h) => ALIASES.amountRaw.includes(h))) return body.map(({ line, cells }) => ({ ...toRecord(cells), [LINE_KEY]: String(line) }));
 
   // 첫 칸에 날짜(연도로 시작)를 적은 표는 그 날짜를 모든 줄에 적용하고, 첫 열을 이름으로 봅니다. 형식 검사는 줄마다 합니다.
   const cornerDate = /^\d{4}\s*[./-]/.test(header[0]) ? header[0] : null;
   const nameCol = Math.max(header.findIndex((h) => ALIASES.name.includes(h)), header[0] === '' || cornerDate ? 0 : -1);
   if (nameCol < 0) throw new Error('첫 줄은 제목 줄이어야 합니다. 첫 칸은 비우거나 "이름"으로 두고, 오른쪽에 헌금 종류 이름을 적으세요.');
   const extra = [...ALIASES.date, ...ALIASES.phoneLast4, ...ALIASES.memo];
-  return body.flatMap((cells) => {
+  return body.flatMap(({ line, cells }) => {
     const rec = toRecord(cells);
     // 날짜 열이 따로 있으면 그 값이 첫 칸의 날짜보다 우선합니다.
     const common = Object.fromEntries(extra.filter((k) => k in rec).map((k) => [k, rec[k]]));
@@ -81,8 +92,8 @@ export function parsePastedDonations(text: string): Record<string, string>[] {
     return Array.from({ length: Math.max(header.length, cells.length) }, (_, i) => i).flatMap((i) => {
       const typeName = header[i] ?? '';
       const amount = cells[i] ?? '';
-      if (i === nameCol || extra.includes(typeName) || ['', '-', '0'].includes(amount)) return [];
-      return [{ ...common, 성도이름: cells[nameCol] ?? '', 헌금종류: typeName, 금액: amount }];
+      if (i === nameCol || extra.includes(typeName) || isBlankAmount(amount)) return [];
+      return [{ ...common, [LINE_KEY]: String(line), 성도이름: cells[nameCol] ?? '', 헌금종류: typeName, 금액: amount }];
     });
   });
 }
@@ -98,12 +109,13 @@ export function normalizeDonationRows(raw: Record<string, string>[]): { rows: Do
     const split = paren && (!column || column === paren[2]);
     return {
       rowNo: i + 2,
+      line: Number(rec[LINE_KEY]) || i + 2,
       // yyyy-mm-dd, yyyy.mm.dd, yyyy/mm/dd만 받아 yyyy-mm-dd로 바꿉니다. 그 밖의 값은 그대로 두어 형식 오류가 되게 합니다.
       date: pick(rec, ALIASES.date).replace(/^(\d{4})([-./])(\d{2})\2(\d{2})$/, '$1-$3-$4'),
       name: split ? paren[1] : rawName,
       phoneLast4: split ? paren[2] : column,
       typeName: pick(rec, ALIASES.typeName),
-      amountRaw: pick(rec, ALIASES.amountRaw).replace(/[,\s원]/g, ''),
+      amountRaw: cleanAmount(pick(rec, ALIASES.amountRaw)),
       memo: pick(rec, ALIASES.memo),
     };
   });
@@ -192,11 +204,13 @@ export function matchDonationRows(rows: DonationImportRow[], ctx: DonationMatchC
       };
       // 파일 안에서 같은 줄이 두 번 나오면 실수일 수 있어 막습니다.
       const key = `${date}|${member.id}|${type.id}|${amount}`;
-      if (seen.has(key)) fail('파일 안에 같은 줄이 두 번 있습니다. 한 줄을 지우세요.');
+      const repeated = seen.has(key);
       seen.add(key);
 
       const found = ctx.existing?.[idx];
-      if (found && found.amount === amount) {
+      // 반복된 줄은 저장된 기록이 있어도 '이미 저장'으로 덮지 않고 오류로 남깁니다.
+      if (repeated) fail('파일 안에 같은 줄이 두 번 있습니다. 한 줄을 지우세요.');
+      else if (found && found.amount === amount) {
         status = 'SAVED';
         messages.push('이미 같은 헌금이 저장되어 있어 건너뜁니다.');
       } else {

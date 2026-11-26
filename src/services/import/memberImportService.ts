@@ -53,18 +53,35 @@ export function decodeCsvBytes(bytes: Uint8Array): string {
   }
 }
 
+/** 읽은 행에 원본 줄 번호(1행은 제목)를 실어 나르는 이름 */
+export const LINE_KEY = '__line';
+
 /** 파일에서 헤더 기준 행 목록을 읽습니다. 값은 모두 문자열이며 수식은 평가하지 않습니다. */
 export async function readImportFile(file: File): Promise<Record<string, string>[]> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const lower = file.name.toLowerCase();
   if (lower.endsWith('.csv')) {
     const Papa = (await import('papaparse')).default;
-    const parsed = Papa.parse<Record<string, string>>(decodeCsvBytes(bytes), {
+    // 제목 앞의 빈 줄만 먼저 떼고(뗀 줄 수는 줄 번호에 더함), 중간의 빈 줄은 줄 번호를 매긴 뒤에 버립니다.
+    const raw = decodeCsvBytes(bytes);
+    const lead = raw.match(/^([\s,]*\n)+/)?.[0] ?? '';
+    const skipped = (lead.match(/\n/g) ?? []).length;
+    const text = raw.slice(lead.length);
+    // 구분 문자(쉼표·탭·세미콜론)는 빈 줄을 빼고 알아냅니다. 빈 줄이 섞이면 자동 판별이 쉼표로 떨어집니다.
+    const { delimiter } = Papa.parse(text, { preview: 10, skipEmptyLines: 'greedy' }).meta;
+    const parsed = Papa.parse<Record<string, string>>(text, {
+      delimiter,
       header: true,
-      skipEmptyLines: 'greedy',
       transformHeader: (h) => h.trim(),
     });
-    return parsed.data;
+    // 따옴표 안의 줄바꿈(엑셀 칸 안 Alt+Enter)은 한 기록이 여러 줄을 차지하므로, 그만큼 다음 번호를 늘립니다.
+    let line = 2 + skipped;
+    return parsed.data.flatMap((rec) => {
+      const joined = Object.values(rec).join('');
+      const at = line;
+      line += 1 + (joined.match(/\n/g)?.length ?? 0);
+      return joined.trim() ? [{ ...rec, [LINE_KEY]: String(at) }] : [];
+    });
   }
   throw new Error('CSV(.csv) 파일만 가져올 수 있습니다.');
 }

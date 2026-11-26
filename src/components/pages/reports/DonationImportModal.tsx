@@ -1,6 +1,11 @@
 import { useDonationImport } from '../../../hooks/useDonationImport';
+import { usePaging } from '../../../hooks/usePaging';
+import { formatWon } from '../../../services/domain/amount';
 import { Modal } from '../../shared/Modal';
 import { DatePicker } from '../../shared/DatePicker';
+import { Pager } from '../../shared/Pager';
+
+const PAGE_SIZE = 100;
 
 const STATUS_COLOR = {
   OK: 'text-emerald-700',
@@ -11,12 +16,13 @@ const STATUS_COLOR = {
 
 function ImportBody({ onClose }: { onClose(): void }) {
   const im = useDonationImport(onClose);
+  const paging = usePaging(im.preview.length, PAGE_SIZE, String(im.loadId));
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="btn cursor-pointer">
+        <label className={`btn ${im.busy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
           파일 선택 (.csv)
-          <input type="file" accept=".csv" className="hidden" onChange={(e) => void im.onFile(e)} />
+          <input type="file" accept=".csv" className="hidden" disabled={im.busy} onChange={(e) => void im.onFile(e)} />
         </label>
         <button className="btn" onClick={im.downloadTemplate}>
           양식 다운로드
@@ -27,6 +33,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
         className="w-full resize-none rounded border border-dashed px-3 py-2 text-sm"
         rows={1}
         readOnly
+        disabled={im.busy}
         value=""
         aria-label="헌금 표 붙여넣기"
         placeholder="또는 여기를 누르고 표를 붙여넣기(Ctrl+V) — 첫 줄은 헌금 종류(첫 칸에 날짜 가능), 첫 열은 성도 이름"
@@ -69,10 +76,15 @@ function ImportBody({ onClose }: { onClose(): void }) {
               </button>
             </div>
           ) : null}
+          {im.dateError ? (
+            <p role="alert" className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              {im.dateError}
+            </p>
+          ) : null}
           <p className="text-sm">
             저장 {im.summary.save}건 · 이미 저장됨 {im.summary.saved}건 · 확인 {im.summary.warn}건 · 오류 {im.summary.err}건
           </p>
-          <div className="max-h-[50vh] overflow-auto rounded border">
+          <div ref={paging.scrollRef} className="max-h-[50vh] overflow-auto rounded border">
             <table className="w-full whitespace-nowrap">
               <thead className="sticky top-0">
                 <tr>
@@ -88,9 +100,9 @@ function ImportBody({ onClose }: { onClose(): void }) {
                 </tr>
               </thead>
               <tbody>
-                {im.preview.map((r) => (
+                {im.preview.slice(paging.from, paging.to).map((r) => (
                   <tr key={r.rowNo}>
-                    <td className="td">{r.rowNo}</td>
+                    <td className="td">{r.line}</td>
                     <td className={`td font-semibold ${STATUS_COLOR[r.status]}`}>{r.statusLabel}</td>
                     <td className="td">{r.draft?.date ?? r.date}</td>
                     <td className="td">{r.name}</td>
@@ -101,7 +113,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
                     {im.summary.err > 0 ? (
                       <td className="td text-right">
                         {r.status === 'ERROR' ? (
-                          <button className="btn whitespace-nowrap" aria-label={`${r.rowNo}행 제거`} onClick={() => im.removeRow(r.rowNo)} disabled={im.busy}>
+                          <button className="btn whitespace-nowrap" aria-label={`${r.line}행 ${r.typeName} 제거`} onClick={() => im.removeRow(r.rowNo)} disabled={im.busy}>
                             제거
                           </button>
                         ) : null}
@@ -112,11 +124,22 @@ function ImportBody({ onClose }: { onClose(): void }) {
               </tbody>
             </table>
           </div>
+          <Pager paging={paging} />
           {im.largeCount > 0 ? (
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={im.largeConfirmed} onChange={(e) => im.setLargeConfirmed(e.target.checked)} />
-              큰 금액 {im.largeCount}건을 확인했습니다.
-            </label>
+            <div className="space-y-1 text-sm">
+              {/* 다른 쪽에 있는 줄도 보고 확인하도록 큰 금액 줄을 모두 적습니다. */}
+              <ul aria-label="큰 금액 줄" className="max-h-24 overflow-auto rounded border border-amber-300 px-3 py-1 text-amber-700">
+                {im.largeRows.map((r) => (
+                  <li key={r.rowNo}>
+                    {r.line}행 · {r.name} · {r.typeName} · {formatWon(Number(r.amountRaw))}
+                  </li>
+                ))}
+              </ul>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={im.largeConfirmed} onChange={(e) => im.setLargeConfirmed(e.target.checked)} />
+                큰 금액 {im.largeCount}건을 확인했습니다.
+              </label>
+            </div>
           ) : null}
         </>
       ) : null}

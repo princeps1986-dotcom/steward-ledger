@@ -29,6 +29,8 @@ export function useDonationImport(onDone: () => void) {
   const actions = useDonationActions();
 
   const [fileName, setFileName] = useState('');
+  // 새로 불러올 때마다 늘어, 미리보기를 1쪽으로 돌립니다(붙여넣기는 이름이 늘 같음).
+  const [loadId, setLoadId] = useState(0);
   const [rows, setRows] = useState<DonationImportRow[] | null>(null);
   const [hasDateColumn, setHasDateColumn] = useState(true);
   const [defaultDate, setDefaultDate] = useState('');
@@ -38,6 +40,8 @@ export function useDonationImport(onDone: () => void) {
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestRef = useRef(0);
+  /** 불러온 줄 수. 저장할 때 남은 줄과의 차이가 화면에서 제거한 건수입니다. */
+  const loadedRef = useRef(0);
   const busyRef = useRef(false);
   const exclusive = useMemo(() => createExclusive(busyRef), []);
 
@@ -80,9 +84,12 @@ export function useDonationImport(onDone: () => void) {
   }, [rows, defaultDate, classify, needsDate]);
 
   const load = useCallback(async (name: string, read: () => Record<string, string>[] | Promise<Record<string, string>[]>) => {
+    // 저장 중에 불러온 자료는 저장이 끝나며 지워지므로 받지 않습니다.
+    if (busyRef.current) return;
     setError(null);
     setResult(null);
     setFileName(name);
+    setLoadId((n) => n + 1);
     // 이전 자료의 미리보기와 날짜는 새 자료에 이어 쓰지 않습니다.
     setMatched([]);
     setDefaultDate('');
@@ -90,6 +97,7 @@ export function useDonationImport(onDone: () => void) {
       const raw = await read();
       if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
       const { rows: parsed, hasDateColumn: hasDate } = normalizeDonationRows(raw);
+      loadedRef.current = parsed.length;
       setHasDateColumn(hasDate);
       setRows(parsed);
     } catch (err) {
@@ -111,7 +119,8 @@ export function useDonationImport(onDone: () => void) {
 
   const errorCount = matched.filter((r) => r.status === 'ERROR').length;
   const toSave = matched.filter((r) => r.draft && r.status !== 'SAVED' && r.status !== 'ERROR');
-  const largeCount = matched.filter((r) => r.large).length;
+  const largeRows = matched.filter((r) => r.large);
+  const largeCount = largeRows.length;
   const dateError = fileDateError(matched);
   const canSave = !busy && rows !== null && !needsDate && errorCount === 0 && !dateError && toSave.length > 0 && (largeCount === 0 || largeConfirmed);
 
@@ -138,7 +147,9 @@ export function useDonationImport(onDone: () => void) {
           // 한 파일(한 날짜)을 한 번에 저장합니다. 저장은 원자적이라 실패하면 아무것도 남지 않고, 복구하기가 파일 전체를 되돌립니다.
           const batch = await actions.saveBatch(drafts, 'SEPARATE', batchLabel(drafts, members));
           const total = batch.lines.reduce((s, l) => s + l.amount, 0);
-          setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.`);
+          const removed = loadedRef.current - rows.length;
+          const removedNote = removed > 0 ? ` 화면에서 제거한 ${removed}건은 저장하지 않았습니다.` : '';
+          setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.${removedNote}`);
           setRows(null);
           setMatched([]);
           setLargeConfirmed(false);
@@ -170,6 +181,7 @@ export function useDonationImport(onDone: () => void) {
 
   return {
     fileName,
+    loadId,
     hasPreview: rows !== null,
     hasDateColumn,
     needsDate,
@@ -178,6 +190,7 @@ export function useDonationImport(onDone: () => void) {
     preview: matched.map((r) => ({ ...r, statusLabel: STATUS_LABEL[r.status] })),
     summary,
     largeCount,
+    largeRows,
     largeConfirmed,
     setLargeConfirmed,
     canSave,

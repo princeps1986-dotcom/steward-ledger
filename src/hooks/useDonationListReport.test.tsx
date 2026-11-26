@@ -20,7 +20,7 @@ describe('useDonationListReport 입력일', () => {
   it('입력 시각을 한국 시간으로 주고, 잘못된 값은 빈 칸으로 둡니다', async () => {
     const rows = [row('a', '2026-10-04'), row('b', '2026-10-04')];
     rows[0].createdAt = '2026-10-04T15:30:00.000Z';
-    rows[1].createdAt = '';
+    rows[1].createdAt = '2026-02-30T00:00:00Z';
     await transact(async () => ({ writes: [monthWrite('2026-10', rows as never)], result: 0 }));
     const { result } = renderHook(() => {
       const f = useReportFilters();
