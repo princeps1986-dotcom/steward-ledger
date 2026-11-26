@@ -60,6 +60,7 @@ describe('화면을 다시 불러온 뒤', () => {
     render(gate);
     await screen.findByRole('dialog', { name: '잠금' });
     expect(screen.queryByText('앱 내용')).toBeNull();
+    expect(screen.getByText(/다시 불러와 잠갔습니다/)).toBeTruthy(); // 입력이 남았다고 말하지 않음
     expect(prepareData).not.toHaveBeenCalled();
     typePin('123456');
     fireEvent.click(screen.getByRole('button', { name: '잠금 풀기' }));

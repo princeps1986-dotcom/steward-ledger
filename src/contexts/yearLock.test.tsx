@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent,render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { YearLockSection } from '../components/pages/settings/YearLockSection';
@@ -34,6 +34,7 @@ beforeEach(async () => {
   await transact(async () => ({ writes: [{ key: 'settings', value: null }, monthWrite('2025-01', [don('a', '2025-01-05')]), monthWrite('2025-02', [don('b', '2025-02-02'), don('c', '2025-02-09')]), monthWrite('2026-01', [don('d', '2026-01-04')])], result: 0 }), { ignoreYearLocks: true });
 });
 afterEach(() => {
+  cleanup();
   delete window.desktop;
   setCurrentUser(null);
 });
@@ -85,6 +86,28 @@ describe('연도 잠금', () => {
       fireEvent.click(buttons[1]);
     });
     await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2025', '2026']));
+  });
+
+  it('더블클릭의 두 번째 클릭은 바뀌어 나온 [잠금 풀기]를 누르지 않는다', async () => {
+    render(<YearLockSection />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('button', { name: '잠그기' }))[0], { detail: 1 });
+    const unlock = await screen.findByRole('button', { name: '잠금 풀기' });
+    await act(async () => {
+      fireEvent.click(unlock, { detail: 2 });
+    });
+    expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2026']);
+    fireEvent.click(unlock, { detail: 1 });
+    await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual([]));
+  });
+
+  it('스스로 풀 수 없는 재정담당은 [잠그기] 전에 한 번 더 확인한다', async () => {
+    login('finance');
+    render(<YearLockSection />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('button', { name: '잠그기' }))[0]);
+    const dialog = await screen.findByRole('dialog', { name: '2026년을 잠글까요?' });
+    expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears ?? []).toEqual([]);
+    fireEvent.click(within(dialog).getByRole('button', { name: '잠그기' }));
+    await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2026']));
   });
 });
 

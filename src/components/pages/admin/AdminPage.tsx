@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { useAdminPage } from '../../../hooks/useAdminPage';
 import { ROLES, ROLE_LABEL, type Role } from '../../../services/auth/roles';
 import { formatDateTime } from '../../../services/domain/dates';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { PeriodDeleteSection } from '../settings/PeriodDeleteSection';
 
@@ -10,6 +12,7 @@ export function AdminPage() {
   const a = useAdminPage();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('finance');
+  const [myNewRole, setMyNewRole] = useState<Role | null>(null); // 본인 역할을 낮추기 전 확인(바꾸면 [관리자] 탭이 바로 사라짐)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +58,11 @@ export function AdminPage() {
                   {u.email === a.me ? <span className="ml-1 text-xs text-gray-500">(나)</span> : null}
                 </td>
                 <td className="td">
-                  <select className="input" aria-label={`${u.email} 역할`} value={u.role} disabled={a.busy} onChange={(e) => void a.setRole(u.email, e.target.value as Role)}>
+                  <select className="input" aria-label={`${u.email} 역할`} value={u.role} disabled={a.busy} onChange={(e) => {
+                      const next = e.target.value as Role;
+                      if (u.email === a.me && next !== 'admin') setMyNewRole(next);
+                      else void a.setRole(u.email, next);
+                    }}>
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
                         {ROLE_LABEL[r]}
@@ -96,6 +103,28 @@ export function AdminPage() {
           </button>
         </form>
       </section>
+
+      <Modal
+        open={myNewRole !== null}
+        onClose={() => setMyNewRole(null)}
+        title="내 역할을 바꿀까요?"
+        footer={
+          <ConfirmFooter
+            onCancel={() => setMyNewRole(null)}
+            onConfirm={async () => {
+              if (myNewRole && a.me) await a.setRole(a.me, myNewRole);
+              setMyNewRole(null);
+            }}
+            confirmLabel="바꾸기"
+            tone="danger"
+            busy={a.busy}
+          />
+        }
+      >
+        <p className="text-sm leading-relaxed text-gray-700">
+          내 역할을 {myNewRole ? ROLE_LABEL[myNewRole] : ''}(으)로 바꾸면 바로 관리자 권한이 없어져 이 탭이 사라집니다. 다시 관리자가 되려면 다른 관리자가 바꿔 주어야 합니다.
+        </p>
+      </Modal>
 
       <PeriodDeleteSection />
 

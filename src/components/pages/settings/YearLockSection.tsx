@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useDonationYears } from '../../../contexts/DonationContext';
 import { useSettings, useSettingsActions } from '../../../contexts/SettingsContext';
 import { allowed } from '../../../services/auth/access';
+import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 
 /** 연도 잠금(마감): 잠긴 연도는 헌금 입력·수정·삭제가 막힙니다. 걸기는 관리자·재정담당, 풀기는 관리자만. */
@@ -10,6 +12,7 @@ export function YearLockSection() {
   const { update } = useSettingsActions();
   const years = useDonationYears();
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState<string | null>(null); // 스스로 풀 수 없는 사람(재정담당)이 잠그기 전 확인
   const all = [...new Set([...years, ...lockedYears])].sort().reverse();
 
   const toggle = async (year: string, lock: boolean) => {
@@ -39,14 +42,15 @@ export function YearLockSection() {
               </span>
               {locked ? (
                 allowed('year:unlock') ? (
-                  <button type="button" className="btn" onClick={() => void toggle(y, false)}>
+                  // 더블클릭의 두 번째 클릭(detail > 1)은 무시: 같은 자리에 바뀌어 나온 반대 단추가 눌리지 않게
+                  <button type="button" className="btn" onClick={(e) => e.detail > 1 || void toggle(y, false)}>
                     잠금 풀기
                   </button>
                 ) : (
                   <span className="text-xs text-gray-500">풀려면 관리자에게 요청하세요</span>
                 )
               ) : (
-                <button type="button" className="btn" onClick={() => void toggle(y, true)}>
+                <button type="button" className="btn" onClick={(e) => e.detail > 1 || (allowed('year:unlock') ? void toggle(y, true) : setAsking(y))}>
                   잠그기
                 </button>
               )}
@@ -54,6 +58,23 @@ export function YearLockSection() {
           );
         })}
       </ul>
+      <Modal
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={`${asking ?? ''}년을 잠글까요?`}
+        footer={
+          <ConfirmFooter
+            onCancel={() => setAsking(null)}
+            onConfirm={async () => {
+              if (asking) await toggle(asking, true);
+              setAsking(null);
+            }}
+            confirmLabel="잠그기"
+          />
+        }
+      >
+        <p className="text-sm leading-relaxed text-gray-700">잠그면 그해 헌금을 입력·수정·삭제할 수 없고, 잠금은 관리자만 풀 수 있습니다.</p>
+      </Modal>
       <p className="text-xs text-gray-500">백업 복원·전체 초기화는 잠긴 연도도 바꿉니다(관리자만 할 수 있습니다).</p>
     </section>
   );

@@ -19,7 +19,7 @@ function Card({ children }: { children: ReactNode }) {
 }
 
 /** 자동 잠금 화면: PIN(6자리)으로 풀고, PIN이 없으면 구글 재로그인으로 풉니다. 아래 앱은 지우지 않고 가려만 두어 입력 중이던 내용이 남습니다. */
-function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: { email: string | null; hasPin: boolean; unlockWithPin(pin: string): Promise<string | null>; unlockWithGoogle(): Promise<string | null>; logout(): void }) {
+function LockScreen({ email, hasPin, reloaded = false, unlockWithPin, unlockWithGoogle, logout }: { email: string | null; hasPin: boolean; reloaded?: boolean; unlockWithPin(pin: string): Promise<string | null>; unlockWithGoogle(): Promise<string | null>; logout(): void }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +46,7 @@ function LockScreen({ email, hasPin, unlockWithPin, unlockWithGoogle, logout }: 
     <div data-lock-screen className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-white p-4" role="dialog" aria-modal="true" aria-label="잠금">
       <div className="w-[26rem] max-w-full space-y-4 rounded-lg border border-gray-200 p-6 shadow">
         <h1 className="text-center text-xl font-bold">잠겨 있습니다</h1>
-        <p className="text-center text-sm text-gray-600">{email ?? ''} 계정이 한동안 쓰이지 않아 화면을 잠갔습니다. 입력하던 내용은 그대로입니다.</p>
+        <p className="text-center text-sm text-gray-600">{reloaded ? `${email ?? ''} 계정의 화면을 다시 불러와 잠갔습니다. 저장하지 않은 입력은 사라졌습니다.` : `${email ?? ''} 계정이 한동안 쓰이지 않아 화면을 잠갔습니다. 입력하던 내용은 그대로입니다.`}</p>
         <Notice message={error ? { kind: 'error', text: error } : null} />
         {closing ? (
           <div className="space-y-2 text-center" role="status">
@@ -98,7 +98,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
   // 화면을 다시 불러와 잠김: 앱은 아직 열지 않고 잠금 화면만(풀면 데이터를 준비해 엶)
-  if (g.phase === 'reloaded') return <LockScreen email={g.email} hasPin={g.hasPin} unlockWithPin={g.unlockWithPin} unlockWithGoogle={g.unlockWithGoogle} logout={() => void g.logout()} />;
+  if (g.phase === 'reloaded') return <LockScreen email={g.email} hasPin={g.hasPin} reloaded unlockWithPin={g.unlockWithPin} unlockWithGoogle={g.unlockWithGoogle} logout={() => void g.logout()} />;
   if (g.phase === 'checking') return null; // 몇 십 밀리초 안에 끝나므로 깜빡임을 피해 비워 둡니다.
 
   if (g.phase === 'preparing') {

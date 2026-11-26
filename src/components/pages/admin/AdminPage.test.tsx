@@ -77,6 +77,19 @@ describe('관리자 탭', () => {
     await waitFor(() => expect(api.usersSetDisabled).toHaveBeenCalledWith('fin@b.c', true));
   });
 
+  it('내 역할을 낮추려면 확인을 받고, [취소]하면 바꾸지 않는다', async () => {
+    const api = setDesktop();
+    render(<AdminPage />);
+    await screen.findByText('fin@b.c');
+    fireEvent.change(screen.getByLabelText('me@b.c 역할'), { target: { value: 'viewer' } });
+    expect(await screen.findByRole('dialog', { name: '내 역할을 바꿀까요?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '취소' }));
+    expect(api.usersSetRole).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('me@b.c 역할'), { target: { value: 'viewer' } });
+    fireEvent.click(await screen.findByRole('button', { name: '바꾸기' }));
+    await waitFor(() => expect(api.usersSetRole).toHaveBeenCalledWith('me@b.c', 'viewer'));
+  });
+
   it('이메일을 등록하고, main이 거절하면 사유를 보여 준다', async () => {
     const api = setDesktop(async () => ({ error: '관리자는 최대 2명입니다.' }));
     render(<AdminPage />);
