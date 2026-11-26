@@ -196,7 +196,7 @@ export function ReportsPage() {
         {tab === 'PERSONAL' ? <PersonalTab f={f} /> : null}
         {tab === 'AUDIT' ? <AuditTab f={f} /> : null}
       </div>
-      <DonationImportModal open={importOpen} onClose={() => setImportOpen(false)} initialDate={f.weekDate} />
+      <DonationImportModal open={importOpen} onClose={() => setImportOpen(false)} />
 
     </div>
   );

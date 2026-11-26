@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, Member, OfferingType } from '../../contexts/types';
-import { batchLabel, fileDateError, matchDonationRows, normalizeDonationRows } from './donationImportService';
+import { batchLabel, fileDateError, matchDonationRows, normalizeDonationRows, parsePastedDonations } from './donationImportService';
 
 const member = (over: Partial<Member>) => ({ id: 'm1', name: '김철수', isActive: true, phoneLast4: '1234', familyGroupId: 'g1', ...over }) as Member;
 const type = (name: string, over: Partial<OfferingType> = {}) =>
@@ -115,3 +115,79 @@ describe('파일 단위 규칙', () => {
     expect(rs[0].messages[0]).toContain('비활성');
   });
 });
+
+describe('붙여넣은 표 읽기', () => {
+  it('성도 × 헌금종류 표는 금액 칸마다 한 줄이 되고 빈 칸은 건너뛴다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('\t십일조\t감사헌금\t구제헌금\r\n돌고래\t1,000\t2000\t\r\n홍길동\t\t-\t3000\r\n'));
+    expect(hasDateColumn).toBe(false);
+    expect(rows.map((r) => [r.name, r.typeName, r.amountRaw])).toEqual([
+      ['돌고래', '십일조', '1000'],
+      ['돌고래', '감사헌금', '2000'],
+      ['홍길동', '구제헌금', '3000'],
+    ]);
+  });
+
+  it('연락처·날짜 열은 헌금 종류로 보지 않고 각 줄에 붙인다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('날짜\t이름\t연락처뒷4자리\t십일조\r\n2026-11-22\t홍길동\t1111\t500'));
+    expect(hasDateColumn).toBe(true);
+    expect(rows).toMatchObject([{ date: '2026-11-22', name: '홍길동', phoneLast4: '1111', typeName: '십일조', amountRaw: '500' }]);
+  });
+
+  it('양식(한 줄 = 1건) 표는 CSV처럼 그대로 읽는다', () => {
+    const [r] = csv(parsePastedDonations('성도이름\t헌금종류\t금액\r\n김철수\t십일조\t1000')).rows;
+    expect(r).toMatchObject({ name: '김철수', typeName: '십일조', amountRaw: '1000' });
+  });
+
+  it('이름(뒷4자리)는 나눠 읽고, 열의 값과 다르면 나누지 않는다', () => {
+    const rows = csv([
+      row({ 성도이름: '홍길동(1111)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동（0123）', 연락처뒷4자리: '123' }),
+      row({ 성도이름: '홍길동(1111)', 연락처뒷4자리: '2222' }),
+      row({ 성도이름: '김철수(청년)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동 (1111)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동( 1111)', 연락처뒷4자리: '' }),
+    ]).rows;
+    expect(rows.map((r) => [r.name, r.phoneLast4])).toEqual([
+      ['홍길동', '1111'],
+      ['홍길동', '0123'],
+      ['홍길동(1111)', '2222'],
+      ['김철수(청년)', ''],
+      ['홍길동 (1111)', ''],
+      ['홍길동( 1111)', ''],
+    ]);
+  });
+
+  it('첫 칸의 날짜는 모든 줄에 적용하고, 날짜 열이 있으면 열이 우선한다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('2026.11.22\t십일조\t감사헌금\r\n강민수\t1000\t2000\r\n강요한(7285)\t\t4000'));
+    expect(hasDateColumn).toBe(true);
+    expect(rows.map((r) => [r.date, r.name, r.phoneLast4, r.amountRaw])).toEqual([
+      ['2026-11-22', '강민수', '', '1000'],
+      ['2026-11-22', '강민수', '', '2000'],
+      ['2026-11-22', '강요한', '7285', '4000'],
+    ]);
+    expect(csv(parsePastedDonations('2026-11-22\t일자\t십일조\n강민수\t2026-11-15\t1')).rows[0].date).toBe('2026-11-15');
+  });
+
+  it('날짜는 yyyy-mm-dd, yyyy.mm.dd, yyyy/mm/dd만 받는다', () => {
+    for (const 날짜 of ['2026-11-22', '2026.11.22', '2026/11/22']) {
+      const [r] = matchDonationRows(csv([row({ 날짜 })]).rows, base);
+      expect(r.draft?.date).toBe('2026-11-22');
+    }
+    for (const 날짜 of ['2026-1-4', '2026. 11. 22.', '2026-11.22', '20261122', '11/22/2026']) {
+      const [r] = matchDonationRows(csv([row({ 날짜 })]).rows, base);
+      expect(r.status).toBe('ERROR');
+    }
+    const [corner] = matchDonationRows(csv(parsePastedDonations('2026.1.4\t십일조\n김철수\t1')).rows, base);
+    expect(corner.messages.join()).toContain('날짜 형식');
+  });
+
+  it('날짜 열이 모두 비어 있으면 날짜가 없는 것으로 본다', () => {
+    expect(csv([row({ 날짜: '' })]).hasDateColumn).toBe(false);
+  });
+
+  it('제목 줄이 없거나 표가 아니면 오류', () => {
+    expect(() => parsePastedDonations('돌고래\t1000')).toThrow('제목 줄');
+    expect(() => parsePastedDonations('안녕')).toThrow('표를 읽지 못했습니다');
+  });
+});
+

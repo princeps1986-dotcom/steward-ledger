@@ -15,7 +15,7 @@
 - 로직: `src/hooks/useReports.ts`(기간 선택·250ms 지연의 `useReportFilters` 포함), `useDonationEditor.ts`, `usePaging.ts`, `useIsPrinting.ts`, `useNameTag.ts`
 - 규칙: `src/services/domain/periodSummary.ts`(집계), `weekly.ts`, `donationList.ts`, `listPager.ts`, `auditFilter.ts`(수정·삭제 이력), `family.ts`(세대 합산), `memberName.ts`(동명이인 표기), `positions.ts`(직분), `monthCache.ts`(월 캐시), `compare.ts`
 - PDF 저장: `useReports.ts` → `desktopBridge.savePdf` → `electron/main.cjs`의 `report:save-pdf`
-- 헌금 CSV 불러오기(일별 보고서, [PDF 저장] 오른쪽): 화면 `DonationImportModal.tsx`(ReportsPage에서 엶), 로직 `src/hooks/useDonationImport.ts`, 줄 읽기·성도/종류 매칭·상태 판정(순수 함수) `src/services/import/donationImportService.ts`, 시험 `donationImportService.test.ts`
+- 헌금 CSV 불러오기(일별 보고서, [PDF 저장] 오른쪽): 화면 `DonationImportModal.tsx`(ReportsPage에서 엶), 로직 `src/hooks/useDonationImport.ts`, 줄 읽기·붙여넣은 표 변환(`parsePastedDonations`)·성도/종류 매칭·상태 판정(순수 함수) `src/services/import/donationImportService.ts`, 시험 `donationImportService.test.ts`
 
 ## 성도 정보
 - 화면: `src/components/pages/members/MembersPage.tsx`, `MemberEditModal.tsx`, 명단 불러오기 `MemberImportModal.tsx`
