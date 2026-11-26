@@ -32,4 +32,30 @@ describe('useDonationInput 저장 흐름', () => {
     expect(result.current.largeAmount.pending).toBeNull();
     expect(result.current.amounts[typeId] ?? '').toBe(''); // 저장 뒤 입력 칸을 비움
   });
+
+  it('잠금 화면이 떠 있으면 Ctrl+Z로 마지막 저장을 되돌리지 않습니다', async () => {
+    const { result } = renderHook(() => useDonationInput(), { wrapper: AppProviders });
+    await waitFor(() => expect(result.current.primaryTypes.length).toBeGreaterThan(0));
+    const typeId = result.current.primaryTypes[0].id;
+    act(() => {
+      result.current.setDate('2026-10-18');
+      result.current.search.toggleAnonymous();
+    });
+    act(() => result.current.onAmountChange(typeId, '10000'));
+    await act(() => result.current.requestSave());
+    await waitFor(() => expect(result.current.message?.kind).toBe('info'));
+    expect(await readMonth('2026-10')).toHaveLength(1);
+
+    const lock = document.createElement('div');
+    lock.setAttribute('data-lock-screen', '');
+    document.body.appendChild(lock);
+    const ctrlZ = () => act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true })));
+    await ctrlZ();
+    await act(() => new Promise((r) => setTimeout(r, 300))); // 복구하기는 비동기라 끝날 시간을 줍니다
+    expect(await readMonth('2026-10')).toHaveLength(1); // 잠금 중에는 그대로
+
+    lock.remove();
+    await ctrlZ();
+    await waitFor(async () => expect(await readMonth('2026-10')).toHaveLength(0)); // 잠금을 풀면 복구하기가 동작
+  });
 });

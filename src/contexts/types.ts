@@ -49,6 +49,8 @@ export interface AuditLog {
   /** 필수. 사용자 입력 또는 시스템 자동 기입(합산·복구하기) */
   reason: string;
   timestamp: string;
+  /** 고친 사람(구글 로그인 이메일). 로그인이 없는 브라우저 모드와 이전 이력에는 없습니다. */
+  actor?: string;
 }
 
 /** 버전 호환 JSON 백업 컨테이너 */
@@ -84,6 +86,8 @@ export interface AppSettings {
   printTheme: PrintTheme;
   /** 변경 내역 창을 마지막으로 확인한 데스크톱 앱 버전(업데이트 후 첫 실행에 한 번 보여 주기용) */
   seenVersion?: string;
+  /** 잠긴(마감한) 연도. 잠긴 연도의 헌금은 입력·수정·삭제할 수 없습니다(걸기: 관리자·재정담당, 풀기: 관리자) */
+  lockedYears: string[];
 }
 
 export type FontScale = 'SMALL' | 'NORMAL' | 'LARGE' | 'XLARGE';
@@ -102,6 +106,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontScale: 'NORMAL',
   theme: 'BLUE',
   printTheme: 'MONO',
+  lockedYears: [],
 };
 
 /** 헌금 저장 입력 (한 봉투의 한 종류) */

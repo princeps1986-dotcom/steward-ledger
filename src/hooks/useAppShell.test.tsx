@@ -100,3 +100,12 @@ describe('useAutoBackupBridge 백업 시각 기록', () => {
     await until(() => result.current.settings.lastBackupAt !== null);
   });
 });
+
+describe('useAutoBackupBridge 중단된 복원 확인', () => {
+  it('복원 표시를 읽지 못하면 확인하지 못했다고 알린다', async () => {
+    const get = db.kv.get.bind(db.kv);
+    vi.spyOn(db.kv, 'get').mockImplementation(((key: string) => (key === KEYS.restoreMarker ? Promise.reject(new Error('읽기 실패')) : get(key))) as typeof db.kv.get);
+    const { result } = render();
+    await until(() => !!result.current.bridge.failure?.startsWith('지난 복원이 끝까지 되었는지 확인하지 못했습니다'));
+  });
+});

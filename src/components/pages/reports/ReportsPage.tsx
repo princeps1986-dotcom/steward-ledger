@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useHasExportableData, useReportExport, useReportFilters, useTypeToggleOptions, type ReportTab } from '../../../hooks/useReports';
+import { allowed } from '../../../services/auth/access';
+import type { Action } from '../../../services/auth/roles';
 import type { PeriodType } from '../../../services/domain/dates';
 import { DatePicker } from '../../shared/DatePicker';
 import { Notice } from '../../shared/Notice';
@@ -10,14 +12,17 @@ import { PersonalTab } from './PersonalTab';
 import { PrintHeader } from './PrintHeader';
 import { SummaryTab } from './SummaryTab';
 
-const TABS: { key: ReportTab; label: string }[] = [
+const ALL_TABS: { key: ReportTab; label: string }[] = [
   { key: 'SUMMARY', label: '종합 보고서' },
   { key: 'LIST', label: '전체 입력 내역' },
   { key: 'PERSONAL', label: '개인별·세대별 내역' },
   { key: 'AUDIT', label: '수정·삭제 이력' },
 ];
+/** 탭마다 필요한 권한(roles.ts). 열람자는 종합 보고서 탭만 봅니다. */
+const TAB_ACTION: Record<ReportTab, Action> = { SUMMARY: 'report:summary', LIST: 'report:list', PERSONAL: 'report:personal', AUDIT: 'report:audit' };
 
 export function ReportsPage() {
+  const tabs = ALL_TABS.filter((t) => allowed(TAB_ACTION[t.key]));
   const [tab, setTab] = useState<ReportTab>('SUMMARY');
   const [importOpen, setImportOpen] = useState(false);
   // 전체 입력 내역 탭은 기간의 헌금을 메모리에 올리지 않고 달 단위로 직접 읽습니다(큰 연도에서도 메모리가 작음).
@@ -44,6 +49,7 @@ export function ReportsPage() {
     setIncludeInactive(true);
   }, [reportKey]);
   const changeTab = (t: ReportTab) => {
+    if (!tabs.some((x) => x.key === t)) return; // 허용되지 않은 탭은 열지 않습니다.
     setTab(t);
     setFlippedIds([]);
     setIncludeInactive(true);
@@ -119,8 +125,8 @@ export function ReportsPage() {
             <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || exportDisabled}>
               PDF 저장
             </button>
-            {/* 헌금 CSV 불러오기는 일별 보고서에서만 엽니다(보고 있는 날짜를 기본 날짜로 씀). */}
-            {f.sel.periodType === 'DAY' ? (
+            {/* 헌금 CSV 불러오기는 일별 보고서에서만 엽니다(보고 있는 날짜를 기본 날짜로 씀). 헌금을 입력할 수 있는 역할만 보입니다(열람자는 이 탭을 봐도 저장할 수 없음). */}
+            {f.sel.periodType === 'DAY' && allowed('donation:write') ? (
               <button className="btn" onClick={() => setImportOpen(true)}>
                 CSV 불러오기
               </button>
@@ -135,7 +141,7 @@ export function ReportsPage() {
       {showPrintTitle ? <PrintHeader title={`${f.label} 헌금 결산 보고서`} /> : null}
 
       <nav className="no-print flex gap-1 border-b border-gray-200" role="tablist" aria-label="보고서 종류">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             role="tab"

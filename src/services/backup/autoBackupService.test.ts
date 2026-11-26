@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contexts/types';
 import type { Donation } from '../../contexts/types';
+import { setCurrentUser } from '../auth/currentUser';
 import type { DesktopApi } from '../desktopBridge';
 import { db } from '../storage/db';
 import { dirtyYearsSinceFullBackup, isDirtySinceBackup, KEYS, monthWrite, rowWrite, transact } from '../storage/storageService';
@@ -46,11 +47,15 @@ function fakeDesktop(sink: BackupSink) {
 }
 
 beforeEach(async () => {
+  setCurrentUser({ email: 'a@b.c', role: 'admin' }); // 데스크톱 모드를 흉내 내는 시험은 로그인한 관리자로 진행
   await db.kv.clear();
   await db.donations.clear();
   await transact(async () => ({ writes: [monthWrite('2026-01', [d('a', '2026-01-04')]), monthWrite('2026-02', [d('b', '2026-02-01')])], result: 0 }));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setCurrentUser(null);
+});
 
 describe('backupLines', () => {
   it('produces a valid backup file with every month of the store', async () => {

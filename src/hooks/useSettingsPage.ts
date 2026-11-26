@@ -7,16 +7,16 @@ import { useSettings, useSettingsActions } from '../contexts/SettingsContext';
 import type { AppTheme, FontScale, PrintTheme } from '../contexts/types';
 import { PRINT_THEME_OPTIONS, THEME_OPTIONS } from '../services/theme';
 import { formatDateTime } from '../services/domain/dates';
-import { createDemoData, removeDemoData } from '../services/demo/demoService';
-import { refreshDemoState, useDemoActive, useDemoCreating } from '../services/demo/demoState';
-import { isCompleteYearBackup, saveBackupFile, resetAllData } from '../services/backup/backupService';
+import { isCompleteYearBackup, saveBackupFile } from '../services/backup/backupService';
 import { decryptedBackup, isNdjsonFile, payloadBackup, restoreFromFile, scanBackupFile, planFor, type BackupScan, type ReadableBackup } from '../services/backup/streamRestore';
 import { setRestoreProgress, withCheckingBackup, withRestoring } from '../services/backup/backupBusy';
 import { isPeriodicBackupRunning } from '../services/backup/autoBackupService';
 import { countYearDonations } from '../services/storage/storageService';
 import { parseAndValidateBackup } from '../services/backup/validation';
-import { desktop, type UpdateCheck } from '../services/desktopBridge';
+import { desktop } from '../services/desktopBridge';
 import type { MergePlan, RestoreOverwrite } from '../services/backup/mergeRules';
+import { useAppUpdate } from './useAppUpdate';
+import { useDemoAndReset } from './useDemoAndReset';
 
 interface RestoreCandidate {
   /** 검증을 마친 줄 단위 백업과 그 요약(예전 한 덩어리 JSON도 payloadBackup으로 감싼 것) */
@@ -37,7 +37,6 @@ const autoBackupLabel = (name: string): string => name.replace(/^backup_(\d{4})(
 
 /** 복원이 아무리 빨리 끝나도 덮개(조작 막기)를 보여 두는 최소 시간 */
 const RESTORE_MIN_MS = 5000;
-const RESET_WAIT_SECONDS = 10;
 
 /** 성도·헌금 종류 합치기 결과 안내문(다른 PC의 백업이면 같은 성도·종류를 현재 데이터와 대응시킴) */
 function mergeNoticeOf(plan: MergePlan): string {
@@ -81,26 +80,19 @@ export function useSettingsPage() {
   const restoreYear = restore?.yearRows.some((r) => r.year === restoreYearPick) ? restoreYearPick : (restore?.yearRows[restore.yearRows.length - 1]?.year ?? '');
   const [busy, setBusy] = useState(false);
   const [backupProgress, setBackupProgress] = useState<{ done: number; total: number } | null>(null);
-  const [demoOpen, setDemoOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   // 직접 백업 암호(데스크톱 앱). 앱은 암호를 저장하지 않으며, 창을 닫거나 저장하면 지웁니다.
   const [backupPassword, setBackupPassword] = useState('');
   const [backupPassword2, setBackupPassword2] = useState('');
   // 암호가 필요한 백업 파일을 선택했을 때 암호 입력 창
   const [restorePw, setRestorePw] = useState<{ file: File; input: string; error: string } | null>(null);
-  const [removeDemoOpen, setRemoveDemoOpen] = useState(false);
-  const [demoProgress, setDemoProgress] = useState<{ done: number; total: number } | null>(null);
-  // 시연 데이터가 한 건이라도 있으면 시연 중(전체 데이터를 훑지 않고 색인으로 판정). 설정 화면에 들어올 때 다시 확인합니다.
-  const demoActive = useDemoActive();
-  // 시연 데이터를 쓰거나 만드는 동안에는 백업·복원·자동 백업을 쓸 수 없습니다.
-  const demoCreating = useDemoCreating() !== null;
-  const backupBlocked = demoActive || demoCreating;
-  useEffect(() => {
-    void refreshDemoState();
-  }, []);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetLeft, setResetLeft] = useState(RESET_WAIT_SECONDS);
   const isDesktop = !!desktop();
+  // 시연 데이터 생성·제거와 전체 초기화(useDemoAndReset.ts). 시연 중이거나 만드는 동안에는 백업·복원·자동 백업을 쓸 수 없습니다.
+  const danger = useDemoAndReset({ setBusy, setMessage, hasData, hasMembersOrDonations });
+  const { demoActive, demoCreating } = danger;
+  const backupBlocked = demoActive || demoCreating;
+  // 프로그램 업데이트(useAppUpdate.ts)
+  const appUpdateApi = useAppUpdate();
 
   // 10분 백업이 저장 중일 때 끄려고 하면 끄지 않고 안내창을 띄웁니다(체크 상태는 그대로).
   const [periodicBusyOpen, setPeriodicBusyOpen] = useState(false);
@@ -125,7 +117,7 @@ export function useSettingsPage() {
       // 일부 연도만 저장한 백업은 마지막 백업 기록으로 치지 않습니다(저장하지 않은 연도에 변경이 남아 있을 수 있음).
       if (all) await markBackupDone();
       // 기록 저장이 실패해도 파일은 저장됐으므로 '백업 실패'로 안내하지 않습니다.
-      await update({ manualBackupAt: { ...settings.manualBackupAt, [backupYear]: new Date().toISOString() } }).catch(() => undefined);
+      await update((cur) => ({ manualBackupAt: { ...cur.manualBackupAt, [backupYear]: new Date().toISOString() } })).catch((e) => console.error('백업 시각 기록 실패', e));
       closeBackup();
       setMessage({ kind: 'info', text: `${name} 백업 파일을 저장했습니다. (${backupYear}년)` });
     } catch (err) {
@@ -262,71 +254,6 @@ export function useSettingsPage() {
     if (fail) setRestorePw({ file, input: '', error: fail.replace(/^백업 파일 검증 실패: /, '') });
   }, [restorePw]);
 
-  // 초기화 확인창이 열리면 10초 카운트다운 후에만 [초기화]를 누를 수 있습니다.
-  useEffect(() => {
-    if (!resetOpen) return;
-    setResetLeft(RESET_WAIT_SECONDS);
-    const id = window.setInterval(() => setResetLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
-    return () => window.clearInterval(id);
-  }, [resetOpen]);
-
-  const confirmDemo = useCallback(async () => {
-    if (demoActive || hasMembersOrDonations) return; // 시연 중이거나 성도·헌금 데이터가 있으면 만들 수 없습니다.
-    setDemoOpen(false); // 누르는 즉시 레이어를 닫고, 진행은 최상단 안내 띠에 보입니다.
-    setBusy(true);
-    try {
-      const reloadAll = () => Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      // 최근 몇 달이 저장되면 바로 쓸 수 있게 화면을 열고, 나머지 과거 달은 뒤에서 이어서 만듭니다(진행은 최상단 띠에 표시).
-      await createDemoData({
-        onProgress: (done, total) => setDemoProgress({ done, total }),
-        onReady: () => {
-          setBusy(false);
-          void reloadAll();
-        },
-      });
-      await reloadAll();
-      setMessage({ kind: 'info', text: '시연 데이터를 생성했습니다.' });
-    } catch (err) {
-      setMessage({ kind: 'error', text: `시연 데이터 생성 실패: ${(err as Error).message}` });
-    } finally {
-      setDemoProgress(null);
-      setBusy(false);
-    }
-  }, [demoActive, hasMembersOrDonations, memberActions, offeringActions, donationActions]);
-
-  const confirmRemoveDemo = useCallback(async () => {
-    if (!demoActive || demoCreating) return; // 시연 데이터가 없거나 만드는 중이면 작동하지 않습니다.
-    setBusy(true);
-    try {
-      await removeDemoData();
-      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      setMessage({ kind: 'info', text: '시연 데이터를 제거했습니다.(초기 데이터로 돌아갑니다)' });
-      setRemoveDemoOpen(false);
-    } catch (err) {
-      setMessage({ kind: 'error', text: `시연 데이터 제거 실패: ${(err as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  }, [demoActive, demoCreating, memberActions, offeringActions, donationActions]);
-
-  const confirmReset = useCallback(async () => {
-    if (resetLeft > 0 || demoActive || !hasData) return; // 시연 중에는 전체 초기화를 쓸 수 없습니다(시연 데이터 제거를 먼저).
-    setBusy(true);
-    try {
-      await resetAllData();
-      // 지운 데이터의 백업 기록도 비웁니다(남아 있으면 새로 입력한 데이터에 '아직 백업한 적이 없습니다' 권고가 뜨지 않음). 백업 파일은 그대로 둡니다.
-      // 기록을 비우지 못해도 데이터는 이미 초기화됐으므로 '초기화 실패'로 알리지 않습니다.
-      await update({ lastBackupAt: null, lastCloseBackupAt: null, manualBackupAt: {} }).catch(() => undefined);
-      await Promise.all([memberActions.reload(), offeringActions.reload(), donationActions.reloadAll()]);
-      setMessage({ kind: 'info', text: '전체 데이터를 초기화했습니다.' });
-      setResetOpen(false);
-    } catch (err) {
-      setMessage({ kind: 'error', text: `초기화 실패: ${(err as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  }, [resetLeft, demoActive, hasData, update, memberActions, offeringActions, donationActions]);
-
   // 확인 창에 보여 줄 현재 데이터의 그 연도 건수(잘못된 파일을 선택했는지 알아보기 쉽게). 세는 동안 null
   const [currentYearCount, setCurrentYearCount] = useState<number | null>(null);
   useEffect(() => {
@@ -378,34 +305,8 @@ export function useSettingsPage() {
     }
   }, [restore, restoreYear, restoreOverwrite, currentYearCount, memberActions, offeringActions, donationActions]);
 
-  // 프로그램 업데이트: 단추를 누를 때만 인터넷에 접속합니다(데스크톱 앱 전용).
-  const [appUpdate, setAppUpdate] = useState<
-    { state: 'idle' } | { state: 'checking' } | { state: 'latest'; current: string } | { state: 'available'; current: string; latest: string } | { state: 'downloading'; latest: string; percent: number } | { state: 'ready'; latest: string } | { state: 'error'; text: string }
-  >({ state: 'idle' });
-  const checkUpdate = useCallback(async () => {
-    const api = desktop();
-    if (!api) return;
-    setAppUpdate({ state: 'checking' });
-    const r: UpdateCheck = await api.checkForUpdate().catch(() => ({ current: '', error: '업데이트를 확인하지 못했습니다.' }));
-    if (r.error) setAppUpdate({ state: 'error', text: r.error });
-    else if (r.available && r.latest) setAppUpdate({ state: 'available', current: r.current, latest: r.latest });
-    else setAppUpdate({ state: 'latest', current: r.current });
-  }, []);
-  const downloadUpdate = useCallback(async () => {
-    const api = desktop();
-    if (!api || appUpdate.state !== 'available') return;
-    const latest = appUpdate.latest;
-    setAppUpdate({ state: 'downloading', latest, percent: 0 });
-    const off = api.onUpdateProgress((percent) => setAppUpdate({ state: 'downloading', latest, percent }));
-    const r = await api.downloadUpdate().catch(() => ({ error: '업데이트를 내려받지 못했습니다.' }));
-    off();
-    setAppUpdate(r.error ? { state: 'error', text: r.error } : { state: 'ready', latest });
-  }, [appUpdate]);
-
   return {
-    appUpdate,
-    checkUpdate,
-    downloadUpdate,
+    ...appUpdateApi,
     isDesktop,
     autoBackupEnabled: settings.autoBackupEnabled,
     toggleAutoBackup,
@@ -465,27 +366,10 @@ export function useSettingsPage() {
     restoreYear,
     setRestoreYear: setRestoreYearPick,
     currentYearCount,
-    demoOpen,
-    openDemo: () => setDemoOpen(true),
-    cancelDemo: () => setDemoOpen(false),
-    confirmDemo,
-    resetOpen,
-    resetLeft,
-    demoActive,
+    ...danger,
     backupBlocked,
-    demoProgress,
     demoBrowser: !desktop(),
-    removeDemoOpen,
     hasData,
-    demoCreating,
-    openRemoveDemo: () => !demoCreating && setRemoveDemoOpen(true),
-    cancelRemoveDemo: () => setRemoveDemoOpen(false),
-    confirmRemoveDemo,
-    openReset: () => {
-      if (!demoActive && hasData) setResetOpen(true);
-    },
-    cancelReset: () => setResetOpen(false),
-    confirmReset,
     busy,
     backupProgress,
     message,

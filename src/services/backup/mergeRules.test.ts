@@ -134,4 +134,12 @@ describe('restoredLists (복원 시 덮어쓰기 선택)', () => {
     expect(r.offeringTypes).toEqual([{ ...t('ct1', '십일조'), isActive: false }]);
     expect([r.updatedMembers, r.updatedTypes]).toEqual([1, 1]);
   });
+
+  it('덮어쓴 성도의 세대는 이 PC에서 그 세대가 쓰는 번호로 맞춘다(세대주를 바꾼 경우)', () => {
+    // 이 PC: 세대주를 c0 → c1로 바꿔 세대 번호는 예전 세대주 id(c0)로 남음
+    const here = { members: [m('c0', '김부친', undefined, { isFamilyHead: false, familyGroupId: 'c0' }), m('c1', '김영수', '1234', { familyGroupId: 'c0' }), m('c2', '김영희', '5678', { isFamilyHead: false, familyGroupId: 'c0' })], offeringTypes: [] };
+    const bk = { members: [m('b1', '김영수', '1234', { familyGroupId: 'b1' }), m('b2', '김영희', '5678', { isFamilyHead: false, familyGroupId: 'b1' })], offeringTypes: [] };
+    const r = restoredLists(here, bk, planMerge(here, bk), { members: true });
+    expect(r.members.map((x) => [x.id, x.familyGroupId])).toEqual([['c0', 'c0'], ['c1', 'c0'], ['c2', 'c0']]);
+  });
 });

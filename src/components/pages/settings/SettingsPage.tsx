@@ -1,14 +1,32 @@
 import { useRef } from 'react';
 import { useSettingsPage } from '../../../hooks/useSettingsPage';
+import { allowed } from '../../../services/auth/access';
 import { Modal } from '../../shared/Modal';
 import { Notice } from '../../shared/Notice';
 import { ThemePicker } from '../../shared/ThemePicker';
 import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { AppUpdateSection } from './AppUpdateSection';
+import { DemoResetSection } from './DemoResetSection';
+import { YearLockSection } from './YearLockSection';
 
 export function SettingsPage() {
   const s = useSettingsPage();
   const fileRef = useRef<HTMLInputElement>(null);
   const singleRestoreYear = s.restoreYearOptions.length === 1;
+  // 열람자는 설정 전체가 아니라 화면 테마만 바꿀 수 있습니다(역할 표의 settings:full).
+  if (!allowed('settings:full')) {
+    return (
+      <div className="max-w-3xl space-y-4">
+        <section className="card space-y-3">
+          <h3 className="font-semibold">
+            화면 <span className="ml-1 text-xs font-normal text-gray-500">바꾸면 바로 적용됩니다</span>
+          </h3>
+          <ThemePicker legend="화면 테마" value={s.theme} options={s.themeOptions} onChange={s.changeTheme} />
+          <ThemePicker legend="인쇄 양식 색상 (보고서 인쇄)" value={s.printTheme} options={s.printThemeOptions} onChange={s.changePrintTheme} />
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="max-w-3xl space-y-4">
       <Notice message={s.message} />
@@ -63,10 +81,15 @@ export function SettingsPage() {
           >
             백업 파일 저장
           </button>
-          <button className="btn" onClick={s.openRestoreChoice} disabled={s.busy || s.backupBlocked}>
-            백업 파일 복원
-          </button>
-          <input ref={fileRef} type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
+          {/* 복원은 관리자만(복원으로 일괄 삭제 제한·연도 잠금이 우회되지 않게) */}
+          {allowed('backup:restore') ? (
+            <>
+              <button className="btn" onClick={s.openRestoreChoice} disabled={s.busy || s.backupBlocked}>
+                백업 파일 복원
+              </button>
+              <input ref={fileRef} type="file" accept=".slbk,.json,.gz,application/json" className="hidden" disabled={s.backupBlocked} onChange={(e) => void s.onRestoreFile(e)} />
+            </>
+          ) : null}
         </div>
         {/* 전체 백업(앱 종료 때 자동 백업, 모든 연도를 담은 직접 백업)이 성공했을 때만 갱신됩니다. */}
         <p className="text-sm text-gray-600">마지막 전체 백업 시각: {s.lastBackupLabel}</p>
@@ -95,33 +118,7 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* 데스크톱 앱에서만: 단추를 누를 때만 인터넷에 접속해 바뀐 부분을 받고, 앱을 닫을 때 설치합니다. */}
-      {s.isDesktop ? (
-        <section className="card space-y-3" aria-labelledby="app-update-title">
-          <h3 id="app-update-title" className="font-semibold">
-            프로그램 업데이트
-          </h3>
-          <p className="text-sm text-gray-600">[업데이트 확인]을 누를 때만 인터넷에 접속합니다. 새 버전은 바뀐 부분만 내려받고, 앱을 닫을 때 설치되며 데이터는 그대로 유지됩니다.</p>
-          <div className="flex flex-wrap items-center gap-2" aria-live="polite">
-            {s.appUpdate.state === 'available' ? (
-              <button className="btn-primary" onClick={() => void s.downloadUpdate()}>
-                {s.appUpdate.latest} 내려받기
-              </button>
-            ) : (
-              <button className="btn" onClick={() => void s.checkUpdate()} disabled={s.appUpdate.state === 'checking' || s.appUpdate.state === 'downloading' || s.appUpdate.state === 'ready'}>
-                {s.appUpdate.state === 'checking' ? '확인하는 중…' : '업데이트 확인'}
-              </button>
-            )}
-            <span className="text-sm">
-              {s.appUpdate.state === 'latest' && `최신 버전입니다 (${s.appUpdate.current}).`}
-              {s.appUpdate.state === 'available' && `새 버전 ${s.appUpdate.latest}이 있습니다 (현재 ${s.appUpdate.current}).`}
-              {s.appUpdate.state === 'downloading' && `${s.appUpdate.latest} 내려받는 중… ${s.appUpdate.percent}%`}
-              {s.appUpdate.state === 'ready' && <b className="text-emerald-700">{s.appUpdate.latest} 준비 완료. 앱을 닫으면 백업 후 설치됩니다.</b>}
-              {s.appUpdate.state === 'error' && <span className="text-red-700">{s.appUpdate.text}</span>}
-            </span>
-          </div>
-        </section>
-      ) : null}
+      <AppUpdateSection s={s} />
 
       <Modal
         open={s.backupOpen}
@@ -182,27 +179,10 @@ export function SettingsPage() {
         ) : null}
       </Modal>
 
-      {/* 현재 데이터를 지우거나 통째로 바꾸는 동작은 일반 백업·복원과 떨어뜨려 경고와 함께 둡니다. */}
-      <section className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-4" aria-labelledby="danger-zone-title">
-        <h3 id="danger-zone-title" className="flex items-center gap-1.5 font-semibold text-red-700">
-          <span aria-hidden="true">⚠</span> 시연 데이터 생성 · 삭제
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-danger-outline whitespace-nowrap" onClick={s.openDemo} disabled={s.busy || s.demoActive}>
-            시연 데이터 생성
-          </button>
-          {s.demoActive || s.demoCreating ? (
-            <button className="btn-danger whitespace-nowrap" onClick={s.openRemoveDemo} disabled={s.busy || s.demoCreating}>
-              시연 데이터 제거
-            </button>
-          ) : null}
-          <button className="btn-danger whitespace-nowrap" onClick={s.openReset} disabled={s.busy || s.demoActive || !s.hasData}>
-            전체 초기화
-          </button>
-        </div>
-        {s.demoCreating ? <p className="text-sm font-semibold text-red-700">시연 데이터를 만드는 중에는 제거할 수 없습니다. 끝나면 사용할 수 있습니다.</p> : null}
-        {s.demoActive ? <p className="text-sm text-red-700">시연 데이터가 있는 동안에는 시연 데이터 생성과 전체 초기화를 쓸 수 없습니다.<br/>먼저 [시연 데이터 제거]를 누르세요.</p> : null}
-      </section>
+      {/* 연도 잠금은 계정이 있는 PC앱에서만(브라우저 시연 모드에는 없음). 기간 헌금 삭제는 [관리자] 탭에 있습니다. */}
+      {s.isDesktop ? <YearLockSection /> : null}
+
+      <DemoResetSection s={s} />
 
       <Modal
         open={s.periodicBusyOpen}
@@ -215,85 +195,6 @@ export function SettingsPage() {
         }
       >
         <p className="text-sm">지금 자동 백업을 저장하는 중이라 끌 수 없습니다. 오른쪽 아래에 '자동 백업 완료'가 뜬 뒤 다시 해제하세요.</p>
-      </Modal>
-
-      <Modal
-        open={s.demoOpen}
-        onClose={s.cancelDemo}
-        title="시연 데이터를 생성할까요?"
-        description="가상의 시연 데이터가 만들어집니다. 시연이 끝나면 [시연 데이터 제거]로 초기화 할 수 있습니다."
-        footer={
-          <ConfirmFooter
-            onCancel={s.cancelDemo}
-            onConfirm={s.confirmDemo}
-            tone="danger"
-            busy={s.busy}
-            confirmDisabled={s.hasMembersOrDonations}
-            confirmLabel={s.demoProgress ? `만드는 중… ${s.demoProgress.done}/${s.demoProgress.total}` : '시연 데이터 생성'}
-          />
-        }
-      >
-        <div className="space-y-2 text-sm">
-          {s.demoBrowser ? (
-            <p>가상의 성도 800명과 헌금 약 6.3만 건(최근 18개월, 주 500~1,333건, 매년 12/25·1/1은 하루 3,333건), 수정·삭제 이력 6건이 들어갑니다. 브라우저에서는 이 규모로 만들며 몇 초면 쓸 수 있고 나머지는 뒤에서 이어 만듭니다.</p>
-          ) : (
-            <p>가상의 성도 800명과 헌금 20만 건(최근 3년, 주 750~2,000건, 매년 12/25·1/1은 하루 5,000건), 수정·삭제 이력 6건이 들어갑니다. 만드는 데 10초 안팎 걸립니다.</p>
-          )}
-          <p className="text-red-700">성도·헌금 데이터가 이미 있으면 만들 수 없습니다. 시연 데이터는 데이터가 없는 상태에서만 만들 수 있습니다.</p>
-        </div>
-      </Modal>
-
-      <Modal
-        open={s.removeDemoOpen && s.demoActive}
-        onClose={s.cancelRemoveDemo}
-        title="시연 데이터를 제거할까요?"
-        description="시연 중에 수정·삭제·추가한 데이터를 포함해 지금 앱의 모든 데이터가 지워집니다."
-        footer={
-          <ConfirmFooter onCancel={s.cancelRemoveDemo} onConfirm={s.confirmRemoveDemo} tone="danger" busy={s.busy} confirmLabel={s.busy ? '제거하는 중…' : '시연 데이터 제거'} />
-        }
-      >
-        <div className="space-y-2 text-sm">
-          <p className="font-semibold text-red-700">시연 중에 새로 입력한 실제 데이터도 함께 삭제됩니다.</p>
-          <p>제거하면 데이터가 초기상태로 돌아갑니다.</p>
-        </div>
-      </Modal>
-
-      <Modal
-        open={s.resetOpen}
-        onClose={s.cancelReset}
-        title="전체 데이터를 초기화할까요?"
-        footer={
-          <ConfirmFooter
-            onCancel={s.cancelReset}
-            onConfirm={s.confirmReset}
-            tone="danger"
-            busy={s.busy}
-            confirmDisabled={s.resetLeft > 0}
-            confirmLabel={s.resetLeft > 0 ? `${s.resetLeft}초 후 초기화 가능` : '초기화'}
-          />
-        }
-      >
-        <div className="space-y-3 text-sm">
-          <div className="rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900">
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li><b>성도</b>, <b>헌금 내역</b>, <b>수정·삭제 이력</b>이 모두 삭제됩니다.</li>
-              <li><b>헌금 종류</b>는 <b>기본값</b>으로 돌아갑니다. 환경 설정은 유지됩니다.</li>
-            </ul>
-          </div>
-          <div className="rounded-md border border-gray-300 p-3">
-            {s.hasFullBackup ? (
-              <>
-                <p>마지막 전체 백업 시각: <b>{s.lastBackupLabel}</b></p>
-                <p className="mt-1">[백업 파일 복원]으로 <b>복구</b>할 수 있습니다.</p>
-              </>
-            ) : (
-              <p><b className="text-red-700">전체 백업 파일이 없습니다.</b> 초기화하면 지금 데이터를 <b className="text-red-700">복구할 수 없습니다</b>. 먼저 [백업 파일 저장]으로 백업하세요.</p>
-            )}
-          </div>
-          {s.isDesktop ? (
-            <p className="text-xs text-gray-500">전체 백업은 마지막 전체 백업 이후 바뀐 내용이 있으면 앱을 닫을 때 자동으로 저장됩니다(이 PC에서만 복원 가능). 사용 중 10분마다 저장되는 자동 백업은 바뀐 연도만 담습니다.</p>
-          ) : null}
-        </div>
       </Modal>
 
       <Modal
@@ -341,7 +242,7 @@ export function SettingsPage() {
         open={!!s.restore}
         onClose={s.cancelRestore}
         title={s.restore?.full ? '전체 복원할까요?' : singleRestoreYear ? `${s.restoreYear}년 백업 파일을 복원할까요?` : '백업 파일 복원할까요?'}
-        description={s.restore?.full ? '현재 모든 데이터가 백업 시점으로 바뀝니다.' : singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다.` : '복원할 연도를 선택하세요.'}
+        description={s.restore?.full ? '현재 모든 데이터가 백업 시점으로 바뀝니다. 잠긴 연도도 바뀝니다.' : singleRestoreYear ? `이 파일에는 ${s.restoreYear}년 내역만 들어 있습니다. 잠긴 연도도 바뀝니다.` : '복원할 연도를 선택하세요. 잠긴 연도도 바뀝니다.'}
         footer={
           <ConfirmFooter
             onCancel={s.cancelRestore}

@@ -2,8 +2,15 @@ import Dexie, { type Table } from 'dexie';
 import type { AuditLog, Donation } from '../../contexts/types';
 import { AUDIT_KEY_RE } from './keys';
 
+/**
+ * 암호화된 행은 enc(IV + AES-GCM 암호문)에 비밀 칸을 담고 그 칸들은 비웁니다(cipher.ts). 읽을 때는 storageService가 풀어 평문 객체로 돌려줍니다.
+ * 헌금: amount·donorDisplayName·memo가 enc 안에 · 이력: reason·beforeSnapshot·afterSnapshot·actor가 enc 안에. 그 밖의 칸은 색인·키라 평문입니다.
+ * 열쇠가 없던 때의 평문 행(enc 없음)도 그대로 읽힙니다(첫 암호화 이전 중·브라우저 모드).
+ */
+export type Sealable = { enc?: Uint8Array };
+
 /** 이력 한 건이 한 행. year = 이력 장부의 연도('YYYY'), seq = 기록 순서(자동 증가) */
-export type AuditRow = AuditLog & { year: string; seq?: number };
+export type AuditRow = AuditLog & Sealable & { year: string; seq?: number };
 
 /**
  * 저장소(IndexedDB) 정의.
@@ -14,7 +21,7 @@ export type AuditRow = AuditLog & { year: string; seq?: number };
  */
 class LedgerDB extends Dexie {
   kv!: Table<unknown, string>;
-  donations!: Table<Donation, [string, string]>;
+  donations!: Table<Donation & Sealable, [string, string]>;
   audits!: Table<AuditRow, number>;
 
   constructor() {

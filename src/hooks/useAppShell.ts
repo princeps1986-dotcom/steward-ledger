@@ -8,9 +8,12 @@ import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from 
 import { saveBackupFile } from '../services/backup/backupService';
 import { isRestoring } from '../services/backup/backupBusy';
 import { formatDateTime } from '../services/domain/dates';
+import { allowed } from '../services/auth/access';
+import { setClosingNotice, useClosingNotice } from '../services/auth/closing';
+import type { Action } from '../services/auth/roles';
 import { desktop } from '../services/desktopBridge';
 
-export type PageKey = 'input' | 'members' | 'offerings' | 'reports' | 'settings' | 'help';
+export type PageKey = 'input' | 'members' | 'offerings' | 'reports' | 'settings' | 'admin' | 'help';
 
 export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'input', label: '헌금 입력' },
@@ -18,12 +21,24 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'members', label: '성도 정보' },
   { key: 'offerings', label: '헌금 종류' },
   { key: 'settings', label: '설정 정보' },
+  { key: 'admin', label: '관리자' },
   { key: 'help', label: '설명서' },
 ];
 
+/** 메뉴(페이지)마다 필요한 권한. 설정·설명서는 모두에게 열리고(설정은 화면 안에서 역할별로 줄임), 나머지는 역할 표(roles.ts)를 따릅니다. */
+const PAGE_ACTION: Record<PageKey, Action | null> = { input: 'donation:write', reports: 'report:summary', members: 'catalog:edit', offerings: 'catalog:edit', settings: null, admin: 'admin:tab', help: null };
+// 관리자 탭은 계정이 있는 PC앱에만 있습니다(브라우저 시연 모드는 관리자와 같은 권한이지만 계정이 없음).
+export const pageAllowed = (key: PageKey): boolean => (key === 'admin' && !desktop() ? false : PAGE_ACTION[key] === null || allowed(PAGE_ACTION[key]));
+/** 지금 역할이 볼 수 있는 메뉴 */
+export const visiblePages = (): typeof PAGES => PAGES.filter((p) => pageAllowed(p.key));
+
 export function useAppNav() {
-  const [page, setPage] = useState<PageKey>('input');
-  return { page, setPage };
+  const [page, setRawPage] = useState<PageKey>(() => visiblePages()[0]?.key ?? 'help');
+  // 허용되지 않은 페이지로는 이동하지 않고, 어떻게든 들어오더라도 그리지 않고 첫 메뉴로 돌립니다(직접 여는 경로 차단).
+  const setPage = (key: PageKey): void => {
+    if (pageAllowed(key)) setRawPage(key);
+  };
+  return { page: pageAllowed(page) ? page : (visiblePages()[0]?.key ?? 'help'), setPage };
 }
 
 /**
@@ -41,8 +56,8 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   settingsRef.current = settings;
   const [failure, setFailure] = useState<string | null>(null);
   const [autoSave, setAutoSave] = useState<AutoSaveStatus>(null);
-  // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다.
-  const [closing, setClosing] = useState(false);
+  // 종료 중 자동 백업을 만드는 동안 true: 화면을 덮는 안내를 보여 주고 백업이 끝나면 앱이 종료됩니다(잠금 화면도 같은 값을 읽음).
+  const closing = useClosingNotice();
 
   useEffect(() => {
     const api = desktop();
@@ -50,10 +65,10 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     const offRequest = api.onBackupRequest(async () => {
       // 백업 파일 확인·복원 중에는 창을 닫지 않습니다(main이 '복원하고 있습니다' 안내만 띄움).
       if (isRestoring()) return { blocked: true as const };
-      setClosing(true);
+      setClosingNotice(true);
       return buildAutoBackup();
     });
-    const offCancel = api.onBackupCancelled(() => setClosing(false));
+    const offCancel = api.onBackupCancelled(() => setClosingNotice(false));
     return () => {
       offRequest();
       offCancel();
@@ -112,7 +127,7 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
     if (!loaded) return;
     void interruptedRestore()
       .then((m) => m && setFailure(m.kind === 'demo' ? `시연 데이터 생성이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 설정에서 [시연 데이터 제거]로 정리하세요.` : `지난 복원(${m.years.join(', ')}년)이 끝나지 않고 중단되었습니다(${formatDateTime(m.startedAt)}). 데이터가 일부만 복원되었을 수 있습니다. 설정에서 같은 백업 파일로 다시 복원하세요.`))
-      .catch(() => undefined);
+      .catch(() => setFailure('지난 복원이 끝까지 되었는지 확인하지 못했습니다. 필요하면 설정에서 같은 백업 파일로 다시 복원하세요.'));
   }, [loaded]);
 
   const skipBackup = useCallback(() => desktop()?.skipBackup(), []);
@@ -140,7 +155,7 @@ export function useBackupReminder(autoBackupFailure: string | null, goSettings: 
     tone = 'error';
   } else if (demoBlocked) {
     text = null;
-  } else if (desktop() && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
+  } else if (desktop() && allowed('backup:create') && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
     text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
   }
 

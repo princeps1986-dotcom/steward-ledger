@@ -4,7 +4,7 @@
 // - 종료 시 자동 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
 process.env.TZ = 'Asia/Seoul'; // 날짜·시각은 PC 설정과 상관없이 서울 기준(화면 프로세스도 상속)
-const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
@@ -13,8 +13,14 @@ const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { resolveUserDataDir, backupsToPrune, latestFullBackup } = require('./dataPaths.cjs');
 const { createPcKeyStore } = require('./pcKey.cjs');
+const { createAuth } = require('./auth.cjs');
+const { createGuards, createReloadGuard } = require('./guards.cjs');
+const authConfig = require('./authConfig.cjs');
+const { createUserStore } = require('./userStore.cjs');
+const { createDataKeyStore } = require('./dataKey.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
-const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
+const { verifyBackupFile, isEncryptedFile } = require('./backupVerify.cjs');
+const { createBackupReaders } = require('./backupReader.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
 
 // 설치한 앱은 환경변수로 다른 주소를 열지 않습니다(그 페이지가 백업 읽기 기능을 쓰지 못하게).
@@ -22,6 +28,7 @@ const DEV_URL = (!app.isPackaged && process.env.ELECTRON_DEV_URL) || null;
 const DIST = path.join(__dirname, '..', 'dist');
 // 이번 실행 중 앱이 저장한 PDF 파일 경로. 렌더러가 임의 경로를 열지 못하도록 이 목록에 있는 파일만 열어 줍니다.
 const savedFiles = new Set();
+const NOT_ALLOWED = '이 작업을 할 권한이 없습니다.';
 const BACKUP_TIMEOUT_MS = 300000; // 종료 시 자동 백업을 기다리는 최대 시간(5분)
 const CSP = [
   "default-src 'self'",
@@ -139,6 +146,7 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('backup:begin', async (event, spec) => {
     await abortAutoSession();
     const kind = spec && spec.kind;
+    if (kind === 'manual' && !(await roleIs('admin', 'finance'))) throw new Error(NOT_ALLOWED); // 직접 백업 만들기는 관리자·재정담당만
     if (kind === 'manual') {
       if (typeof spec.name !== 'string' || !SAFE_STREAM_NAME_RE.test(spec.name)) throw new Error('잘못된 백업 요청');
       // 직접 백업은 사용자가 정한 암호로만 잠급니다(앱은 암호를 저장하지 않음).
@@ -371,6 +379,13 @@ if (!app.requestSingleInstanceLock()) {
       if (mainWindow === win) mainWindow = null;
     });
 
+    // 화면을 다시 불러오면(Ctrl+R·충돌 뒤 재로드) 로그인은 두고 잠급니다: PIN·구글 재로그인으로 풀기 전에는 데이터 열쇠를 주지 않아
+    // 잠금 화면을 건너뛰지 못합니다. 개발 서버의 자동 새로고침은 제외.
+    const reloadGuard = createReloadGuard(() => {
+      if (!DEV_URL) auth.lock();
+    });
+    win.webContents.on('did-finish-load', reloadGuard);
+
     if (DEV_URL) void win.loadURL(DEV_URL);
     else void win.loadURL('app://local/index.html');
     return win;
@@ -419,60 +434,11 @@ if (!app.requestSingleInstanceLock()) {
       return verifyMessage(err);
     }
   });
-  // 암호화한 백업을 화면이 줄 단위로 읽도록 main이 풀어서 조각(최대 1MB)으로 건넵니다. 화면은 키를 모릅니다.
-  const readers = new Map();
-  let readerCounter = 0;
-  ipcMain.handle('backup:open-reader', (event, file, password) => {
-    const p = backupFilePath(file);
-    if (!p) throw new Error('백업 파일을 읽을 수 없습니다.');
-    // 닫지 않은 읽기(화면을 다시 불러온 경우 등)가 쌓이지 않게 가장 오래된 것부터 닫습니다.
-    for (const [oldId, r] of readers) {
-      if (readers.size < 8) break;
-      readers.delete(oldId);
-      r.stream.destroy();
-    }
-    let stream;
-    try {
-      // 암호화한 백업만 풀어 건넵니다(예전 일반 파일은 화면이 직접 읽으므로, 여기서 임의 파일 내용을 넘기지 않음).
-      if (!isEncryptedFile(p)) throw new Error('백업 파일 검증 실패: 암호화한 백업 파일이 아닙니다.');
-      stream = openPlainStream(p, keyForFile(password));
-    } catch (err) {
-      throw new Error(verifyMessage(err));
-    }
-    const id = ++readerCounter;
-    readers.set(id, { stream, it: stream[Symbol.asyncIterator](), sender: event.sender });
-    return id;
-  });
-  ipcMain.handle('backup:read', async (event, id) => {
-    const r = readers.get(id);
-    if (!r || r.sender !== event.sender) throw new Error('백업 파일 읽기가 끝났거나 시작되지 않았습니다.');
-    const parts = [];
-    let size = 0;
-    try {
-      while (size < 1024 * 1024) {
-        const { value, done } = await r.it.next();
-        if (done) break;
-        parts.push(value);
-        size += value.length;
-      }
-    } catch (err) {
-      readers.delete(id);
-      r.stream.destroy();
-      throw new Error(verifyMessage(err));
-    }
-    if (parts.length === 0) {
-      readers.delete(id);
-      return null;
-    }
-    return Buffer.concat(parts);
-  });
-  ipcMain.handle('backup:close-reader', (event, id) => {
-    const r = readers.get(id);
-    if (!r || r.sender !== event.sender) return true;
-    readers.delete(id);
-    r.stream.destroy();
-    return true;
-  });
+  // 풀린 백업 읽기(electron/backupReader.cjs, 관리자만). roleIs는 아래에서 만들어지므로 부를 때 찾습니다.
+  const backupReaders = createBackupReaders({ roleIs: (...roles) => roleIs(...roles), notAllowed: NOT_ALLOWED, resolvePath: backupFilePath, keyForFile, verifyMessage });
+  ipcMain.handle('backup:open-reader', backupReaders.open);
+  ipcMain.handle('backup:read', backupReaders.read);
+  ipcMain.handle('backup:close-reader', backupReaders.close);
   // 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null)
   ipcMain.handle('backup:latest-auto', async () => {
     const d = defaultBackupDir();
@@ -549,6 +515,7 @@ if (!app.requestSingleInstanceLock()) {
   };
   ipcMain.handle('update:check', async () => {
     const current = app.getVersion();
+    if (!(await roleIs('admin', 'finance'))) return { current, error: NOT_ALLOWED }; // 업데이트는 관리자·재정담당만
     if (!app.isPackaged) return { current, error: '설치한 앱에서만 업데이트를 확인할 수 있습니다.' };
     try {
       const res = await getUpdater().checkForUpdates();
@@ -559,7 +526,8 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   let downloading = null;
-  ipcMain.handle('update:download', (event) => {
+  ipcMain.handle('update:download', async (event) => {
+    if (!(await roleIs('admin', 'finance'))) return { error: NOT_ALLOWED };
     if (!app.isPackaged) return { error: '설치한 앱에서만 업데이트할 수 있습니다.' };
     if (downloading) return downloading; // 단추를 여러 번 눌러도 한 번만 내려받습니다.
     const u = getUpdater();
@@ -577,6 +545,84 @@ if (!app.requestSingleInstanceLock()) {
       });
     return downloading;
   });
+
+  // 구글 로그인(electron/auth.cjs). 토큰은 저장하지 않고 화면에도 넘기지 않으며, 화면은 계정(이메일)만 받습니다.
+  // 환경변수는 개발 실행에서만 씁니다(설치한 앱은 authConfig.cjs 값만).
+  const devEnv = (name) => (!app.isPackaged && process.env[name]) || '';
+  // 스모크 시험은 '로그인 설정이 없는 앱'을 시험하므로, authConfig.local.cjs가 있어도 설정을 비웁니다(개발 실행에서만).
+  const noLogin = devEnv('STEWARD_TEST_NO_LOGIN') === '1';
+  const users = createUserStore({ dir: app.getPath('userData') });
+
+  const auth = createAuth({
+    admit: users.admit, // 계정 목록에 있는 사람만 들어오고, 목록이 비었을 때 처음 로그인한 사람은 관리자(electron/userStore.cjs)
+    clientId: noLogin ? '' : devEnv('STEWARD_GOOGLE_CLIENT_ID') || authConfig.clientId,
+    clientSecret: noLogin ? '' : devEnv('STEWARD_GOOGLE_CLIENT_SECRET') || authConfig.clientSecret,
+    // 이 주소는 auth.cjs가 만들지만, 시스템 브라우저로 여는 곳이므로 구글 로그인 주소만 허용합니다.
+    openBrowser: async (url) => {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' || u.host !== 'accounts.google.com') throw new Error('허용하지 않는 로그인 주소입니다.');
+      await shell.openExternal(url);
+    },
+  });
+  // 로그인·역할 검사(electron/guards.cjs): 호출마다 계정 목록에서 역할·중지 여부를 다시 읽습니다.
+  const { freshSession, withSession, roleIs, adminOnly } = createGuards({ auth, users, notAllowed: NOT_ALLOWED });
+  ipcMain.handle('auth:status', async () => {
+    const me = await freshSession();
+    return me ? { ...auth.status(), email: me.email, role: me.role, hasPin: await users.hasPin(me.sub) } : { ...auth.status(), email: null, role: null, hasPin: false };
+  });
+  ipcMain.handle('auth:login', async (_event, opts) => {
+    try {
+      // reauth: 잠금 해제용 재로그인. 구글이 비밀번호를 다시 묻게 하고(prompt=login) 방금 인증했는지 확인합니다.
+      const { email, role } = await auth.login({ reauth: !!(opts && opts.reauth) });
+      return { email, role };
+    } catch (err) {
+      log.warn('auth login', err && err.message); // 이메일·토큰은 남기지 않고 사유 문구만
+      return { error: String((err && err.message) || err) };
+    }
+  });
+  // 자동 잠금 해제용 PIN: 로그인한 계정의 것만 다룹니다. 5회 연속 실패하면 PIN을 지우고 로그아웃시켜 구글 재로그인으로 돌려보냅니다.
+  ipcMain.handle('auth:set-pin', withSession(async (me, pin) => (await users.setPin(me.sub, pin), { ok: true })));
+  ipcMain.handle(
+    'auth:verify-pin',
+    withSession(
+      async (me, pin) => {
+        const r = await users.verifyPin(me.sub, pin);
+        if (r.ok) auth.unlock();
+        if (r.locked) auth.logout();
+        return r;
+      },
+      { whileLocked: true },
+    ),
+  );
+  // 저장 데이터를 잠그는 열쇠(electron/dataKey.cjs): 로그인한 사람에게만 화면(렌더러)으로 넘깁니다. 화면은 WebCrypto로 한 번 가져온 뒤 값을 버립니다.
+  // 열쇠를 풀 수 없으면 code를 함께 보내 화면이 '저장소가 비었으면 새로 시작 / 데이터가 있으면 안내'를 정하게 합니다.
+  const dataKeys = createDataKeyStore({ safeStorage, dir: app.getPath('userData'), log, stamp });
+  ipcMain.handle(
+    'data:key',
+    withSession(async () => {
+      try {
+        return { key: (await dataKeys.getDataKey()).toString('base64') };
+      } catch (err) {
+        log.warn('data key', err && err.code);
+        return { error: String((err && err.message) || err), code: err && err.code };
+      }
+    }),
+  );
+  // 열쇠를 바꾸면 기존 데이터를 영구히 못 열게 되므로 관리자만 합니다(역할 표의 data:reset과 같은 권한).
+  ipcMain.handle(
+    'data:key-replace',
+    withSession(async (me) => (me.role === 'admin' ? { key: (await dataKeys.replaceUnreadable()).toString('base64') } : { error: '관리자만 할 수 있습니다. 관리자에게 문의하세요.' })),
+  );
+  // main이 실제로 막는 역할 제한: 계정·역할 관리는 관리자만, 업데이트·직접 백업 만들기는 관리자·재정담당만.
+  // 헌금 저장·복원·초기화는 화면(렌더러)의 저장소 작업이라 main이 막을 수 없고 화면 규칙으로 막습니다(src/services/auth/access.ts).
+  ipcMain.handle('users:list', adminOnly(async () => ({ users: await users.list() })));
+  ipcMain.handle('users:log', adminOnly(async () => ({ log: await users.log(), rebuiltAt: await users.rebuiltAt() })));
+  ipcMain.handle('users:ack-rebuilt', adminOnly(async (me) => (await users.ackRebuilt(me.email), { ok: true })));
+  ipcMain.handle('users:add', adminOnly(async (me, u) => (await users.add({ email: u && u.email, role: u && u.role }, me.email), { ok: true })));
+  ipcMain.handle('users:set-role', adminOnly(async (me, email, role) => (await users.setRole(email, role, me.email), { ok: true })));
+  ipcMain.handle('users:set-disabled', adminOnly(async (me, email, disabled) => (await users.setDisabled(email, !!disabled, me.email), { ok: true })));
+  ipcMain.handle('auth:cancel', () => auth.cancel());
+  ipcMain.handle('auth:logout', () => auth.logout());
 
   app.whenReady().then(() => {
     // 카메라·위치·알림 같은 권한은 모두 거부하고, 저장소가 자동 정리되지 않게 하는 영구 저장소(persistent-storage)만 허용합니다.
@@ -598,6 +644,7 @@ if (!app.requestSingleInstanceLock()) {
       headers.set('X-Content-Type-Options', 'nosniff');
       return new Response(res.body, { status: res.status, headers });
     });
+    Menu.setApplicationMenu(null); // 기본 메뉴의 다시 불러오기(Ctrl+R)·확대 같은 단축키를 없앱니다(다시 불러오면 잠금 화면이 사라지므로)
     mainWindow = createWindow();
   });
 

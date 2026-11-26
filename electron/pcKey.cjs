@@ -82,4 +82,4 @@ function createPcKeyStore({ safeStorage, dir, log, stamp }) {
   return { getPcKey, pcKeyFor };
 }
 
-module.exports = { createPcKeyStore };
+module.exports = { createPcKeyStore, writeKeyFile };

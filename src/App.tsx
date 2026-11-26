@@ -1,4 +1,5 @@
 import { lazy, startTransition, Suspense, useEffect, useRef } from 'react';
+import { SessionBar } from './components/auth/SessionBar';
 import { BrowserNotice } from './components/shared/BrowserNotice';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
 import { RestoringOverlay } from './components/shared/RestoringOverlay';
@@ -14,7 +15,7 @@ import { WhatsNewModal } from './components/shared/WhatsNewModal';
 import { DonationInputPage } from './components/pages/donation-input/DonationInputPage';
 import { useAutoDemo } from './hooks/useAutoDemo';
 import { refreshDemoState } from './services/demo/demoState';
-import { PAGES, useAppNav, useAutoBackupBridge, useBackupReminder } from './hooks/useAppShell';
+import { pageAllowed, useAppNav, visiblePages, useAutoBackupBridge, useBackupReminder } from './hooks/useAppShell';
 
 // 첫 화면(헌금 입력) 외의 화면은 따로 불러와 시작이 가벼워집니다. 첫 화면이 뜬 직후 나머지를 미리 불러와 메뉴를 옮길 때 기다리지 않게 합니다.
 const loadHelp = () => import('./components/pages/help/HelpPage').then((m) => ({ default: m.HelpPage }));
@@ -26,6 +27,8 @@ const HelpPage = lazy(loadHelp);
 const MembersPage = lazy(loadMembers);
 const OfferingsPage = lazy(loadOfferings);
 const ReportsPage = lazy(loadReports);
+const loadAdmin = () => import('./components/pages/admin/AdminPage').then((m) => ({ default: m.AdminPage }));
+const AdminPage = lazy(loadAdmin);
 const SettingsPage = lazy(loadSettings);
 
 export function App() {
@@ -42,7 +45,7 @@ export function App() {
     void refreshDemoState(); // 시작할 때 시연 중인지 확인해 최상단 안내를 보여 줍니다.
   }, []);
   useEffect(() => {
-    const id = window.setTimeout(() => [loadReports, loadMembers, loadOfferings, loadSettings, loadHelp].forEach((load) => void load().catch(() => undefined)), 300);
+    const id = window.setTimeout(() => [loadReports, loadMembers, loadOfferings, loadSettings, loadHelp, ...(pageAllowed('admin') ? [loadAdmin] : [])].forEach((load) => void load().catch(() => undefined)), 300);
     return () => window.clearTimeout(id);
   }, []);
   const backup = useAutoBackupBridge();
@@ -62,7 +65,7 @@ export function App() {
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">
         <h1 className="py-3 text-base font-bold">청지기 장부</h1>
         <nav className="flex gap-1" aria-label="주 메뉴">
-          {PAGES.map((p) => (
+          {visiblePages().map((p) => (
             <button
               key={p.key}
               className={`px-4 py-3 text-sm ${nav.page === p.key ? 'bg-slate-900 font-semibold' : 'text-slate-300 hover:text-white'}`}
@@ -73,6 +76,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <SessionBar />
       </header>
       <GlobalErrorBanner />
       <NewVersionBanner />
@@ -87,6 +91,7 @@ export function App() {
             {nav.page === 'offerings' ? <OfferingsPage /> : null}
             {nav.page === 'reports' ? <ReportsPage /> : null}
             {nav.page === 'settings' ? <SettingsPage /> : null}
+            {nav.page === 'admin' ? <AdminPage /> : null}
             {nav.page === 'help' ? <HelpPage /> : null}
           </ErrorBoundary>
         </Suspense>

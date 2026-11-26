@@ -5,6 +5,7 @@ import { desktop } from '../desktopBridge';
 import { auditKey, KEYS, listAuditKeys, monthWrite, transact, wipeDonationsWrites, type Write } from '../storage/storageService';
 import { buildDemoAudits, DEMO_SPEC_APP, DEMO_SPEC_BROWSER, planDemo, type DemoSpec } from './demoData';
 import { hasDemoData, refreshDemoState, setDemoCreating } from './demoState';
+import { assertAllowed } from '../auth/access';
 
 /** 데스크톱 앱이면 앱 규격(20만 건), 브라우저면 더 작은 규격(약 13만 건)을 씁니다. */
 const demoSpecForDevice = (): DemoSpec => (desktop() ? DEMO_SPEC_APP : DEMO_SPEC_BROWSER);
@@ -23,6 +24,7 @@ let running = false;
  * 만드는 동안에는 [시연 데이터 제거]를 쓸 수 없습니다(removeDemoData가 오류).
  */
 export async function createDemoData(opts: { spec?: DemoSpec; today?: Date; onProgress?: (done: number, total: number) => void; onReady?: () => void } = {}): Promise<void> {
+  assertAllowed('data:reset');
   if (running) throw new Error('시연 데이터를 만드는 중입니다.');
   running = true;
   setDemoCreating({ done: 0, total: 0 }); // 누르는 즉시 최상단 안내가 뜨도록
@@ -47,7 +49,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
     for (const k of await listAuditKeys()) writes.push({ key: k, value: null });
     writes.push({ key: KEYS.members, value: plan.members }, { key: KEYS.offeringTypes, value: plan.offeringTypes });
     return { writes, result: undefined };
-  });
+  }, { ignoreYearLocks: true });
   let done = 0;
   const total = plan.months.length;
   const audits = async (recent: Donation[]) => {
@@ -57,7 +59,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
   setDemoCreating({ done: 0, total });
   opts.onProgress?.(0, total);
   for (const { ym, donations } of plan.generate()) {
-    await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }));
+    await transact(async () => ({ writes: [monthWrite(ym, donations)], result: undefined }), { ignoreYearLocks: true });
     done++;
     opts.onProgress?.(done, total);
     if (done === 1) await audits(donations); // 이력은 가장 최근 달에서 선택합니다.
@@ -77,6 +79,7 @@ async function createDemoDataNow(opts: { spec?: DemoSpec; today?: Date; onProgre
  * (이전 버전이 남긴 시연 복구 정보 키도 함께 지웁니다.)
  */
 export async function removeDemoData(): Promise<void> {
+  assertAllowed('data:reset');
   if (running) throw new Error('시연 데이터를 만드는 중에는 제거할 수 없습니다. 만들기가 끝난 뒤 다시 시도하세요.');
   if (!(await hasDemoData())) throw new Error('제거할 시연 데이터가 없습니다.');
   await resetAllData([{ key: KEYS.demoRestore, value: null }]);

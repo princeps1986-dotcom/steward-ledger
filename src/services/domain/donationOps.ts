@@ -1,4 +1,5 @@
 import type { AuditLog, Donation, DonationDraft } from '../../contexts/types';
+import { currentUser } from '../auth/currentUser';
 import { newId, nowIso } from './ids';
 
 /**
@@ -59,7 +60,8 @@ export function makeAudit(
 ): AuditLog {
   const r = reason.trim();
   if (!r) throw new Error('감사 로그 사유는 필수입니다.');
-  return { id: newId(), targetId: before.id, action, beforeSnapshot: before, afterSnapshot: after, reason: r, timestamp: now };
+  const actor = currentUser()?.email; // 로그인이 없는 브라우저 모드에서는 기록하지 않습니다.
+  return { id: newId(), targetId: before.id, action, beforeSnapshot: before, afterSnapshot: after, reason: r, timestamp: now, ...(actor ? { actor } : {}) };
 }
 
 export const REASON_MERGE = '동일 내역 복수 헌금 합산';

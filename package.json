@@ -18,7 +18,7 @@
     "electron:dev": "cross-env ELECTRON_DEV_URL=http://localhost:5173 electron .",
     "electron:start": "npm run build && electron .",
     "smoke": "node scripts/smoke.mjs",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "node scripts/check-release.mjs && npm run build && electron-builder --win nsis"
   },
   "build": {
     "appId": "org.church.offering-ledger",
