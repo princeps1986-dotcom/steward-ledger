@@ -425,7 +425,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 백업 | `backup/autoBackupService.test.ts`, `backup/backupCrypto.test.ts`, `backupVerify.test.ts`, `dataPaths.test.ts`, `pcKey.test.ts` | 주기 백업(변경 표시 처리·실패 복구), 스트리밍 줄 = 스냅샷, 달을 넘는 이동 시 재시도, 직접 백업 세션, 백업 파일 검증(변조·잘림), 암호화 왕복·틀린 암호·다른 PC·조각 변조/순서/잘림, 백업 폴더 허용, PC 키(처음 만들기·재사용·읽기 실패·풀 수 없는 키 .old·다시 잠그기 실패) |
 | 오류 복구 | `shared/ErrorBoundary.test.tsx`, `monthly.test.ts` | 화면 오류 안내와 다시 시도, 트랜잭션 전체 취소·같은 키 마지막 쓰기 우선 |
 
-**Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다.
+**Electron 스모크:** `npm run build` 후 `npm run smoke`가 임시 데이터 폴더로 앱을 띄워 시작·저장소·보안(Node 접근 불가, CSP, 권한 거부)·백업 IPC(쓰기·검증·허용 폴더)를 확인합니다. `SMOKE_EXE=release\win-unpacked\StewardLedger.exe`를 주면 포장된 앱(퓨즈 포함)을 시험합니다. 포장된 앱은 실제 데이터 폴더(`%APPDATA%\StewardLedger`)를 쓰므로 읽기 확인만 하고, 로그인·계정 검사는 건너뜁니다(클라이언트 ID가 들어 있어 로그인이 실제로 성공해 계정 기록이 바뀌었던 문제).
 
 **자동으로 확인하지 못하는 것:** 실제 프린터 출력, 설치본(NSIS) 설치·제거 흐름. 이 부분은 직접 확인해야 합니다.
 

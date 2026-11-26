@@ -68,6 +68,9 @@ try {
   check('보안: 오른쪽 버튼 메뉴가 막힘', (await ev('(() => { const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented; })()')) === true);
   const db = await ev(`new Promise((res, rej) => { const r = indexedDB.open('church-offering-ledger'); r.onsuccess = () => { const d = r.result; const o = { v: d.version, s: [...d.objectStoreNames].sort().join(',') }; d.close(); res(JSON.stringify(o)); }; r.onerror = () => rej(r.error); })`);
   check('저장소: kv·donations·audits가 만들어짐', JSON.parse(db).s === 'audits,donations,kv', db);
+  // 로그인·계정 검사는 개발 실행(임시 데이터 폴더)에서만 합니다. 포장 앱은 실제 데이터 폴더를 쓰며 클라이언트 ID가 들어 있어 로그인이 실제로 성공하므로, 여기서 로그인하거나 계정을 바꾸면 사용자 데이터가 바뀝니다.
+  if (exe) console.log('건너뜀  로그인·계정 IPC 검사 — 포장 앱은 실제 데이터 폴더를 쓰므로 읽기 확인만 함');
+  if (!exe) {
   // 로그인 설정이 없는 환경(클라이언트 ID 없음)에서는 브라우저를 열지 않고 안내만 돌려준다. 화면에는 계정(이메일)만 오가고 토큰은 없다.
   check('로그인 IPC: 설정이 없으면 안내만 돌려줌', JSON.stringify(await ev('window.desktop.authStatus()')) === '{"configured":false,"email":null,"role":null,"locked":false,"hasPin":false}');
   const loginResult = await ev('window.desktop.authLogin()');
@@ -85,6 +88,7 @@ try {
   // 계정·역할 관리는 로그인한 관리자만(로그인 없이는 목록·등록·역할 변경 모두 거절).
   const userCalls = await ev('Promise.all([window.desktop.usersList(), window.desktop.usersAdd({ email: "x@y.co", role: "admin" }), window.desktop.usersSetRole("x@y.co", "viewer"), window.desktop.usersSetDisabled("x@y.co", true), window.desktop.usersLog()])');
   check('계정 관리 IPC: 로그인 없이는 모두 거절', userCalls.every((r) => r?.error === '로그인이 필요합니다.'), JSON.stringify(userCalls));
+  }
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
   const peek = await ev('window.desktop.openBackupReader("auto:latest").then(() => "통과됨", (e) => e.message)');

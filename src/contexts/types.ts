@@ -137,5 +137,5 @@ export interface SaveBatch {
 
 export type DuplicateResolution = 'MERGE' | 'SEPARATE';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 export const SCHEMA_VERSION = 2;
