@@ -367,6 +367,8 @@ export function useDonationListReport(f: ReportFilters) {
       donation: d,
       typeName: d ? typeById.get(d.offeringTypeId)?.name ?? '(삭제된 종류)' : '',
       amountLabel: d ? formatWon(d.amount) : '',
+      // 입력 시각(한국 시간). 복원 검사가 createdAt은 확인하지 않아, 없거나 잘못된 값은 빈 칸으로 둡니다.
+      enteredAt: d && /^\d{4}-\d{2}-\d{2}T/.test(d.createdAt) && !Number.isNaN(Date.parse(d.createdAt)) ? formatDateTime(d.createdAt) : '',
       tag: d ? tagOf(d.memberId) : null,
     };
   };

@@ -16,6 +16,26 @@ vi.mock('../services/storage/storageService', async (orig) => {
 const wait = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)));
 const row = (id: string, date: string) => ({ id, date, memberId: null, donorDisplayName: '무명1', offeringTypeId: 't', amount: 1000, createdAt: id, updatedAt: '' });
 
+describe('useDonationListReport 입력일', () => {
+  it('입력 시각을 한국 시간으로 주고, 잘못된 값은 빈 칸으로 둡니다', async () => {
+    const rows = [row('a', '2026-10-04'), row('b', '2026-10-04')];
+    rows[0].createdAt = '2026-10-04T15:30:00.000Z';
+    rows[1].createdAt = '';
+    await transact(async () => ({ writes: [monthWrite('2026-10', rows as never)], result: 0 }));
+    const { result } = renderHook(() => {
+      const f = useReportFilters();
+      return { f, r: useDonationListReport(f) };
+    }, { wrapper: AppProviders });
+    act(() => {
+      result.current.f.setPeriodType('MONTH');
+      result.current.f.setYear('2026');
+      result.current.f.setPeriodValue(10);
+    });
+    await wait(REPORT_DELAY_MS + 50);
+    await waitFor(() => expect([0, 1].map((i) => result.current.r.rowAt(i).enteredAt).sort()).toEqual(['', '2026-10-05 00:30:00']), { timeout: 3000 });
+  });
+});
+
 describe('useDonationListReport 읽기 실패', () => {
   it('어느 달을 읽지 못하면 failed로 알리고, 다시 읽을 수 있게 되면 표시를 지웁니다', async () => {
     await transact(async () => ({ writes: [monthWrite('2026-11', [row('a', '2026-11-08') as never])], result: 0 }));

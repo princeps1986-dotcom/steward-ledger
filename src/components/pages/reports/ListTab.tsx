@@ -10,8 +10,8 @@ import { PAGER_RESERVE, REPORT_SCROLL, useFitHeight } from './reportScroll';
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 30;
-// 번호 · 날짜 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
-const GRID = 'grid grid-cols-[2.75rem_9rem_10rem_8.5rem_9rem_14rem_7.5rem] items-center';
+// 번호 · 헌금일 · 입력일 · 표기명 · 종류 · 금액 · 메모(남는 폭) · 관리 — 날짜·표기명·종류·금액은 여유 있게, 메모는 남는 폭만
+const GRID = 'grid grid-cols-[2.75rem_9rem_9rem_10rem_8.5rem_9rem_10rem_7.5rem] items-center';
 
 type Row = ReturnType<ReturnType<typeof useDonationListReport>['rowAt']>;
 
@@ -34,6 +34,7 @@ export function ListTab({ f }: { f: ReportFilters }) {
       <>
         <span className="text-center text-xs text-gray-500">{no}</span>
         <DateText date={row.donation.date} />
+        <span title={row.enteredAt || undefined}>{row.enteredAt ? <DateText date={row.enteredAt.slice(0, 10)} /> : '-'}</span>
         <span className="sticky left-2 z-0 truncate bg-white">
           <NameWithTag name={row.donation.donorDisplayName} tag={row.tag} />
         </span>
@@ -69,7 +70,8 @@ export function ListTab({ f }: { f: ReportFilters }) {
       <div ref={paging.scrollRef} style={fit} className={`rounded border ${REPORT_SCROLL}`}>
         <div className={`${GRID} w-max min-w-full sticky top-0 z-10 border-b bg-gray-50 px-2 text-xs font-semibold text-gray-600`} style={{ height: ROW_HEIGHT }}>
           <span className="text-center">No</span>
-          <span>날짜</span>
+          <span>헌금일</span>
+          <span>입력일</span>
           <span className="sticky left-2 z-20 bg-gray-50">표기명</span>
           <span>헌금 종류</span>
           <span className="text-right">금액</span>
