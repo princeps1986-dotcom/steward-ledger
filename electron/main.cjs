@@ -19,7 +19,8 @@ const authConfig = require('./authConfig.cjs');
 const { createUserStore } = require('./userStore.cjs');
 const { createDataKeyStore } = require('./dataKey.cjs');
 const { parseRestoreLog } = require('./restoreLog.cjs');
-const { verifyBackupFile, openPlainStream, isEncryptedFile } = require('./backupVerify.cjs');
+const { verifyBackupFile, isEncryptedFile } = require('./backupVerify.cjs');
+const { createBackupReaders } = require('./backupReader.cjs');
 const { pcHeader, passwordHeader, parseHeader, deriveKey, createEncryptStream } = require('./backupCrypto.cjs');
 
 // 설치한 앱은 환경변수로 다른 주소를 열지 않습니다(그 페이지가 백업 읽기 기능을 쓰지 못하게).
@@ -432,60 +433,11 @@ if (!app.requestSingleInstanceLock()) {
       return verifyMessage(err);
     }
   });
-  // 암호화한 백업을 화면이 줄 단위로 읽도록 main이 풀어서 조각(최대 1MB)으로 건넵니다. 화면은 키를 모릅니다.
-  const readers = new Map();
-  let readerCounter = 0;
-  ipcMain.handle('backup:open-reader', (event, file, password) => {
-    const p = backupFilePath(file);
-    if (!p) throw new Error('백업 파일을 읽을 수 없습니다.');
-    // 닫지 않은 읽기(화면을 다시 불러온 경우 등)가 쌓이지 않게 가장 오래된 것부터 닫습니다.
-    for (const [oldId, r] of readers) {
-      if (readers.size < 8) break;
-      readers.delete(oldId);
-      r.stream.destroy();
-    }
-    let stream;
-    try {
-      // 암호화한 백업만 풀어 건넵니다(예전 일반 파일은 화면이 직접 읽으므로, 여기서 임의 파일 내용을 넘기지 않음).
-      if (!isEncryptedFile(p)) throw new Error('백업 파일 검증 실패: 암호화한 백업 파일이 아닙니다.');
-      stream = openPlainStream(p, keyForFile(password));
-    } catch (err) {
-      throw new Error(verifyMessage(err));
-    }
-    const id = ++readerCounter;
-    readers.set(id, { stream, it: stream[Symbol.asyncIterator](), sender: event.sender });
-    return id;
-  });
-  ipcMain.handle('backup:read', async (event, id) => {
-    const r = readers.get(id);
-    if (!r || r.sender !== event.sender) throw new Error('백업 파일 읽기가 끝났거나 시작되지 않았습니다.');
-    const parts = [];
-    let size = 0;
-    try {
-      while (size < 1024 * 1024) {
-        const { value, done } = await r.it.next();
-        if (done) break;
-        parts.push(value);
-        size += value.length;
-      }
-    } catch (err) {
-      readers.delete(id);
-      r.stream.destroy();
-      throw new Error(verifyMessage(err));
-    }
-    if (parts.length === 0) {
-      readers.delete(id);
-      return null;
-    }
-    return Buffer.concat(parts);
-  });
-  ipcMain.handle('backup:close-reader', (event, id) => {
-    const r = readers.get(id);
-    if (!r || r.sender !== event.sender) return true;
-    readers.delete(id);
-    r.stream.destroy();
-    return true;
-  });
+  // 풀린 백업 읽기(electron/backupReader.cjs, 관리자만). roleIs는 아래에서 만들어지므로 부를 때 찾습니다.
+  const backupReaders = createBackupReaders({ roleIs: (...roles) => roleIs(...roles), notAllowed: NOT_ALLOWED, resolvePath: backupFilePath, keyForFile, verifyMessage });
+  ipcMain.handle('backup:open-reader', backupReaders.open);
+  ipcMain.handle('backup:read', backupReaders.read);
+  ipcMain.handle('backup:close-reader', backupReaders.close);
   // 전체 복원용: 백업 폴더의 가장 최근 종료 전체 백업(없으면 null)
   ipcMain.handle('backup:latest-auto', async () => {
     const d = defaultBackupDir();

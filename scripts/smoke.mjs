@@ -87,6 +87,8 @@ try {
   check('계정 관리 IPC: 로그인 없이는 모두 거절', userCalls.every((r) => r?.error === '로그인이 필요합니다.'), JSON.stringify(userCalls));
   const stale = await ev('window.desktop.backupWrite(999, "x").then(() => "통과됨", (e) => "거부")');
   check('백업 IPC: 모르는 세션의 쓰기는 거부', stale === '거부', stale);
+  const peek = await ev('window.desktop.openBackupReader("auto:latest").then(() => "통과됨", (e) => e.message)');
+  check('백업 IPC: 로그인 없이는 백업 내용을 읽을 수 없음', peek.includes('권한이 없습니다'), peek);
   if (!exe) {
     // 포장하지 않은 실행에서는 백업 폴더를 임시 폴더로 바꿀 수 있어, 백업 쓰기·검증·이름 바꾸기·보관 정리를 끝까지 시험합니다.
     const NL = String.fromCharCode(10);
