@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Donation, Member, OfferingType } from '../../contexts/types';
-import { batchLabel, fileDateError, matchDonationRows, normalizeDonationRows } from './donationImportService';
+import { batchLabel, fileDateError, matchDonationRows, normalizeDonationRows, parsePastedDonations } from './donationImportService';
+import { readImportFile } from './memberImportService';
 
 const member = (over: Partial<Member>) => ({ id: 'm1', name: '김철수', isActive: true, phoneLast4: '1234', familyGroupId: 'g1', ...over }) as Member;
 const type = (name: string, over: Partial<OfferingType> = {}) =>
@@ -115,3 +116,124 @@ describe('파일 단위 규칙', () => {
     expect(rs[0].messages[0]).toContain('비활성');
   });
 });
+
+describe('붙여넣은 표 읽기', () => {
+  it('성도 × 헌금종류 표는 금액 칸마다 한 줄이 되고 빈 칸은 건너뛴다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('\t십일조\t감사헌금\t구제헌금\r\n돌고래\t1,000\t2000\t\r\n홍길동\t\t-\t3000\r\n'));
+    expect(hasDateColumn).toBe(false);
+    expect(rows.map((r) => [r.name, r.typeName, r.amountRaw])).toEqual([
+      ['돌고래', '십일조', '1000'],
+      ['돌고래', '감사헌금', '2000'],
+      ['홍길동', '구제헌금', '3000'],
+    ]);
+  });
+
+  it('연락처·날짜 열은 헌금 종류로 보지 않고 각 줄에 붙인다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('날짜\t이름\t연락처뒷4자리\t십일조\r\n2026-11-22\t홍길동\t1111\t500'));
+    expect(hasDateColumn).toBe(true);
+    expect(rows).toMatchObject([{ date: '2026-11-22', name: '홍길동', phoneLast4: '1111', typeName: '십일조', amountRaw: '500' }]);
+  });
+
+  it('양식(한 줄 = 1건) 표는 CSV처럼 그대로 읽는다', () => {
+    const [r] = csv(parsePastedDonations('성도이름\t헌금종류\t금액\r\n김철수\t십일조\t1000')).rows;
+    expect(r).toMatchObject({ name: '김철수', typeName: '십일조', amountRaw: '1000' });
+  });
+
+  it('이름(뒷4자리)는 나눠 읽고, 열의 값과 다르면 나누지 않는다', () => {
+    const rows = csv([
+      row({ 성도이름: '홍길동(1111)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동（0123）', 연락처뒷4자리: '123' }),
+      row({ 성도이름: '홍길동(1111)', 연락처뒷4자리: '2222' }),
+      row({ 성도이름: '김철수(청년)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동 (1111)', 연락처뒷4자리: '' }),
+      row({ 성도이름: '홍길동( 1111)', 연락처뒷4자리: '' }),
+    ]).rows;
+    expect(rows.map((r) => [r.name, r.phoneLast4])).toEqual([
+      ['홍길동', '1111'],
+      ['홍길동', '0123'],
+      ['홍길동(1111)', '2222'],
+      ['김철수(청년)', ''],
+      ['홍길동 (1111)', ''],
+      ['홍길동( 1111)', ''],
+    ]);
+  });
+
+  it('첫 칸의 날짜는 모든 줄에 적용하고, 날짜 열이 있으면 열이 우선한다', () => {
+    const { rows, hasDateColumn } = csv(parsePastedDonations('2026.11.22\t십일조\t감사헌금\r\n강민수\t1000\t2000\r\n강요한(7285)\t\t4000'));
+    expect(hasDateColumn).toBe(true);
+    expect(rows.map((r) => [r.date, r.name, r.phoneLast4, r.amountRaw])).toEqual([
+      ['2026-11-22', '강민수', '', '1000'],
+      ['2026-11-22', '강민수', '', '2000'],
+      ['2026-11-22', '강요한', '7285', '4000'],
+    ]);
+    expect(csv(parsePastedDonations('2026-11-22\t일자\t십일조\n강민수\t2026-11-15\t1')).rows[0].date).toBe('2026-11-15');
+  });
+
+  it('날짜는 yyyy-mm-dd, yyyy.mm.dd, yyyy/mm/dd만 받는다', () => {
+    for (const 날짜 of ['2026-11-22', '2026.11.22', '2026/11/22']) {
+      const [r] = matchDonationRows(csv([row({ 날짜 })]).rows, base);
+      expect(r.draft?.date).toBe('2026-11-22');
+    }
+    for (const 날짜 of ['2026-1-4', '2026. 11. 22.', '2026-11.22', '20261122', '11/22/2026']) {
+      const [r] = matchDonationRows(csv([row({ 날짜 })]).rows, base);
+      expect(r.status).toBe('ERROR');
+    }
+    const [corner] = matchDonationRows(csv(parsePastedDonations('2026.1.4\t십일조\n김철수\t1')).rows, base);
+    expect(corner.messages.join()).toContain('날짜 형식');
+  });
+
+  it('금액 맨 앞의 원화 기호는 떼고, 그 밖의 위치나 음수는 오류', () => {
+    const amounts = (list: string[]) => matchDonationRows(csv(list.map((금액) => row({ 금액 }))).rows, base).map((r) => r.draft?.amount ?? null);
+    expect(amounts(['₩1,000', '￦ 2,000', '\\3000'])).toEqual([1000, 2000, 3000]);
+    expect(amounts(['-₩1000', '1₩000'])).toEqual([null, null]);
+  });
+
+  it('회계 서식의 빈 값(₩ -, ₩0) 칸은 건너뛴다', () => {
+    const rows = csv(parsePastedDonations('\t십일조\t감사헌금\t구제헌금\t선교헌금\t건축헌금\n김철수\t ₩ - \t₩0\t₩1,000\t0원\t- 원')).rows;
+    expect(rows.map((r) => [r.typeName, r.amountRaw])).toEqual([['구제헌금', '1000']]);
+  });
+
+  it('원·쉼표만 적힌 칸은 건너뛰지 않고 오류로 남긴다', () => {
+    const rows = csv(parsePastedDonations('\t십일조\t감사헌금\n김철수\t원\t,')).rows;
+    expect(matchDonationRows(rows, base).map((r) => r.status)).toEqual(['ERROR', 'ERROR']);
+  });
+
+  it('CSV 파일은 빈 줄이 있어도 원본 줄 번호를 알려 준다', async () => {
+    const text = '\n성도이름,헌금종류,금액\r\n김철수,십일조,1000\r\n\r\n,,\r\n이영희,십일조,2000\r\n';
+    const rows = csv(await readImportFile(new File([text], 'a.csv'))).rows;
+    expect(rows.map((r) => [r.name, r.line])).toEqual([['김철수', 3], ['이영희', 6]]); // 맨 앞 빈 줄도 엑셀처럼 한 줄로 셈
+  });
+
+  it('메모 칸 안의 줄바꿈은 그 아래 줄 번호를 밀지 않는다', async () => {
+    const text = '성도이름,헌금종류,금액,메모\r\n김철수,십일조,1000,"첫째\r\n둘째"\r\n이영희,십일조,2000,\r\n';
+    const rows = csv(await readImportFile(new File([text], 'a.csv'))).rows;
+    expect(rows.map((r) => [r.name, r.line])).toEqual([['김철수', 2], ['이영희', 4]]);
+  });
+
+  it.each([['탭', '\t'], ['세미콜론', ';'], ['쉼표', ',']])('%s로 나눈 CSV는 빈 줄이 있어도 읽는다', async (_, d) => {
+    const lines = [['성도이름', '헌금종류', '금액'].join(d), '', '', '', ['김철수', '십일조', '1000'].join(d), ''];
+    const rows = csv(await readImportFile(new File([lines.join('\r\n')], 'a.csv'))).rows;
+    expect(rows.map((r) => [r.name, r.typeName, r.amountRaw, r.line])).toEqual([['김철수', '십일조', '1000', 5]]);
+  });
+
+  it('붙여넣은 표의 줄 번호는 원본 줄을 가리킨다', () => {
+    const rows = csv(parsePastedDonations('\t십일조\t감사헌금\n김철수\t1\t2\n\n이영희\t\t3')).rows;
+    expect(rows.map((r) => [r.rowNo, r.line])).toEqual([[2, 2], [3, 2], [4, 4]]);
+  });
+
+  it('반복된 줄은 이미 저장된 기록이 있어도 오류로 남는다', () => {
+    const stored = { amount: 1000 } as Donation;
+    const result = matchDonationRows(csv([row({}), row({})]).rows, { ...base, existing: [stored, stored] });
+    expect(result.map((r) => r.status)).toEqual(['SAVED', 'ERROR']);
+  });
+
+  it('날짜 열이 모두 비어 있으면 날짜가 없는 것으로 본다', () => {
+    expect(csv([row({ 날짜: '' })]).hasDateColumn).toBe(false);
+  });
+
+  it('제목 줄이 없거나 표가 아니면 오류', () => {
+    expect(() => parsePastedDonations('돌고래\t1000')).toThrow('제목 줄');
+    expect(() => parsePastedDonations('안녕')).toThrow('표를 읽지 못했습니다');
+  });
+});
+

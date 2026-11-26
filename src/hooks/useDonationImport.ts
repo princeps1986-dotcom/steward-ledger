@@ -5,7 +5,6 @@ import { useOfferingTypes } from '../contexts/OfferingTypeContext';
 import { useSettings } from '../contexts/SettingsContext';
 import type { Donation, DonationDraft } from '../contexts/types';
 import { formatWon } from '../services/domain/amount';
-import { lastSunday } from '../services/domain/dates';
 import { readImportFile } from '../services/import/memberImportService';
 import {
   donationTemplateCsv,
@@ -13,6 +12,7 @@ import {
   fileDateError,
   matchDonationRows,
   normalizeDonationRows,
+  parsePastedDonations,
   type DonationImportRow,
   type MatchedDonationRow,
 } from '../services/import/donationImportService';
@@ -22,22 +22,26 @@ import { createExclusive } from './exclusive';
 
 const STATUS_LABEL = { OK: '저장', WARN: '확인', ERROR: '오류', SAVED: '이미 저장' } as const;
 
-export function useDonationImport(onDone: () => void, initialDate: string = lastSunday()) {
+export function useDonationImport(onDone: () => void) {
   const members = useMembers();
   const allTypes = useOfferingTypes();
   const settings = useSettings();
   const actions = useDonationActions();
 
   const [fileName, setFileName] = useState('');
+  // 새로 불러올 때마다 늘어, 미리보기를 1쪽으로 돌립니다(붙여넣기는 이름이 늘 같음).
+  const [loadId, setLoadId] = useState(0);
   const [rows, setRows] = useState<DonationImportRow[] | null>(null);
   const [hasDateColumn, setHasDateColumn] = useState(true);
-  const [defaultDate, setDefaultDate] = useState<string>(initialDate);
+  const [defaultDate, setDefaultDate] = useState('');
   const [matched, setMatched] = useState<MatchedDonationRow[]>([]);
   const [largeConfirmed, setLargeConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestRef = useRef(0);
+  /** 불러온 줄 수. 저장할 때 남은 줄과의 차이가 화면에서 제거한 건수입니다. */
+  const loadedRef = useRef(0);
   const busyRef = useRef(false);
   const exclusive = useMemo(() => createExclusive(busyRef), []);
 
@@ -64,29 +68,36 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
     [allTypes, members, settings.largeAmountThreshold, hasDateColumn],
   );
 
+  /** 날짜 없는 자료는 날짜를 고르기 전까지 목록을 보여 주지 않고 저장도 막습니다. */
+  const needsDate = rows !== null && !hasDateColumn && !defaultDate;
+
   // 파일이나 날짜가 바뀌면 다시 판정합니다.
   useEffect(() => {
-    if (!rows) return;
     const id = ++requestRef.current;
+    if (!rows || needsDate) return;
     void classify(rows, defaultDate).then((m) => {
       if (id === requestRef.current) {
         setMatched(m);
         setLargeConfirmed(false);
       }
     });
-  }, [rows, defaultDate, classify]);
+  }, [rows, defaultDate, classify, needsDate]);
 
-  const onFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const load = useCallback(async (name: string, read: () => Record<string, string>[] | Promise<Record<string, string>[]>) => {
+    // 저장 중에 불러온 자료는 저장이 끝나며 지워지므로 받지 않습니다.
+    if (busyRef.current) return;
     setError(null);
     setResult(null);
-    setFileName(file.name);
+    setFileName(name);
+    setLoadId((n) => n + 1);
+    // 이전 자료의 미리보기와 날짜는 새 자료에 이어 쓰지 않습니다.
+    setMatched([]);
+    setDefaultDate('');
     try {
-      const raw = await readImportFile(file);
+      const raw = await read();
       if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
       const { rows: parsed, hasDateColumn: hasDate } = normalizeDonationRows(raw);
+      loadedRef.current = parsed.length;
       setHasDateColumn(hasDate);
       setRows(parsed);
     } catch (err) {
@@ -96,11 +107,22 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
     }
   }, []);
 
+  const onFile = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (file) await load(file.name, () => readImportFile(file));
+    },
+    [load],
+  );
+  const onPaste = useCallback((text: string) => load('붙여넣은 표', () => parsePastedDonations(text)), [load]);
+
   const errorCount = matched.filter((r) => r.status === 'ERROR').length;
   const toSave = matched.filter((r) => r.draft && r.status !== 'SAVED' && r.status !== 'ERROR');
-  const largeCount = matched.filter((r) => r.large).length;
+  const largeRows = matched.filter((r) => r.large);
+  const largeCount = largeRows.length;
   const dateError = fileDateError(matched);
-  const canSave = !busy && rows !== null && errorCount === 0 && !dateError && toSave.length > 0 && (largeCount === 0 || largeConfirmed);
+  const canSave = !busy && rows !== null && !needsDate && errorCount === 0 && !dateError && toSave.length > 0 && (largeCount === 0 || largeConfirmed);
 
   // 연타로 두 번 저장되지 않도록 ref로 즉시 막습니다(상태 busy는 다음 렌더 뒤에야 바뀝니다).
   const confirm = useCallback(
@@ -125,7 +147,9 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
           // 한 파일(한 날짜)을 한 번에 저장합니다. 저장은 원자적이라 실패하면 아무것도 남지 않고, 복구하기가 파일 전체를 되돌립니다.
           const batch = await actions.saveBatch(drafts, 'SEPARATE', batchLabel(drafts, members));
           const total = batch.lines.reduce((s, l) => s + l.amount, 0);
-          setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.`);
+          const removed = loadedRef.current - rows.length;
+          const removedNote = removed > 0 ? ` 화면에서 제거한 ${removed}건은 저장하지 않았습니다.` : '';
+          setResult(`${drafts.length}건 저장 완료 (합계 ${formatWon(total)}). 이미 있던 ${fresh.length - drafts.length}건은 건너뛰었습니다.${removedNote}`);
           setRows(null);
           setMatched([]);
           setLargeConfirmed(false);
@@ -137,6 +161,13 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
       }),
     [exclusive, rows, canSave, classify, defaultDate, actions, members],
   );
+
+  /** 오류 줄을 이번 불러오기에서 빼고 남은 줄을 다시 판정합니다(원본 파일은 그대로). */
+  const removeRows = (rowNos: number[]) => {
+    setError(null);
+    setRows((prev) => prev && prev.filter((r) => !rowNos.includes(r.rowNo)));
+  };
+  const removeErrors = () => removeRows(matched.filter((r) => r.status === 'ERROR').map((r) => r.rowNo));
 
   const summary = useMemo(
     () => ({
@@ -150,13 +181,16 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
 
   return {
     fileName,
+    loadId,
     hasPreview: rows !== null,
     hasDateColumn,
+    needsDate,
     defaultDate,
     setDefaultDate,
     preview: matched.map((r) => ({ ...r, statusLabel: STATUS_LABEL[r.status] })),
     summary,
     largeCount,
+    largeRows,
     largeConfirmed,
     setLargeConfirmed,
     canSave,
@@ -165,7 +199,10 @@ export function useDonationImport(onDone: () => void, initialDate: string = last
     result,
     busy,
     onFile,
+    onPaste,
     confirm,
+    removeErrors,
+    removeRow: (rowNo: number) => removeRows([rowNo]),
     downloadTemplate: () => downloadText(donationTemplateCsv(), '헌금_불러오기_양식.csv', 'text/csv;charset=utf-8'),
     close: onDone,
   };
