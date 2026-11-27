@@ -18,8 +18,8 @@
 - 일별 헌금 내역 불러오기(일별 보고서, [PDF 저장] 오른쪽): 화면 `DonationImportModal.tsx`(ReportsPage에서 엶), 로직 `src/hooks/useDonationImport.ts`, 줄 읽기·붙여넣은 표 변환(`parsePastedDonations`)·성도/종류 매칭·상태 판정(순수 함수) `src/services/import/donationImportService.ts`, 시험 `donationImportService.test.ts`, 화면 시험 `DonationImportModal.test.tsx`
 
 ## 성도 정보
-- 화면: `src/components/pages/members/MembersPage.tsx`, `MemberEditModal.tsx`, 명단 불러오기 `MemberImportModal.tsx`
-- 로직: `src/hooks/useMembersPage.ts`, `useMemberForm.ts`, `useMemberImport.ts`
+- 화면: `src/components/pages/members/MembersPage.tsx`, `MemberEditModal.tsx`, 성도 명단 불러오기 `MemberImportModal.tsx`
+- 로직: `src/hooks/useMembersPage.ts`, `useMemberForm.ts`, `useMemberImport.ts`(미리보기 행 수정·제외)
 - 규칙·상태: `src/services/domain/memberRules.ts`, `memberSort.ts`, `src/contexts/MemberContext.tsx`, CSV·붙여넣은 이름 열(`parsePastedTable`) `src/services/import/memberImportService.ts`
 
 ## 헌금 종류

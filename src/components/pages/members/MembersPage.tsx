@@ -52,7 +52,7 @@ export function MembersPage() {
         <div className="flex-1" />
         <span className="pb-2 text-sm text-gray-500">활성 성도 {p.total}명</span>
         <button className="btn" onClick={p.openImport}>
-          명단 불러오기
+          성도 명단 불러오기
         </button>
         <button className="btn-primary" onClick={p.openNew}>
           + 성도 등록

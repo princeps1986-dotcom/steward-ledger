@@ -8,6 +8,7 @@ import {
   parsePastedTable,
   readImportFile,
   templateCsv,
+  type ImportRow,
   type ImportStats,
   type PreviewRow,
 } from '../services/import/memberImportService';
@@ -23,7 +24,9 @@ export function useMemberImport(onDone: () => void) {
   const members = useMembers();
   const { replaceMembers } = useMemberActions();
   const [fileName, setFileName] = useState('');
-  const [preview, setPreview] = useState<PreviewRow[] | null>(null);
+  // 원본 줄을 들고 있다가 고치거나 뺄 때마다 다시 판정합니다.
+  const [rows, setRows] = useState<ImportRow[] | null>(null);
+  const [removed, setRemoved] = useState(0);
   const [overwrite, setOverwrite] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<ImportStats | null>(null);
@@ -36,19 +39,22 @@ export function useMemberImport(onDone: () => void) {
       setError(null);
       setStats(null);
       setOverwrite(new Set());
+      setRemoved(0);
       setFileName(name);
       setLoadId((n) => n + 1);
       try {
         const raw = await read();
         if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
-        setPreview(buildPreview(normalizeRows(raw), members));
+        setRows(normalizeRows(raw));
       } catch (err) {
-        setPreview(null);
+        setRows(null);
         setError((err as Error).message);
       }
     },
-    [members],
+    [],
   );
+
+  const preview = useMemo<PreviewRow[] | null>(() => (rows ? buildPreview(rows, members) : null), [rows, members]);
 
   const onFile = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
@@ -71,33 +77,48 @@ export function useMemberImport(onDone: () => void) {
     });
   }, []);
 
+  const removeRow = useCallback((rowNo: number) => {
+    setRows((prev) => prev && prev.filter((r) => r.rowNo !== rowNo));
+    setOverwrite((prev) => {
+      const next = new Set(prev);
+      next.delete(rowNo);
+      return next;
+    });
+    setRemoved((n) => n + 1);
+  }, []);
+
+  const updateRow = useCallback((rowNo: number, patch: Pick<ImportRow, 'name' | 'position' | 'phoneLast4'>) => {
+    const fixed = { name: patch.name.trim(), position: patch.position.trim(), phoneLast4: patch.phoneLast4.replace(/[^0-9]/g, '') };
+    setRows((prev) => prev && prev.map((r) => (r.rowNo === rowNo ? { ...r, ...fixed } : r)));
+  }, []);
+
   const confirm = useCallback(async () => {
-    if (!preview) return;
+    if (!rows) return;
     setBusy(true);
     try {
       let result: ImportStats | null = null;
       await replaceMembers((latest) => {
         // 미리보기 이후 명단이 바뀌었을 수 있으므로 최신 명단으로 다시 판정합니다.
-        const fresh = buildPreview(preview.map(({ status: _s, messages: _m, duplicateOfId: _d, headRef: _h, ...r }) => r), latest);
+        const fresh = buildPreview(rows, latest);
         const { members: next, stats: s } = applyImport(fresh, overwrite, latest);
         result = s;
         return next;
       });
       setStats(result);
-      setPreview(null);
+      setRows(null);
     } catch (err) {
       setError(`불러오기 실패: ${(err as Error).message} (아무것도 반영되지 않았습니다)`);
     } finally {
       setBusy(false);
     }
-  }, [preview, overwrite, replaceMembers]);
+  }, [rows, overwrite, replaceMembers]);
 
   const summary = useMemo(() => {
-    const rows = preview ?? [];
+    const list = preview ?? [];
     return {
-      ok: rows.filter((r) => r.status === 'OK' || r.status === 'WARN').length,
-      dup: rows.filter((r) => r.status === 'DUPLICATE').length,
-      err: rows.filter((r) => r.status === 'ERROR').length,
+      ok: list.filter((r) => r.status === 'OK' || r.status === 'WARN').length,
+      dup: list.filter((r) => r.status === 'DUPLICATE').length,
+      err: list.filter((r) => r.status === 'ERROR').length,
     };
   }, [preview]);
 
@@ -106,6 +127,7 @@ export function useMemberImport(onDone: () => void) {
     loadId,
     preview: (preview ?? []).map((r) => ({ ...r, statusLabel: STATUS_LABEL[r.status], overwrite: overwrite.has(r.rowNo) })),
     hasPreview: !!preview,
+    removed,
     summary,
     error,
     stats,
@@ -113,6 +135,8 @@ export function useMemberImport(onDone: () => void) {
     onFile,
     onPaste,
     toggleOverwrite,
+    removeRow,
+    updateRow,
     confirm,
     downloadTemplate: () => downloadText(templateCsv(), '성도명단_양식.csv', 'text/csv;charset=utf-8'),
     close: onDone,

@@ -3,7 +3,7 @@ import { nowIso } from '../domain/ids';
 import { applyMemberSave, EMPTY_MEMBER_DRAFT } from '../domain/memberRules';
 import { normalizePosition } from '../domain/positions';
 
-interface ImportRow {
+export interface ImportRow {
   rowNo: number;
   name: string;
   position: string;
@@ -205,7 +205,7 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     if (dup) {
       row.duplicateOfId = dup.id;
       row.status = 'DUPLICATE';
-      row.messages.push('이미 등록된 성도와 같습니다.');
+      row.messages.push(`이미 등록된 ${dup.isActive ? '' : '비활성 '}성도와 같습니다. 동명이인이면 [수정]에서 연락처 뒷4자리를 넣으세요.`);
     }
   }
   return preview;
