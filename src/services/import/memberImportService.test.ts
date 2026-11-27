@@ -19,6 +19,24 @@ describe('성도 명단 붙여넣기(이름만 읽음)', () => {
     expect(raw).toEqual([{ 이름: '김철수', [LINE_KEY]: '2' }]);
   });
 
+  it('미리보기 행 번호는 원본 줄 번호(빈 줄 포함)를 쓴다', () => {
+    const preview = buildPreview(normalizeRows(parsePastedTable('이름\n김철수\n\n이영희')), []);
+    expect(preview.map((r) => r.line)).toEqual([2, 4]);
+  });
+
+  it('띄어쓰기만 다른 이름은 같은 사람으로 본다(기존 성도·목록 안·대표자)', () => {
+    const existing = [{ id: 'k', name: '김철수', position: '', isActive: true, isFamilyHead: true, familyGroupId: 'k', createdAt: '', updatedAt: '' }];
+    const rows = normalizeRows([
+      { 이름: '김 철수' },
+      { 이름: '이영희' },
+      { 이름: '이 영희' },
+      { 이름: '박민수', 대표자여부: 'N', 대표자이름: '김철 수' },
+    ]);
+    const preview = buildPreview(rows, existing);
+    expect(preview.map((r) => r.status)).toEqual(['DUPLICATE', 'OK', 'ERROR', 'OK']);
+    expect(preview[3].headRef).toEqual({ kind: 'EXISTING', memberId: 'k' });
+  });
+
   it('이름 제목이 없으면 안내 오류', () => {
     expect(() => parsePastedTable('')).toThrow('제목 줄');
     expect(() => parsePastedTable('김철수\n이영희')).toThrow('이름·성명·성도명·성도');

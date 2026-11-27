@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useMemberImport } from '../../../hooks/useMemberImport';
 import { usePaging } from '../../../hooks/usePaging';
 import { Modal } from '../../shared/Modal';
@@ -19,17 +19,19 @@ function ImportBody({ onClose }: { onClose(): void }) {
   const paging = usePaging(im.preview.length, PAGE_SIZE, String(im.loadId));
   // 한 번에 한 행만 고칩니다.
   const [editing, setEditing] = useState<{ rowNo: number; name: string; position: string; phoneLast4: string } | null>(null);
+  // 새 표를 불러오면 행 번호가 다시 쓰이므로, 고치던 내용을 버립니다.
+  useEffect(() => setEditing(null), [im.loadId]);
   const saveEdit = () => {
-    if (!editing) return;
+    if (!editing?.name.trim()) return;
     im.updateRow(editing.rowNo, editing);
     setEditing(null);
   };
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="btn cursor-pointer">
+        <label className={`btn ${im.busy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
           파일 선택 (.csv)
-          <input type="file" accept=".csv" className="hidden" onChange={(e) => void im.onFile(e)} />
+          <input type="file" accept=".csv" className="hidden" disabled={im.busy} onChange={(e) => void im.onFile(e)} />
         </label>
         <button className="btn" onClick={im.downloadTemplate}>
           양식 다운로드
@@ -114,7 +116,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
                   ) : null;
                   return (
                     <tr key={r.rowNo}>
-                      <td className="td">{r.rowNo}</td>
+                      <td className="td">{r.line}</td>
                       <td className={`td font-semibold ${STATUS_COLOR[r.status]}`}>{r.statusLabel}</td>
                       <td className="td">{nameField ?? r.name}</td>
                       <td className="td">{positionField ?? (normalizePosition(r.position) || '-')}</td>

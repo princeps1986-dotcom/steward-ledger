@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useMemberActions, useMembers } from '../contexts/MemberContext';
 import { downloadText } from '../services/downloadBridge';
 import {
@@ -33,9 +33,15 @@ export function useMemberImport(onDone: () => void) {
   const [busy, setBusy] = useState(false);
 
   const [loadId, setLoadId] = useState(0);
+  // 마지막으로 시작한 불러오기 번호(늦게 끝난 이전 읽기 결과를 버림)와 저장 중 여부
+  const requestRef = useRef(0);
+  const busyRef = useRef(false);
 
   const load = useCallback(
     async (name: string, read: () => Record<string, string>[] | Promise<Record<string, string>[]>) => {
+      // 저장 중에 불러온 자료는 저장이 끝나며 지워지므로 받지 않습니다.
+      if (busyRef.current) return;
+      const id = ++requestRef.current;
       setError(null);
       setStats(null);
       setOverwrite(new Set());
@@ -44,9 +50,11 @@ export function useMemberImport(onDone: () => void) {
       setLoadId((n) => n + 1);
       try {
         const raw = await read();
+        if (id !== requestRef.current) return; // 그사이 다른 파일·붙여넣기를 시작함
         if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
         setRows(normalizeRows(raw));
       } catch (err) {
+        if (id !== requestRef.current) return;
         setRows(null);
         setError((err as Error).message);
       }
@@ -77,23 +85,38 @@ export function useMemberImport(onDone: () => void) {
     });
   }, []);
 
-  const removeRow = useCallback((rowNo: number) => {
-    setRows((prev) => prev && prev.filter((r) => r.rowNo !== rowNo));
-    setOverwrite((prev) => {
-      const next = new Set(prev);
-      next.delete(rowNo);
-      return next;
-    });
-    setRemoved((n) => n + 1);
-  }, []);
+  const unmark = useCallback(
+    (rowNo: number) =>
+      setOverwrite((prev) => {
+        const next = new Set(prev);
+        next.delete(rowNo);
+        return next;
+      }),
+    [],
+  );
 
-  const updateRow = useCallback((rowNo: number, patch: Pick<ImportRow, 'name' | 'position' | 'phoneLast4'>) => {
-    const fixed = { name: patch.name.trim(), position: patch.position.trim(), phoneLast4: patch.phoneLast4.replace(/[^0-9]/g, '') };
-    setRows((prev) => prev && prev.map((r) => (r.rowNo === rowNo ? { ...r, ...fixed } : r)));
-  }, []);
+  const removeRow = useCallback(
+    (rowNo: number) => {
+      setRows((prev) => prev && prev.filter((r) => r.rowNo !== rowNo));
+      unmark(rowNo);
+      setRemoved((n) => n + 1);
+    },
+    [unmark],
+  );
+
+  const updateRow = useCallback(
+    (rowNo: number, patch: Pick<ImportRow, 'name' | 'position' | 'phoneLast4'>) => {
+      const fixed = { name: patch.name.trim(), position: patch.position.trim(), phoneLast4: patch.phoneLast4.replace(/[^0-9]/g, '') };
+      setRows((prev) => prev && prev.map((r) => (r.rowNo === rowNo ? { ...r, ...fixed } : r)));
+      // 고치면 다른 성도와 겹칠 수 있으므로 덮어쓰기는 다시 고르게 합니다.
+      unmark(rowNo);
+    },
+    [unmark],
+  );
 
   const confirm = useCallback(async () => {
-    if (!rows) return;
+    if (!rows || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       let result: ImportStats | null = null;
@@ -109,6 +132,7 @@ export function useMemberImport(onDone: () => void) {
     } catch (err) {
       setError(`불러오기 실패: ${(err as Error).message} (아무것도 반영되지 않았습니다)`);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }, [rows, overwrite, replaceMembers]);

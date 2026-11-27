@@ -43,6 +43,8 @@ export function useDonationImport(onDone: () => void) {
   /** 불러온 줄 수. 저장할 때 남은 줄과의 차이가 화면에서 제거한 건수입니다. */
   const loadedRef = useRef(0);
   const busyRef = useRef(false);
+  /** 마지막으로 시작한 불러오기 번호. 늦게 끝난 이전 읽기 결과를 버립니다. */
+  const loadRequestRef = useRef(0);
   const exclusive = useMemo(() => createExclusive(busyRef), []);
 
   /** 저장소의 최신 기록을 보고 줄마다 상태를 정합니다. */
@@ -86,6 +88,7 @@ export function useDonationImport(onDone: () => void) {
   const load = useCallback(async (name: string, read: () => Record<string, string>[] | Promise<Record<string, string>[]>) => {
     // 저장 중에 불러온 자료는 저장이 끝나며 지워지므로 받지 않습니다.
     if (busyRef.current) return;
+    const id = ++loadRequestRef.current;
     setError(null);
     setResult(null);
     setFileName(name);
@@ -95,12 +98,14 @@ export function useDonationImport(onDone: () => void) {
     setDefaultDate('');
     try {
       const raw = await read();
+      if (id !== loadRequestRef.current) return; // 그사이 다른 파일·붙여넣기를 시작함
       if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
       const { rows: parsed, hasDateColumn: hasDate } = normalizeDonationRows(raw);
       loadedRef.current = parsed.length;
       setHasDateColumn(hasDate);
       setRows(parsed);
     } catch (err) {
+      if (id !== loadRequestRef.current) return;
       setRows(null);
       setMatched([]);
       setError((err as Error).message);

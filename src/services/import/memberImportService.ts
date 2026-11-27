@@ -5,6 +5,8 @@ import { normalizePosition } from '../domain/positions';
 
 export interface ImportRow {
   rowNo: number;
+  /** 화면에 보이는 원본의 줄 번호(1행은 제목) */
+  line: number;
   name: string;
   position: string;
   phoneLast4: string;
@@ -29,7 +31,7 @@ export interface ImportStats {
   errors: number;
 }
 
-const HEADER_ALIASES: Record<keyof Omit<ImportRow, 'rowNo'>, string[]> = {
+const HEADER_ALIASES: Record<keyof Omit<ImportRow, 'rowNo' | 'line'>, string[]> = {
   name: ['이름', '성명'],
   position: ['직분'],
   phoneLast4: ['연락처뒷4자리', '연락처 뒷4자리', '연락처뒷자리', '전화뒷자리'],
@@ -55,6 +57,17 @@ export function decodeCsvBytes(bytes: Uint8Array): string {
 
 /** 읽은 행에 원본 줄 번호(1행은 제목)를 실어 나르는 이름 */
 export const LINE_KEY = '__line';
+
+/** 이름·종류 비교용: 띄어쓰기를 모두 뺍니다('김 철수'와 '김철수'는 같은 이름). 명단·헌금 불러오기가 함께 씁니다. */
+export const compact = (s: string): string => s.replace(/\s/g, '');
+
+/** 붙여넣은 글(탭 구분)을 줄 단위 칸으로 나눕니다. 빈 줄은 빼고, 줄 번호는 제목 줄을 1행으로 셉니다(중간의 빈 줄도 번호는 차지). */
+export function splitPastedTable(text: string): { line: number; cells: string[] }[] {
+  // 첫 칸이 빈 제목 줄은 탭으로 시작하므로, 나누기 전에 trim하지 않습니다.
+  const lines = text.split(/\r?\n/);
+  const first = lines.findIndex((l) => l.trim());
+  return lines.flatMap((l, i) => (l.trim() ? [{ line: i - first + 1, cells: l.split('\t').map((c) => c.trim()) }] : []));
+}
 
 /** 파일에서 헤더 기준 행 목록을 읽습니다. 값은 모두 문자열이며 수식은 평가하지 않습니다. */
 export async function readImportFile(file: File): Promise<Record<string, string>[]> {
@@ -91,10 +104,7 @@ export const PASTE_NAME_HEADERS = ['이름', '성명', '성도명', '성도'];
 
 /** 표 계산 프로그램에서 복사한 표(탭 구분, 첫 줄은 제목)에서 이름 열만 읽어 파일과 같은 행 목록으로 바꿉니다. */
 export function parsePastedTable(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/);
-  const first = lines.findIndex((l) => l.trim());
-  // 줄 번호는 제목 줄을 1행으로 셉니다(중간의 빈 줄도 번호는 차지).
-  const table = lines.flatMap((l, i) => (l.trim() ? [{ line: i - first + 1, cells: l.split('\t').map((c) => c.trim()) }] : []));
+  const table = splitPastedTable(text);
   const col = table[0]?.cells.findIndex((h) => PASTE_NAME_HEADERS.includes(h)) ?? -1;
   if (col < 0) throw new Error(`첫 줄은 제목 줄이어야 하며 ${PASTE_NAME_HEADERS.join('·')} 중 하나가 있어야 합니다. 제목 줄까지 선택해 복사한 뒤 붙여넣으세요.`);
   return table.slice(1).flatMap(({ line, cells }) => (cells[col] ? [{ 이름: cells[col], [LINE_KEY]: String(line) }] : []));
@@ -108,6 +118,7 @@ const pick = (rec: Record<string, string>, aliases: string[]): string => {
 export function normalizeRows(raw: Record<string, string>[]): ImportRow[] {
   return raw.map((rec, i) => ({
     rowNo: i + 2, // 1행은 헤더
+    line: Number(rec[LINE_KEY]) || i + 2,
     name: pick(rec, HEADER_ALIASES.name),
     position: pick(rec, HEADER_ALIASES.position),
     phoneLast4: pick(rec, HEADER_ALIASES.phoneLast4).replace(/[^0-9]/g, ''),
@@ -117,7 +128,7 @@ export function normalizeRows(raw: Record<string, string>[]): ImportRow[] {
 }
 
 function isSamePerson(m: { name: string; phoneLast4?: string }, r: ImportRow): boolean {
-  if (m.name !== r.name) return false;
+  if (compact(m.name) !== compact(r.name)) return false;
   if (r.phoneLast4 && m.phoneLast4) return m.phoneLast4 === r.phoneLast4;
   return true; // 비교할 식별 정보가 없으면 이름 일치만으로 중복 처리(안전 측)
 }
@@ -148,12 +159,12 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     return row;
   });
 
-  // 이름별로 묶어 두고 같은 이름끼리만 비교합니다(행마다 전체를 훑지 않도록).
+  // 이름별로 묶어 두고 같은 이름끼리만 비교합니다(행마다 전체를 훑지 않도록). 이름은 띄어쓰기를 뺀 값으로 묶습니다.
   const groupBy = <T,>(list: readonly T[], keep: (x: T) => boolean, name: (x: T) => string): Map<string, T[]> => {
     const out = new Map<string, T[]>();
     for (const x of list) {
       if (!keep(x)) continue;
-      const k = name(x);
+      const k = compact(name(x));
       if (!out.has(k)) out.set(k, []);
       out.get(k)!.push(x);
     }
@@ -164,13 +175,13 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   const seen = new Map<string, PreviewRow[]>();
   for (const row of preview) {
     if (row.status === 'ERROR') continue;
-    const same = seen.get(row.name) ?? [];
+    const same = seen.get(compact(row.name)) ?? [];
     if (same.some((s) => isSamePerson(s, row))) {
       row.status = 'ERROR';
       row.messages.push('파일 안에 같은 사람이 이미 있습니다.');
       continue;
     }
-    seen.set(row.name, [...same, row]);
+    seen.set(compact(row.name), [...same, row]);
   }
 
   // 대표자 연결 확인
@@ -179,12 +190,13 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   const existingByName = groupBy(existing, () => true, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR' || row.isHead || !row.headName) continue;
-    const existingHeads = existingHeadsByName.get(row.headName) ?? [];
+    const headKey = compact(row.headName);
+    const existingHeads = existingHeadsByName.get(headKey) ?? [];
     // 이미 등록된 대표자와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
-    const fileHeads = (fileHeadsByName.get(row.headName) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
+    const fileHeads = (fileHeadsByName.get(headKey) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
     // 파일의 대표자가 이미 등록된 성도인데 대표자가 아니면, 불러오기는 그 성도를 대표자로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
     // 그대로 연결하면 그 성도가 속한 다른 묶음에 들어가거나 대표자 없는 묶음이 생깁니다. 연결하지 않고 알립니다.
-    if (fileHeads.length === 1 && existingHeads.length === 0 && existingByName.get(row.headName)?.some((m) => isSamePerson(m, fileHeads[0]))) {
+    if (fileHeads.length === 1 && existingHeads.length === 0 && existingByName.get(headKey)?.some((m) => isSamePerson(m, fileHeads[0]))) {
       row.status = 'ERROR';
       row.messages.push(`대표자 '${row.headName}'은(는) 이미 등록된 성도지만 대표자가 아닙니다. 성도 화면에서 대표자로 바꾼 뒤 다시 가져오세요.`);
     } else if (fileHeads.length === 1 && existingHeads.length === 0) row.headRef = { kind: 'FILE', rowNo: fileHeads[0].rowNo };
@@ -201,7 +213,7 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   // 기존 성도와 중복
   for (const row of preview) {
     if (row.status === 'ERROR') continue;
-    const dup = existingByName.get(row.name)?.find((m) => isSamePerson(m, row));
+    const dup = existingByName.get(compact(row.name))?.find((m) => isSamePerson(m, row));
     if (dup) {
       row.duplicateOfId = dup.id;
       row.status = 'DUPLICATE';

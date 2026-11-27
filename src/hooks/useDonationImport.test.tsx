@@ -122,4 +122,21 @@ describe('useDonationImport 저장 흐름', () => {
     expect(result.current.imp.canSave).toBe(false);
     expect(await readMonth('2026-10')).toHaveLength(2);
   });
+
+  it('파일 읽기가 끝나기 전에 붙여넣으면, 늦게 끝난 파일 결과는 버립니다', async () => {
+    const result = await setup('늦은파일', '4321');
+    let finish!: (rows: Record<string, string>[]) => void;
+    vi.mocked(readImportFile).mockReturnValue(new Promise((r) => (finish = r)));
+    let fileDone!: Promise<void>;
+    act(() => {
+      fileDone = result.current.imp.onFile(fileEvent);
+    });
+    await act(() => result.current.imp.onPaste('날짜\t성도이름\t헌금종류\t금액\n2026-08-02\t늦은파일\t십일조\t3000'));
+    await act(async () => {
+      finish([{ 날짜: '2026-08-02', 성도이름: '늦은파일', 헌금종류: '십일조', 금액: '1000' }, { 날짜: '2026-08-02', 성도이름: '늦은파일', 헌금종류: '감사헌금', 금액: '2000' }]);
+      await fileDone;
+    });
+    await waitFor(() => expect(result.current.imp.preview.map((r) => r.amountRaw)).toEqual(['3000']));
+    expect(result.current.imp.fileName).toBe('붙여넣은 표');
+  });
 });
