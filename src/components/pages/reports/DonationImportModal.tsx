@@ -156,10 +156,10 @@ function ImportBody({ onClose }: { onClose(): void }) {
   );
 }
 
-/** 일별 보고서에서 여는 CSV 불러오기. */
+/** 일별 보고서에서 여는 일별 헌금 내역 불러오기. */
 export function DonationImportModal({ open, onClose }: { open: boolean; onClose(): void }) {
   return (
-    <Modal open={open} onClose={onClose} title="헌금 CSV 불러오기" widthClass="max-w-5xl">
+    <Modal open={open} onClose={onClose} title="일별 헌금 내역 불러오기" widthClass="max-w-5xl">
       {open ? <ImportBody onClose={onClose} /> : null}
     </Modal>
   );

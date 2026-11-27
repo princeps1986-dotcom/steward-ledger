@@ -8,7 +8,7 @@ export interface MemberDraft {
   position: string;
   phoneLast4: string;
   isFamilyHead: boolean;
-  /** 세대원일 때 연결할 세대주의 Member.id ('' = 연결 없음) */
+  /** 구성원일 때 연결할 대표자의 Member.id ('' = 연결 없음) */
   headMemberId: string;
   /** 등록일 YYYY-MM-DD ('' = 새 등록 시 오늘 날짜) */
   registeredAt: string;
@@ -49,7 +49,7 @@ export function stripBirthDate(members: Member[]): { members: Member[]; changed:
   return { members: changed ? out : members, changed };
 }
 
-/** 그룹의 현재 세대주 (없으면 그룹 ID와 같은 id의 성도) */
+/** 그룹의 현재 대표자 (없으면 그룹 ID와 같은 id의 성도) */
 export function currentHeadOf(members: Member[], groupId: string): Member | undefined {
   return (
     members.find((m) => m.familyGroupId === groupId && m.isFamilyHead && m.isActive) ??
@@ -58,7 +58,7 @@ export function currentHeadOf(members: Member[], groupId: string): Member | unde
   );
 }
 
-/** 편집 폼 초기값으로 쓰는 현재 연결 세대주 id */
+/** 편집 폼 초기값으로 쓰는 현재 연결 대표자 id */
 export function linkedHeadIdOf(members: Member[], m: Member): string {
   if (m.isFamilyHead || !m.familyGroupId) return '';
   return currentHeadOf(members, m.familyGroupId)?.id ?? '';
@@ -73,10 +73,10 @@ function base(d: MemberDraft): Pick<Member, 'name' | 'position' | 'phoneLast4'> 
 }
 
 /**
- * 성도 저장 규칙 (PRD §3.2 세대 그룹 규칙)
- * - 세대주 지정: 그룹이 없으면 familyGroupId = 본인 id
- * - 기존 그룹 구성원을 세대주로 지정: 그룹 ID는 유지하고 isFamilyHead만 이전
- * - 세대원이 남아 있는 세대주는 해제 불가
+ * 성도 저장 규칙 (PRD §3.2 합산 묶음 규칙)
+ * - 대표자 지정: 그룹이 없으면 familyGroupId = 본인 id
+ * - 기존 그룹 구성원을 대표자로 지정: 그룹 ID는 유지하고 isFamilyHead만 이전
+ * - 구성원이 남아 있는 대표자는 해제 불가
  */
 export function applyMemberSave(members: Member[], draft: MemberDraft, editingId?: string): MemberSaveResult {
   const err = validateDraft(draft);
@@ -86,7 +86,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
   const list = [...members];
   const own = (i: number): Member => (list[i] = { ...list[i] });
   const headIdx = draft.headMemberId ? list.findIndex((m) => m.id === draft.headMemberId) : -1;
-  if (draft.headMemberId && headIdx < 0) return { ok: false, error: '연결할 세대주를 찾을 수 없습니다.' };
+  if (draft.headMemberId && headIdx < 0) return { ok: false, error: '연결할 대표자를 찾을 수 없습니다.' };
   const head = headIdx >= 0 ? list[headIdx] : undefined;
 
   const ensureHeadGroup = (): string => {
@@ -115,14 +115,14 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
 
   const idx = list.findIndex((x) => x.id === editingId);
   if (idx < 0) return { ok: false, error: '성도를 찾을 수 없습니다.' };
-  if (head && head.id === editingId) return { ok: false, error: '본인을 세대주로 연결할 수 없습니다.' };
+  if (head && head.id === editingId) return { ok: false, error: '본인을 대표자로 연결할 수 없습니다.' };
   const m = own(idx);
   Object.assign(m, base(draft), { updatedAt: now });
   if (draft.registeredAt) m.registeredAt = draft.registeredAt;
 
   if (draft.isFamilyHead && !m.isFamilyHead) {
     if (m.familyGroupId) {
-      // 세대주 변경: 그룹 ID 유지, 기존 세대주 플래그 해제
+      // 대표자 변경: 그룹 ID 유지, 기존 대표자 플래그 해제
       list.forEach((o, i) => {
         if (o.id !== m.id && o.familyGroupId === m.familyGroupId && o.isFamilyHead) Object.assign(own(i), { isFamilyHead: false, updatedAt: now });
       });
@@ -133,7 +133,7 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
   } else if (!draft.isFamilyHead && m.isFamilyHead) {
     const others = list.filter((o) => o.id !== m.id && o.isActive && o.familyGroupId && o.familyGroupId === m.familyGroupId);
     if (others.length > 0) {
-      return { ok: false, error: '세대원이 있는 세대주는 해제할 수 없습니다. 다른 구성원을 세대주로 지정하세요.' };
+      return { ok: false, error: '구성원이 있는 대표자는 해제할 수 없습니다. 다른 구성원을 대표자로 지정하세요.' };
     }
     m.isFamilyHead = false;
     m.familyGroupId = head ? ensureHeadGroup() : undefined;
@@ -147,5 +147,5 @@ export function applyMemberSave(members: Member[], draft: MemberDraft, editingId
 export function canDeactivate(members: Member[], m: Member): string | null {
   if (!m.isFamilyHead || !m.familyGroupId) return null;
   const others = members.filter((o) => o.id !== m.id && o.isActive && o.familyGroupId === m.familyGroupId);
-  return others.length > 0 ? '세대원이 있는 세대주입니다. 먼저 다른 구성원을 세대주로 지정하세요.' : null;
+  return others.length > 0 ? '구성원이 있는 대표자입니다. 먼저 다른 구성원을 대표자로 지정하세요.' : null;
 }

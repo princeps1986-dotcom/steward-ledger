@@ -14,7 +14,7 @@ const ROW = 36;
 
 interface Props {
   options: PickerOption[];
-  /** 선택된 세대주 id ('' = 연결 없음) */
+  /** 선택된 대표자 id ('' = 연결 없음) */
   value: string;
   onChange(id: string): void;
   /** 비활성일 때 칸 안에 보여 줄 문구 */
@@ -30,10 +30,10 @@ interface Props {
 }
 
 /**
- * 이름·연락처 뒷자리로 찾아 선택하는 세대주 선택(성도 검색 칸과 같은 방식). 선택한 뒤에는 [연결 해제]로 풉니다.
+ * 이름·연락처 뒷자리로 찾아 선택하는 대표자 선택(성도 검색 칸과 같은 방식). 선택한 뒤에는 [연결 해제]로 풉니다.
  * 결과가 많아도 보이는 줄만 그리는 가상 스크롤을 씁니다.
  */
-export function MemberPicker({ options, value, onChange, disabledText = '', disabled = false, ariaLabel, placeholder = '이름·연락처 뒷자리로 찾기', clearLabel = '연결 해제', missingLabel = '연결됨(비활성 세대주)' }: Props) {
+export function MemberPicker({ options, value, onChange, disabledText = '', disabled = false, ariaLabel, placeholder = '이름·연락처 뒷자리로 찾기', clearLabel = '연결 해제', missingLabel = '연결됨(비활성 대표자)' }: Props) {
   const listId = useId();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);

@@ -38,13 +38,13 @@ describe('planMerge (다른 PC 백업 합치기 규칙)', () => {
     expect(p.sameNameAdded).toBe(2);
   });
 
-  it('새로 추가되는 성도의 세대 그룹이 연결된 성도를 가리키면 현재 id로 바꾼다', () => {
+  it('새로 추가되는 성도의 합산 묶음이 연결된 성도를 가리키면 현재 id로 바꾼다', () => {
     const p = planMerge(cur, { members: [m('b1', '김영수', '1234'), m('b2', '김영희', undefined, { isFamilyHead: false, familyGroupId: 'b1' })], offeringTypes: [] });
     expect(p.addMembers).toHaveLength(1);
     expect(p.addMembers[0].familyGroupId).toBe('c1');
   });
 
-  it('연결된 성도가 이 PC에서 다른 세대 번호(세대주를 바꾼 세대)에 있으면 그 번호를 쓴다', () => {
+  it('연결된 성도가 이 PC에서 다른 묶음 번호(대표자를 바꾼 묶음)에 있으면 그 번호를 쓴다', () => {
     const here = { members: [m('c0', '김부친', undefined, { familyGroupId: 'c0' }), m('c1', '김영수', '1234', { isFamilyHead: true, familyGroupId: 'c0' })], offeringTypes: [] };
     const p = planMerge(here, { members: [m('b1', '김영수', '1234', { isFamilyHead: true, familyGroupId: 'b1' }), m('b2', '김영희', undefined, { familyGroupId: 'b1' })], offeringTypes: [] });
     expect(p.addMembers.map((x) => [x.id, x.familyGroupId])).toEqual([['b2', 'c0']]);
@@ -57,14 +57,14 @@ describe('remap', () => {
     { members: [m('b1', '김영수', '1234')], offeringTypes: [t('bt1', '십일조')] },
   );
 
-  it('헌금의 성도·종류·세대 스냅샷 id를 현재 id로 바꾼다', () => {
+  it('헌금의 성도·종류·묶음 스냅샷 id를 현재 id로 바꾼다', () => {
     const list = [{ ...d('1', '2025-01-05', 'b1', 'bt1'), familyGroupIdSnapshot: 'b1' }, d('2', '2025-01-05', null, 'bt1')];
     const out = remapDonations(list, plan);
     expect(out[0]).toMatchObject({ memberId: 'c1', offeringTypeId: 'ct1', familyGroupIdSnapshot: 'c1' });
     expect(out[1]).toMatchObject({ memberId: null, offeringTypeId: 'ct1' });
   });
 
-  it('연결된 성도가 다른 세대 번호(세대주를 바꾼 세대)에 있으면 헌금의 세대 스냅샷도 그 번호를 쓴다', () => {
+  it('연결된 성도가 다른 묶음 번호(대표자를 바꾼 묶음)에 있으면 헌금의 묶음 스냅샷도 그 번호를 쓴다', () => {
     const here = { members: [m('c0', '김부친', undefined, { familyGroupId: 'c0' }), m('c1', '김영수', '1234', { familyGroupId: 'c0' })], offeringTypes: [] };
     const p = planMerge(here, { members: [m('b1', '김영수', '1234', { familyGroupId: 'b1' })], offeringTypes: [] });
     const out = remapDonations([{ ...d('1', '2025-01-05', 'b1', 'x'), familyGroupIdSnapshot: 'b1' }], p);
@@ -135,8 +135,8 @@ describe('restoredLists (복원 시 덮어쓰기 선택)', () => {
     expect([r.updatedMembers, r.updatedTypes]).toEqual([1, 1]);
   });
 
-  it('덮어쓴 성도의 세대는 이 PC에서 그 세대가 쓰는 번호로 맞춘다(세대주를 바꾼 경우)', () => {
-    // 이 PC: 세대주를 c0 → c1로 바꿔 세대 번호는 예전 세대주 id(c0)로 남음
+  it('덮어쓴 성도의 묶음은 이 PC에서 그 묶음이 쓰는 번호로 맞춘다(대표자를 바꾼 경우)', () => {
+    // 이 PC: 대표자를 c0 → c1로 바꿔 묶음 번호는 예전 대표자 id(c0)로 남음
     const here = { members: [m('c0', '김부친', undefined, { isFamilyHead: false, familyGroupId: 'c0' }), m('c1', '김영수', '1234', { familyGroupId: 'c0' }), m('c2', '김영희', '5678', { isFamilyHead: false, familyGroupId: 'c0' })], offeringTypes: [] };
     const bk = { members: [m('b1', '김영수', '1234', { familyGroupId: 'b1' }), m('b2', '김영희', '5678', { isFamilyHead: false, familyGroupId: 'b1' })], offeringTypes: [] };
     const r = restoredLists(here, bk, planMerge(here, bk), { members: true });

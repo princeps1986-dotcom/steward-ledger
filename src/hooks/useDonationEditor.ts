@@ -62,13 +62,13 @@ export function useDonationEditor() {
     if (!m) return `${target.donorDisplayName} (무명/방문자)`;
     return target.donorDisplayName === m.name ? memberLabel(m) : `${target.donorDisplayName} — ${memberLabel(m)}`;
   }, [target, memberById]);
-  /** 수정창에서 표기명 옆에 보여 주는 세대 정보(읽기 전용, 현재 세대 기준). 세대 연결이 없거나 무명/방문자면 빈 문자열 */
+  /** 수정창에서 표기명 옆에 보여 주는 묶음 정보(읽기 전용, 현재 묶음 기준). 묶음 연결이 없거나 무명/방문자면 빈 문자열 */
   const donorHousehold = useMemo(() => {
     const m = target?.memberId ? memberById.get(target.memberId) : undefined;
     if (!m) return '';
-    if (m.isFamilyHead) return '세대주';
+    if (m.isFamilyHead) return '대표자';
     const head = m.familyGroupId ? currentHeadOf(members, m.familyGroupId) : undefined;
-    return head ? `${head.name} 세대의 세대원` : '';
+    return head ? `${head.name}(대표자)의 구성원` : '';
   }, [target, memberById, members]);
   // 선택 목록에는 헌금 종류 화면에서 활성인 종류만 보여 줍니다.
   // 이 내역의 현재 종류가 비활성이면 값이 엉뚱하게 보이지 않도록 선택 불가(회색)로만 함께 표시합니다.
@@ -95,7 +95,7 @@ export function useDonationEditor() {
         if (!isDateInRange(draft.date)) return setError('날짜의 연도를 확인하세요.');
         const p = parseAmount(draft.amount);
         if (p.kind !== 'ok') return setError(p.kind === 'invalid' ? p.reason : '금액을 입력하세요.');
-        // 성도·표기명·세대 스냅샷은 그대로 두고 날짜·종류·금액·메모만 바꿉니다.
+        // 성도·표기명·묶음 스냅샷은 그대로 두고 날짜·종류·금액·메모만 바꿉니다.
         const next: Donation = {
           ...target,
           date: draft.date,

@@ -18,7 +18,7 @@ export interface PreviewRow extends ImportRow {
   status: ImportStatus;
   messages: string[];
   duplicateOfId?: string;
-  /** 세대주 연결 대상: 파일 내 행 번호 또는 기존 성도 id */
+  /** 대표자 연결 대상: 파일 내 행 번호 또는 기존 성도 id */
   headRef?: { kind: 'FILE'; rowNo: number } | { kind: 'EXISTING'; memberId: string };
 }
 
@@ -33,11 +33,11 @@ const HEADER_ALIASES: Record<keyof Omit<ImportRow, 'rowNo'>, string[]> = {
   name: ['이름', '성명'],
   position: ['직분'],
   phoneLast4: ['연락처뒷4자리', '연락처 뒷4자리', '연락처뒷자리', '전화뒷자리'],
-  isHead: ['세대주여부', '세대주 여부'],
-  headName: ['세대주이름', '세대주 이름', '세대주'],
+  isHead: ['대표자여부', '대표자 여부', '세대주여부', '세대주 여부'], // 세대주…: 예전 양식 호환
+  headName: ['대표자이름', '대표자 이름', '대표자', '세대주이름', '세대주 이름', '세대주'],
 };
 
-const TEMPLATE_HEADERS = ['이름', '직분', '연락처뒷4자리', '세대주여부', '세대주이름'];
+const TEMPLATE_HEADERS = ['이름', '직분', '연락처뒷4자리', '대표자여부', '대표자이름'];
 
 export function templateCsv(): string {
   const rows = [TEMPLATE_HEADERS, ['김철수', '집사', '1234', 'Y', ''], ['이영희', '권사', '5678', 'N', '김철수']];
@@ -86,6 +86,20 @@ export async function readImportFile(file: File): Promise<Record<string, string>
   throw new Error('CSV(.csv) 파일만 가져올 수 있습니다.');
 }
 
+/** 붙여넣은 표에서 이름 열로 인정하는 제목 */
+export const PASTE_NAME_HEADERS = ['이름', '성명', '성도명', '성도'];
+
+/** 표 계산 프로그램에서 복사한 표(탭 구분, 첫 줄은 제목)에서 이름 열만 읽어 파일과 같은 행 목록으로 바꿉니다. */
+export function parsePastedTable(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/);
+  const first = lines.findIndex((l) => l.trim());
+  // 줄 번호는 제목 줄을 1행으로 셉니다(중간의 빈 줄도 번호는 차지).
+  const table = lines.flatMap((l, i) => (l.trim() ? [{ line: i - first + 1, cells: l.split('\t').map((c) => c.trim()) }] : []));
+  const col = table[0]?.cells.findIndex((h) => PASTE_NAME_HEADERS.includes(h)) ?? -1;
+  if (col < 0) throw new Error(`첫 줄은 제목 줄이어야 하며 ${PASTE_NAME_HEADERS.join('·')} 중 하나가 있어야 합니다. 제목 줄까지 선택해 복사한 뒤 붙여넣으세요.`);
+  return table.slice(1).flatMap(({ line, cells }) => (cells[col] ? [{ 이름: cells[col], [LINE_KEY]: String(line) }] : []));
+}
+
 const pick = (rec: Record<string, string>, aliases: string[]): string => {
   for (const a of aliases) if (rec[a] !== undefined) return String(rec[a]).trim();
   return '';
@@ -97,7 +111,7 @@ export function normalizeRows(raw: Record<string, string>[]): ImportRow[] {
     name: pick(rec, HEADER_ALIASES.name),
     position: pick(rec, HEADER_ALIASES.position),
     phoneLast4: pick(rec, HEADER_ALIASES.phoneLast4).replace(/[^0-9]/g, ''),
-    isHead: /^(y|yes|예|o|1|true|세대주)$/i.test(pick(rec, HEADER_ALIASES.isHead)),
+    isHead: /^(y|yes|예|o|1|true|대표자|세대주)$/i.test(pick(rec, HEADER_ALIASES.isHead)),
     headName: pick(rec, HEADER_ALIASES.headName),
   }));
 }
@@ -129,7 +143,7 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
         warn(`연락처 앞자리 0 보정: ${row.phoneLast4}`);
       }
     }
-    if (r.isHead && r.headName) warn('세대주로 지정되어 세대주이름은 무시됩니다.');
+    if (r.isHead && r.headName) warn('대표자로 지정되어 대표자이름은 무시됩니다.');
     row.status = status;
     return row;
   });
@@ -159,28 +173,28 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     seen.set(row.name, [...same, row]);
   }
 
-  // 세대주 연결 확인
+  // 대표자 연결 확인
   const fileHeadsByName = groupBy(preview, (p) => p.isHead && p.status !== 'ERROR', (p) => p.name);
   const existingHeadsByName = groupBy(existing, (m) => m.isActive && m.isFamilyHead, (m) => m.name);
   const existingByName = groupBy(existing, () => true, (m) => m.name);
   for (const row of preview) {
     if (row.status === 'ERROR' || row.isHead || !row.headName) continue;
     const existingHeads = existingHeadsByName.get(row.headName) ?? [];
-    // 이미 등록된 세대주와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
+    // 이미 등록된 대표자와 같은 사람인 파일 행(같은 명단을 다시 가져올 때)은 등록된 쪽 하나로 셉니다.
     const fileHeads = (fileHeadsByName.get(row.headName) ?? []).filter((f) => !existingHeads.some((e) => isSamePerson(e, f)));
-    // 파일의 세대주가 이미 등록된 성도인데 세대주가 아니면, 불러오기는 그 성도를 세대주로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
-    // 그대로 연결하면 그 성도가 속한 다른 세대에 들어가거나 세대주 없는 세대가 생깁니다. 연결하지 않고 알립니다.
+    // 파일의 대표자가 이미 등록된 성도인데 대표자가 아니면, 불러오기는 그 성도를 대표자로 바꾸지 않으므로(덮어쓰기는 직분·연락처만)
+    // 그대로 연결하면 그 성도가 속한 다른 묶음에 들어가거나 대표자 없는 묶음이 생깁니다. 연결하지 않고 알립니다.
     if (fileHeads.length === 1 && existingHeads.length === 0 && existingByName.get(row.headName)?.some((m) => isSamePerson(m, fileHeads[0]))) {
       row.status = 'ERROR';
-      row.messages.push(`세대주 '${row.headName}'은(는) 이미 등록된 성도지만 세대주가 아닙니다. 성도 화면에서 세대주로 바꾼 뒤 다시 가져오세요.`);
+      row.messages.push(`대표자 '${row.headName}'은(는) 이미 등록된 성도지만 대표자가 아닙니다. 성도 화면에서 대표자로 바꾼 뒤 다시 가져오세요.`);
     } else if (fileHeads.length === 1 && existingHeads.length === 0) row.headRef = { kind: 'FILE', rowNo: fileHeads[0].rowNo };
     else if (fileHeads.length === 0 && existingHeads.length === 1) row.headRef = { kind: 'EXISTING', memberId: existingHeads[0].id };
     else if (fileHeads.length + existingHeads.length === 0) {
       row.status = 'ERROR';
-      row.messages.push(`세대주 '${row.headName}'을(를) 찾을 수 없습니다.`);
+      row.messages.push(`대표자 '${row.headName}'을(를) 찾을 수 없습니다.`);
     } else {
       row.status = 'ERROR';
-      row.messages.push(`세대주 '${row.headName}'이(가) 여러 명이라 특정할 수 없습니다.`);
+      row.messages.push(`대표자 '${row.headName}'이(가) 여러 명이라 특정할 수 없습니다.`);
     }
   }
 
@@ -197,7 +211,7 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
   return preview;
 }
 
-/** 미리보기 결과를 명단에 반영합니다. 세대주 행을 먼저 생성한 뒤 세대원을 연결합니다. */
+/** 미리보기 결과를 명단에 반영합니다. 대표자 행을 먼저 생성한 뒤 구성원을 연결합니다. */
 export function applyImport(
   preview: PreviewRow[],
   overwriteRowNos: Set<number>,
@@ -242,7 +256,7 @@ export function applyImport(
       const i = indexById.get(row.duplicateOfId);
       if (i !== undefined) {
         const m = (members[i] = { ...members[i] }); // 덮어쓸 성도만 복사해서 바꿉니다.
-        // 덮어쓰기는 직분·연락처만 갱신합니다(세대 연결은 유지).
+        // 덮어쓰기는 직분·연락처만 갱신합니다(묶음 연결은 유지).
         if (normalizePosition(row.position)) m.position = normalizePosition(row.position);
         if (row.phoneLast4) m.phoneLast4 = row.phoneLast4;
         m.updatedAt = now;

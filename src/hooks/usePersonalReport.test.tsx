@@ -23,14 +23,14 @@ const row = (id: string, memberId: string, date: string, amount: number) => ({
   date,
   memberId,
   donorDisplayName: memberId,
-  familyGroupIdSnapshot: memberId, // 납부 당시 세대(납부 당시 기준 조회에 필요)
+  familyGroupIdSnapshot: memberId, // 납부 당시 묶음(납부 당시 기준 조회에 필요)
   offeringTypeId: 't',
   amount,
   createdAt: id,
   updatedAt: '',
 });
 
-describe('usePersonalReport 세대 집계 기준 전환', () => {
+describe('usePersonalReport 합산 기준 전환', () => {
   it('기준을 바꾸는 동안 같은 성도의 내역을 비우지 않고, 성도를 바꾸면 이전 내역을 보이지 않습니다', async () => {
     await transact(async () => ({
       writes: [{ key: KEYS.members, value: [member('a', '김가'), member('b', '이나')] }, monthWrite('2026-11', [row('r1', 'a', '2026-11-08', 1000) as never])],

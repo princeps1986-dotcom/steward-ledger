@@ -5,6 +5,7 @@ import {
   applyImport,
   buildPreview,
   normalizeRows,
+  parsePastedTable,
   readImportFile,
   templateCsv,
   type ImportStats,
@@ -28,17 +29,17 @@ export function useMemberImport(onDone: () => void) {
   const [stats, setStats] = useState<ImportStats | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const onFile = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!file) return;
+  const [loadId, setLoadId] = useState(0);
+
+  const load = useCallback(
+    async (name: string, read: () => Record<string, string>[] | Promise<Record<string, string>[]>) => {
       setError(null);
       setStats(null);
       setOverwrite(new Set());
-      setFileName(file.name);
+      setFileName(name);
+      setLoadId((n) => n + 1);
       try {
-        const raw = await readImportFile(file);
+        const raw = await read();
         if (raw.length === 0) throw new Error('가져올 행이 없습니다.');
         setPreview(buildPreview(normalizeRows(raw), members));
       } catch (err) {
@@ -48,6 +49,18 @@ export function useMemberImport(onDone: () => void) {
     },
     [members],
   );
+
+  const onFile = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      await load(file.name, () => readImportFile(file));
+    },
+    [load],
+  );
+
+  const onPaste = useCallback((text: string) => load('붙여넣은 표', () => parsePastedTable(text)), [load]);
 
   const toggleOverwrite = useCallback((rowNo: number) => {
     setOverwrite((prev) => {
@@ -90,6 +103,7 @@ export function useMemberImport(onDone: () => void) {
 
   return {
     fileName,
+    loadId,
     preview: (preview ?? []).map((r) => ({ ...r, statusLabel: STATUS_LABEL[r.status], overwrite: overwrite.has(r.rowNo) })),
     hasPreview: !!preview,
     summary,
@@ -97,6 +111,7 @@ export function useMemberImport(onDone: () => void) {
     stats,
     busy,
     onFile,
+    onPaste,
     toggleOverwrite,
     confirm,
     downloadTemplate: () => downloadText(templateCsv(), '성도명단_양식.csv', 'text/csv;charset=utf-8'),

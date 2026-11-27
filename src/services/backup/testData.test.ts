@@ -51,7 +51,7 @@ describe('test data generator (scripts/generate-test-data.mjs)', () => {
     expect(members.filter((m) => !m.isActive)).toHaveLength(12);
     expect(members.some((m) => m.position === '장로')).toBe(true); // 목록에 없는 직분 값
     expect(members.some((m) => !m.phoneLast4) && members.every((m) => !('birthDate' in m))).toBe(true); // 생년월일은 만들지 않음
-    expect(members.some((m) => m.isFamilyHead && m.familyGroupId && m.familyGroupId !== m.id)).toBe(true); // 세대주 변경
+    expect(members.some((m) => m.isFamilyHead && m.familyGroupId && m.familyGroupId !== m.id)).toBe(true); // 대표자 변경
     expect(donations.some((d) => d.memberId === null && /^무명\d+$/.test(d.donorDisplayName))).toBe(true);
     expect(donations.some((d) => d.amount > 10_000_000)).toBe(true); // 큰 금액 확인창 대상
     expect(donations.some((d) => d.memo?.startsWith('='))).toBe(true); // 수식 주입 방어 확인용 메모

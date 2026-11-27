@@ -48,7 +48,7 @@
 2. **로직과 보기의 분리:** `components/`의 `.tsx`에는 비즈니스 로직이 없고 값과 이벤트 핸들러를 연결만 합니다. 판단·상태는 `hooks/`, 규칙은 `services/domain/`(순수 함수, 단위 테스트 대상).
 3. **필요한 곳만 다시 그리기:** `use-context-selector`로 값이 바뀐 조각을 구독하는 컴포넌트만 렌더링합니다.
 4. **전부 아니면 전무:** 여러 키를 바꾸는 작업은 IndexedDB 트랜잭션(Dexie) 하나로 원자적으로 처리합니다.
-5. **회계 정합성:** 모든 수정·삭제는 이력(AuditLog)에 남고, 납부 당시 세대 정보(스냅샷)를 보존합니다.
+5. **회계 정합성:** 모든 수정·삭제는 이력(AuditLog)에 남고, 납부 당시 묶음 정보(스냅샷)를 보존합니다.
 6. **보안:** `script-src 'self'` CSP, XSS 방어. 단 가상 스크롤 좌표·인쇄 레이아웃을 위한 제한적 인라인 스타일(`style={{…}}`)은 허용합니다.
 7. **라이선스:** 상업적 이용이 자유로운 MIT 계열 패키지만 사용합니다.
 8. **연타·경합에 안전:** 사용자의 반복 입력과 비동기 읽기·쓰기 겹침에도 중복 실행·옛 값 덮어쓰기가 없어야 합니다(7장, 11장).
@@ -85,7 +85,7 @@ src/
 │                       useMembersPage, useMemberForm, useSettingsPage, usePaging(쪽 이동),
 │                       useNameTag(표기명 옆 표기), exclusive(연타 방지) …
 ├── services/
-│   ├── domain/         [순수 규칙] 금액·검색·세대·집계·월 캐시 …
+│   ├── domain/         [순수 규칙] 금액·검색·묶음·집계·월 캐시 …
 │   ├── storage/        db(Dexie 정의)·storageService(트랜잭션·월 키), tabSyncChannel(창 간 동기화)
 │   ├── backup/         backupService, streamRestore(줄 단위 복원), mergeRules, validation(체크섬·버전 변환), sha256, autoBackupService, backupBusy
 │   ├── downloadBridge.ts  파일 내려받기(브라우저)
@@ -112,7 +112,7 @@ interface Member {            // 성도
   id: string; name: string;
   position: string;           // 직분. 빈 값 = 없음 ('성도'는 직분이 아님)
   phoneLast4?: string;        // 동명이인 구분
-  familyGroupId?: string;     // 세대 그룹 = 최초 세대주의 id (세대주가 바뀌어도 유지)
+  familyGroupId?: string;     // 합산 묶음 = 최초 대표자의 id (대표자가 바뀌어도 유지)
   isFamilyHead: boolean;
   isActive: boolean;          // false = 비활성화(과거 통계 보존)
   createdAt: string; updatedAt: string;
@@ -130,7 +130,7 @@ interface Donation {          // 헌금 1건 (종류별 1건)
   date: string;               // YYYY-MM-DD — 저장 위치(달)를 정하는 기준
   memberId: string | null;    // 무명·방문자는 null
   donorDisplayName: string;   // '김철수', '무명1', '방문자-홍길동'
-  familyGroupIdSnapshot?: string | null;  // 입력 당시 세대 (연말정산 이력 보존)
+  familyGroupIdSnapshot?: string | null;  // 입력 당시 묶음 (연말정산 이력 보존)
   offeringTypeId: string; amount: number; // 원 단위 정수
   memo?: string; createdAt: string;
 }
@@ -155,7 +155,7 @@ interface BackupEnvelope {    // 백업 파일
 ```
 
 * 한 번의 저장(봉투)은 종류마다 독립된 `Donation`을 만듭니다(묶음 ID 없음). 같은 날짜·성도·종류의 중복 감지도 기록 단위입니다.
-* 세대 그룹은 별도 엔티티 없이 세대주의 `Member.id`를 그룹 ID로 씁니다. 세대주 변경은 `isFamilyHead`만 옮기고, 분가·이동해도 과거 기록은 스냅샷 덕분에 영향이 없습니다.
+* 합산 묶음은 별도 엔티티 없이 대표자의 `Member.id`를 그룹 ID로 씁니다. 대표자 변경은 `isFamilyHead`만 옮기고, 분가·이동해도 과거 기록은 스냅샷 덕분에 영향이 없습니다.
 * **백업 형식:** 지금 만드는 파일은 줄 단위 v3(§10, `NDJSON_VERSION` 3)입니다. 위 봉투 형식(`schemaVersion` 2, 연도별 `donationsByYear`)은 예전 파일이며, 복원할 때 자동으로 읽습니다.
 
 ## 6. 저장소 설계
@@ -243,8 +243,8 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * 정렬: 이름 → 연락처 뒷4자리(없으면 뒤) → 직분 순위 → id, 이어서 무명(번호 숫자순). 화면과 PDF가 같은 `useMemberOrderKey()`를 씁니다.
 * **[표시할 헌금 종류]:** `ReportsPage`가 뒤집은 종류(`flippedIds`)만 기억하고(기본은 활성=표시) `withoutTypes`로 내역·열을 걸러 화면·인쇄·PDF가 같은 결과를 냅니다. 보고서·탭이 바뀌면 비웁니다.
 * **[비활성 성도 포함]:** `ReportsPage`의 `includeInactive`(기본 true)를 `useWeeklyMatrix`·`useHasExportableData`에 넘기고, 끄면 `useDonationsForSummary`가 비활성 성도의 내역을 먼저 뺍니다(성도 행이 있는 주별·월별·일별 표 전용). `WeeklySummary`는 화면에서 `usePaging`으로 100명씩 그리고, 인쇄·PDF(`useIsPrinting`)는 모든 행을 그립니다.
-* **세대 합산 조회는 연도별 보고서에서만 가능합니다.** `usePersonalReport`는 `f.periodType`이 `YEAR`가 아니면 선택값과 상관없이 개인 기준(`PERSON`)으로 조회하고, 개인 기준/세대 합산 선택 단추는 연도별에서만 보이며 다른 기간에는 안내 문구만 나옵니다.
-* **세대 집계 기준**(현재/납부 당시)은 세대 합산 조회에서만 쓰이며 개인별·세대별 탭이 직접 토글을 보여 줍니다(상태 `f.basis`는 `useReportFilters`). 종합 보고서와 PDF 파일명에는 쓰이지 않습니다. 세대 합산 결과 위에는 `currentHeadOf`로 구한 현재 세대주를 표시합니다.
+* **대표자 합산 조회는 연도별 보고서에서만 가능합니다.** `usePersonalReport`는 `f.periodType`이 `YEAR`가 아니면 선택값과 상관없이 개인 기준(`PERSON`)으로 조회하고, 개인 기준/대표자 합산 선택 단추는 연도별에서만 보이며 다른 기간에는 안내 문구만 나옵니다.
+* **합산 기준**(현재/납부 당시)은 대표자 합산 조회에서만 쓰이며 개인별·대표자별 탭이 직접 토글을 보여 줍니다(상태 `f.basis`는 `useReportFilters`). 종합 보고서와 PDF 파일명에는 쓰이지 않습니다. 대표자 합산 결과 위에는 `currentHeadOf`로 구한 현재 대표자를 표시합니다.
 * 탭은 `reportKey`(주별·일별은 `기간:시작일`, 그 외 `기간:연도:값`)가 바뀌면 [종합 보고서]로 돌아갑니다.
 
 ### 8.3 큰 표의 속도
@@ -252,8 +252,8 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **전체 입력 내역:** 기간의 헌금을 메모리에 올리지 않고 달 단위로 읽습니다(`ListPager`, `useReportFilters(false)`로 이 탭에서는 기간 로딩을 끔).
   * 달마다 건수·합계만 구해 두고, 화면에 보이는 행의 달만 읽습니다. 합쳐서 5만 건까지는 행을 그대로 들고 있습니다(작은 기간은 한 번만 읽음).
   * 화면에는 **100건씩 페이징**(`usePaging`·`Pager`, 번호 이동)합니다. 다른 달로 넘어간 페이지는 그 달을 읽는 동안 "불러오는 중…" 줄로 보입니다.
-  * **쪽을 옮기면 스크롤이 맨 위로 돌아갑니다.** `usePaging`이 돌려주는 `scrollRef`를 스크롤되는 목록 영역에 붙이면 `setPage`가 그 영역의 `scrollTop`을 0으로 하고 화면 밖으로 밀린 영역 위쪽도 보이게 합니다(`scrollIntoView({block:'nearest'})`). 전체 입력 내역·개인별·세대별·수정·삭제 이력·성도 정보·명단 불러오기 미리보기·헌금 불러오기 미리보기가 모두 같은 방식입니다.
-  * 개인별·세대별(100건)·수정·삭제 이력(50건)·성도 정보(100명)도 같은 페이징을 씁니다. 이 탭들은 인쇄하지 않으므로 인쇄용 분기가 없습니다.
+  * **쪽을 옮기면 스크롤이 맨 위로 돌아갑니다.** `usePaging`이 돌려주는 `scrollRef`를 스크롤되는 목록 영역에 붙이면 `setPage`가 그 영역의 `scrollTop`을 0으로 하고 화면 밖으로 밀린 영역 위쪽도 보이게 합니다(`scrollIntoView({block:'nearest'})`). 전체 입력 내역·개인별·대표자별·수정·삭제 이력·성도 정보·명단 불러오기 미리보기·헌금 불러오기 미리보기가 모두 같은 방식입니다.
+  * 개인별·대표자별(100건)·수정·삭제 이력(50건)·성도 정보(100명)도 같은 페이징을 씁니다. 이 탭들은 인쇄하지 않으므로 인쇄용 분기가 없습니다.
   * 달이 바뀌었는지는 컨텍스트의 `monthVersions`(메모리에 올리지 않은 달 포함)로 알아 바뀐 달만 다시 읽습니다. 정렬은 ISO 날짜 문자열 직접 비교입니다.
   * 측정(Chromium, 9.6만 건): 건수·합계 약 1초, JS 힙 41~45MB. 이름 검색은 부분 일치만 지원합니다.
 * **메뉴 이동:** 첫 화면이 뜬 직후 다른 화면의 코드를 미리 불러와(`App.tsx`) 처음 열 때 기다리지 않습니다.
@@ -261,7 +261,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 * **고정 셀:** 합계 행은 `sticky bottom-0`, 머리글 `top-0`, 번호·성도명 열 `left-0/left-10`. `border-collapse` 때문에 사라지는 윗선은 그림자(`shadow`)로 대신 그립니다.
 
 ### 8.4 수정·삭제 이력 범위
-(헌금 수정창 `useDonationEditor`는 날짜·종류·금액·메모만 바꾸며 `memberId`·`donorDisplayName`·세대 스냅샷은 원본을 그대로 유지합니다. 날짜 칸은 `DatePicker`의 `pickOnly`라 달력으로만 선택하고, 성도·표기명은 읽기 전용 칸(`donorLabel`)으로만 보여 줍니다. 종류 선택 목록(`typeOptions`)은 활성 종류만이며, 현재 종류가 비활성이면 `disabled` 옵션으로만 함께 보여 줍니다.)
+(헌금 수정창 `useDonationEditor`는 날짜·종류·금액·메모만 바꾸며 `memberId`·`donorDisplayName`·묶음 스냅샷은 원본을 그대로 유지합니다. 날짜 칸은 `DatePicker`의 `pickOnly`라 달력으로만 선택하고, 성도·표기명은 읽기 전용 칸(`donorLabel`)으로만 보여 줍니다. 종류 선택 목록(`typeOptions`)은 활성 종류만이며, 현재 종류가 비활성이면 `disabled` 옵션으로만 함께 보여 줍니다.)
 
 `auditLogsForPeriod`가 변경 전·후 날짜 중 하나라도 기간에 속하면 포함합니다(연도를 옮긴 수정은 두 보고서 모두에 나옴). 이력은 새 연도의 장부에 기록되므로 모든 연도의 이력을 불러온 뒤 거릅니다.
 
@@ -270,7 +270,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 | 화면 | 규칙 | 함수 |
 | :--- | :--- | :--- |
-| 전체 입력 내역 · 개인별·세대별 내역 · 수정·삭제 이력 | 직분이 있으면 항상 표기, 동명이인이면 연락처 뒷4자리를 앞에 붙임 (`1234 · 집사`) | `memberTag` |
+| 전체 입력 내역 · 개인별·대표자별 내역 · 수정·삭제 이력 | 직분이 있으면 항상 표기, 동명이인이면 연락처 뒷4자리를 앞에 붙임 (`1234 · 집사`) | `memberTag` |
 | 주별 요약 | 동명이인일 때만 연락처 뒷4자리(없으면 직분) | `nameDisambiguator` |
 
 `duplicateNames`가 동명이인(비활성 포함)을 찾습니다. 무명/방문자와 직분이 없는('성도' 포함) 성도는 표기가 없습니다.
@@ -301,7 +301,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 헌금 종류 | id 같음 또는 **이름 같음** | 새 종류로 추가 |
 | 성도 | id 같음 또는 **이름 + 연락처 뒷4자리 같음** | 새 성도로 추가 (이름만 같으면 동명이인일 수 있어 합치지 않음) |
 
-대응된 백업 id는 `remapDonations`/`remapAudits`로 **현재 id로 바꿔** 헌금·이력(스냅샷 포함)에 쓰므로 중복 없이 올바른 성도·종류에 연결됩니다. 새로 추가되는 성도의 세대 그룹이 대응된 성도를 가리키면 현재 id로 바꿉니다. `planFor`가 복원 창에 연결·추가·동명이인 가능 수를 미리 보여 줍니다.
+대응된 백업 id는 `remapDonations`/`remapAudits`로 **현재 id로 바꿔** 헌금·이력(스냅샷 포함)에 쓰므로 중복 없이 올바른 성도·종류에 연결됩니다. 새로 추가되는 성도의 합산 묶음이 대응된 성도를 가리키면 현재 id로 바꿉니다. `planFor`가 복원 창에 연결·추가·동명이인 가능 수를 미리 보여 줍니다.
 
 ### 10.2 원칙
 * 전체 초기화는 자동 백업을 하지 않습니다(예전의 긴급 백업 `emergency_before_reset_*`은 없어졌고, 이미 만든 그 파일은 지우지 않고 남겨 둡니다). 확인창이 마지막 전체 백업 시각을 보여 주고 필요하면 사용자가 먼저 직접 백업합니다. 시연 데이터는 데이터가 없을 때만 만들 수 있어 백업하지 않습니다. 직접 백업·복원이 진행되는 동안에는 `backupBusy`가 잠금을 잡아 자동 백업(주기·종료)이 건너뛰며(main은 백업 세션을 하나만 두어 겹치면 진행 중이던 쪽이 취소됨), 복원 중에는 화면을 `RestoringOverlay`로 덮고 헌금 저장·수정·삭제·복구하기도 막습니다. 복원이 중간에 끊겨 '복원 중' 표시(`meta_restore_in_progress`)가 남아 있으면 종료·주기 자동 백업을 만들지 않습니다(반쪽 데이터가 [전체 복원]이 쓰는 최신 종료 백업이 되거나, 좋은 백업이 보관 개수에 밀려 지워지지 않게). 같은 백업으로 다시 복원하면 표시가 지워지고 자동 백업이 다시 돕니다. 연도 복원은 자동 백업 없이, 확인 창에서 “선택한 연도”만 바뀐다는 점을 강조하며 사용자가 필요하면 먼저 직접 백업합니다. 백업 저장은 확인 창에서 연도를 선택하게 합니다.
@@ -417,7 +417,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 
 | 영역 | 파일 | 검증 |
 | :--- | :--- | :--- |
-| 순수 규칙 | `domain/*.test.ts` | 금액·검색·세대·정렬·월 캐시·월별 행렬 = 주별 합 |
+| 순수 규칙 | `domain/*.test.ts` | 금액·검색·묶음·정렬·월 캐시·월별 행렬 = 주별 합 |
 | 저장소 | `storage/monthly.test.ts`, `donationsTable.test.ts`, `storageErrors.test.ts` | 행 단위 쓰기·롤백, 색인 중복 검사, 연도 백업·복원 왕복, 저장소 오류 안내 |
 | 백업 | `backup/mergeRules.test.ts`, `testData.test.ts` | 병합 규칙·id 다시 연결, 시험 데이터 무결성 |
 | 화면 상태 | `contexts/DonationContext.test.tsx` | 달 배열 교체·유지, 읽기 경합 재조회, `reloadAll` 무효화, 읽기 실패 재시도, 월·연도 이동 수정과 이력, 이동한 내역 복구하기, 연도 퇴출(건수 예산·사용 중 유지), 연도 목록 갱신 |

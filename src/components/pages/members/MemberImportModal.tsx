@@ -15,7 +15,7 @@ const STATUS_COLOR = {
 
 function ImportBody({ onClose }: { onClose(): void }) {
   const im = useMemberImport(onClose);
-  const paging = usePaging(im.preview.length, PAGE_SIZE, im.fileName);
+  const paging = usePaging(im.preview.length, PAGE_SIZE, String(im.loadId));
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -28,8 +28,21 @@ function ImportBody({ onClose }: { onClose(): void }) {
         </button>
         <span className="text-sm text-gray-600">{im.fileName}</span>
       </div>
+      <textarea
+        className="w-full resize-none rounded border border-dashed px-3 py-2 text-sm"
+        rows={1}
+        readOnly
+        disabled={im.busy}
+        value=""
+        aria-label="성도 명단 표 붙여넣기"
+        placeholder="또는 여기를 누르고 이름 열을 붙여넣기(Ctrl+V) — 첫 줄은 제목(이름·성명·성도명·성도), 이름만 읽습니다"
+        onPaste={(e) => {
+          e.preventDefault();
+          void im.onPaste(e.clipboardData.getData('text/plain'));
+        }}
+      />
       <p className="text-xs text-gray-500">
-        컬럼: 이름(필수), 직분, 연락처뒷4자리, 세대주여부(Y/N), 세대주이름.
+        컬럼: 이름(필수), 직분, 연락처뒷4자리, 대표자여부(Y/N), 대표자이름.
       </p>
       {im.error ? <p className="text-sm text-red-600">{im.error}</p> : null}
       {im.stats ? (
@@ -52,8 +65,8 @@ function ImportBody({ onClose }: { onClose(): void }) {
                   <th className="th">이름</th>
                   <th className="th">직분</th>
                   <th className="th">연락처</th>
-                  <th className="th">세대주</th>
-                  <th className="th">세대주이름</th>
+                  <th className="th">대표자</th>
+                  <th className="th">대표자이름</th>
                   <th className="th">메시지</th>
                   <th className="th">덮어쓰기</th>
                 </tr>

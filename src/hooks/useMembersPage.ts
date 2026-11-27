@@ -30,7 +30,7 @@ export function useMembersPage() {
         .filter((m) => (showInactive || m.isActive) && (deferredQuery.trim() === '' || matchMember(m, deferredQuery)))
         .map((m) => ({
           member: m,
-          familyLabel: m.familyGroupId ? `${currentHeadOf(members, m.familyGroupId)?.name ?? '?'} 세대` : '-',
+          familyLabel: m.familyGroupId ? `대표 ${currentHeadOf(members, m.familyGroupId)?.name ?? '?'}` : '-',
           stateLabel: m.isActive ? '활성' : '비활성',
           registeredLabel: registeredDateOf(m) || '-',
         }))
@@ -69,7 +69,7 @@ export function useMembersPage() {
 
   const askToggleActive = useCallback(
     (m: Member) => {
-      // 세대원이 남은 세대주는 비활성화할 수 없으므로 확인창을 띄우기 전에 이유를 알려 줍니다.
+      // 구성원이 남은 대표자는 비활성화할 수 없으므로 확인창을 띄우기 전에 이유를 알려 줍니다.
       const blocked = m.isActive ? canDeactivate(members, m) : null;
       if (blocked) setMessage(blocked);
       else setConfirming(m);

@@ -17,7 +17,7 @@ const ALLOWED = {
   'year:unlock': ADMIN,
   'report:summary': ALL, // 종합보고서 탭
   'report:list': STAFF, // 전체 입력 내역 탭
-  'report:personal': STAFF, // 개인별/세대별 탭
+  'report:personal': STAFF, // 개인별/대표자별 탭
   'report:audit': STAFF, // 수정·삭제 이력 탭
   'report:print': ALL, // 인쇄·PDF(종합보고서 탭에만 있음)
   'backup:create': STAFF,

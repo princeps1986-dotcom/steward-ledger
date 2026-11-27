@@ -72,7 +72,7 @@ describe('member import', () => {
   it('links a new household member to the existing head when the same list is imported again', () => {
     const existing = [member({ id: 'h', name: '김철수', phoneLast4: '1234', isFamilyHead: true, familyGroupId: 'h' })];
     const rows = normalizeRows([
-      { 이름: '김철수', 연락처뒷4자리: '1234', 세대주여부: 'Y' },
+      { 이름: '김철수', 연락처뒷4자리: '1234', 세대주여부: 'Y' }, // 예전 머리글도 읽음
       { 이름: '박민수', 세대주여부: 'N', 세대주이름: '김철수' },
     ]);
     const preview = buildPreview(rows, existing);
@@ -85,15 +85,15 @@ describe('member import', () => {
   it('does not link a household member to an existing member who is not a head (it would join another family)', () => {
     const existing = [
       member({ id: 'p', name: '박영호', isFamilyHead: true, familyGroupId: 'p' }),
-      member({ id: 'k', name: '김철수', phoneLast4: '1234', familyGroupId: 'p' }), // 박영호 세대의 세대원
+      member({ id: 'k', name: '김철수', phoneLast4: '1234', familyGroupId: 'p' }), // 박영호 묶음의 구성원
     ];
     const rows = normalizeRows([
-      { 이름: '김철수', 연락처뒷4자리: '1234', 세대주여부: 'Y' },
-      { 이름: '이영희', 세대주여부: 'N', 세대주이름: '김철수' },
+      { 이름: '김철수', 연락처뒷4자리: '1234', 대표자여부: 'Y' },
+      { 이름: '이영희', 대표자여부: 'N', 대표자이름: '김철수' },
     ]);
     const preview = buildPreview(rows, existing);
     expect(preview.map((r) => r.status)).toEqual(['DUPLICATE', 'ERROR']);
-    expect(preview[1].messages.join(' ')).toContain('세대주가 아닙니다');
+    expect(preview[1].messages.join(' ')).toContain('대표자가 아닙니다');
     const { members } = applyImport(preview, new Set(), existing);
     expect(members.some((m) => m.name === '이영희')).toBe(false);
   });
@@ -109,12 +109,12 @@ describe('member import', () => {
   it('previews errors, duplicates and head links, then applies heads first', () => {
     const existing = [member({ id: 'e1', name: '박민수', phoneLast4: '1234', isFamilyHead: true, familyGroupId: 'e1' })];
     const rows = normalizeRows([
-      { 이름: '이영희', 세대주여부: 'N', 세대주이름: '김철수' },
-      { 이름: '김철수', 세대주여부: 'Y' },
+      { 이름: '이영희', 대표자여부: 'N', 대표자이름: '김철수' },
+      { 이름: '김철수', 대표자여부: 'Y' },
       { 이름: '', 직분: '집사' },
       { 이름: '박민수', 연락처뒷4자리: '1234', 직분: '집사' },
-      { 이름: '최수진', 세대주이름: '박민수' },
-      { 이름: '정하나', 세대주이름: '없는사람' },
+      { 이름: '최수진', 대표자이름: '박민수' },
+      { 이름: '정하나', 대표자이름: '없는사람' },
     ]);
     const preview = buildPreview(rows, existing);
     const status = Object.fromEntries(preview.map((r) => [r.name || '(빈칸)', r.status]));

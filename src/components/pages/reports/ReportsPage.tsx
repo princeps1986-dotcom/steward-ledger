@@ -15,7 +15,7 @@ import { SummaryTab } from './SummaryTab';
 const ALL_TABS: { key: ReportTab; label: string }[] = [
   { key: 'SUMMARY', label: '종합 보고서' },
   { key: 'LIST', label: '전체 입력 내역' },
-  { key: 'PERSONAL', label: '개인별·세대별 내역' },
+  { key: 'PERSONAL', label: '개인별·대표자별 내역' },
   { key: 'AUDIT', label: '수정·삭제 이력' },
 ];
 /** 탭마다 필요한 권한(roles.ts). 열람자는 종합 보고서 탭만 봅니다. */
@@ -125,10 +125,10 @@ export function ReportsPage() {
             <button className="btn-accent" onClick={() => void ex.savePdf()} disabled={ex.busy || exportDisabled}>
               PDF 저장
             </button>
-            {/* 헌금 CSV 불러오기는 일별 보고서에서만 엽니다(보고 있는 날짜를 기본 날짜로 씀). 헌금을 입력할 수 있는 역할만 보입니다(열람자는 이 탭을 봐도 저장할 수 없음). */}
+            {/* 일별 헌금 내역 불러오기는 일별 보고서에서만 엽니다(보고 있는 날짜를 기본 날짜로 씀). 헌금을 입력할 수 있는 역할만 보입니다(열람자는 이 탭을 봐도 저장할 수 없음). */}
             {f.sel.periodType === 'DAY' && allowed('donation:write') ? (
               <button className="btn" onClick={() => setImportOpen(true)}>
-                CSV 불러오기
+                일별 헌금 내역 불러오기
               </button>
             ) : null}
           </>
