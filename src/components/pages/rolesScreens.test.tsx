@@ -41,7 +41,7 @@ describe('역할별 보고서 탭', () => {
   it.each<Role>(['admin', 'finance'])('%s는 네 탭을 모두 본다', async (role) => {
     login(role);
     renderPage(<ReportsPage />);
-    expect(tabNames()).toEqual(['종합 보고서', '전체 입력 내역', '개인별·세대별 내역', '수정·삭제 이력']);
+    expect(tabNames()).toEqual(['종합 보고서', '전체 입력 내역', '개인별·대표자별 내역', '수정·삭제 이력']);
   });
 
   it('열람자는 종합 보고서 탭만 본다', async () => {

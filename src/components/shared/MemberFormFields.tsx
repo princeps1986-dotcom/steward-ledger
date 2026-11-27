@@ -36,24 +36,24 @@ export function MemberFormFields({ draft, setField, headOptions, positionOptions
       </label>
       <p className="col-span-2 -mt-1 text-xs text-gray-500">직분과 연락처 뒷 4자리는 이름이 같은 성도를 구분하기 위한 용도입니다.</p>
       <div>
-        <span className="label">세대주 여부</span>
+        <span className="label">대표자 여부</span>
         <label className="input flex cursor-pointer items-center gap-2">
           <input type="checkbox" checked={draft.isFamilyHead} onChange={(e) => setField('isFamilyHead')(e.target.checked)} />
-          세대주로 지정
+          대표자로 지정
         </label>
       </div>
       <div>
-        <span className={`label ${draft.isFamilyHead ? 'text-gray-400' : ''}`}>소속 세대주 연결</span>
+        <span className={`label ${draft.isFamilyHead ? 'text-gray-400' : ''}`}>소속 대표자 연결</span>
         <MemberPicker
           options={headOptions}
           value={draft.headMemberId}
           onChange={setField('headMemberId')}
           disabled={draft.isFamilyHead}
-          disabledText="세대주는 연결하지 않습니다"
-          ariaLabel="소속 세대주 연결"
+          disabledText="대표자는 연결하지 않습니다"
+          ariaLabel="소속 대표자 연결"
         />
       </div>
-      <p className="col-span-2 -mt-1 text-xs text-gray-500">기존 세대의 구성원을 지정하면 세대주가 변경되고 세대는 유지됩니다</p>
+      <p className="col-span-2 -mt-1 text-xs text-gray-500">기존 묶음의 구성원을 지정하면 대표자가 변경되고 묶음은 유지됩니다</p>
       {error ? <p className="col-span-2 text-sm text-red-600">{error}</p> : null}
     </div>
   );

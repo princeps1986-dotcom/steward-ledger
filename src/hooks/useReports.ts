@@ -35,7 +35,7 @@ function useDebouncedValue<T>(value: T, delay: number): T {
   return v;
 }
 
-/** 보고서 공통 필터: 연도 + 기간(연/분기/월/주) + 세대 집계 기준 */
+/** 보고서 공통 필터: 연도 + 기간(연/분기/월/주) + 합산 기준 */
 const NO_MONTHS: string[] = [];
 
 /** 달별 변경 횟수와 epoch로 만든 달의 버전 문자열(달이 바뀌었는지 비교용) */
@@ -396,27 +396,27 @@ export function useDonationListReport(f: ReportFilters) {
   return { query, setQuery, count: pager.count, total: pager.total, rowAt, loading: !done, failed };
 }
 
-/** 개인별·세대별 조회 */
+/** 개인별·대표자별 조회 */
 export function usePersonalReport(f: ReportFilters) {
   const members = useMembers();
   const memberById = useMemberById();
   const typeById = useOfferingTypeById();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickedMode, setPickedMode] = useState<'PERSON' | 'FAMILY'>('PERSON');
-  // 세대 합산으로 들어갈 때마다 집계 기준은 현재 세대로 시작합니다(납부 당시 기준이 남아 있지 않도록).
+  // 대표자 합산으로 들어갈 때마다 집계 기준은 현재 묶음으로 시작합니다(납부 당시 기준이 남아 있지 않도록).
   const setMode = (m: 'PERSON' | 'FAMILY') => {
     setPickedMode(m);
     if (m === 'FAMILY') f.setBasis('CURRENT');
   };
-  // 세대 합산은 연도별 보고서에서만 가능합니다. 다른 기간에서는 선택과 무관하게 개인 기준입니다.
+  // 대표자 합산은 연도별 보고서에서만 가능합니다. 다른 기간에서는 선택과 무관하게 개인 기준입니다.
   const mode = f.periodType === 'YEAR' ? pickedMode : 'PERSON';
   const selected = selectedId ? memberById.get(selectedId) ?? null : null;
 
   // 비활성 성도도 과거 내역 조회를 위해 선택 대상에 포함(검색은 선택 칸이 함)
   const options = useMemo(() => [...members].sort((a, b) => compareKo(a.name, b.name)).map((m): PickerOption => ({ id: m.id, label: memberLabel(m), member: m })), [members]);
 
-  // 보고서 기간의 내역을 메모리에 올리지 않고 직접 읽습니다. 개인·현재 세대는 memberId 색인으로 그 성도들의 내역만 읽고,
-  // 납부 당시 세대는 색인이 없어 기간의 달을 하나씩 읽으며 거릅니다(메모리에는 한 달치만).
+  // 보고서 기간의 내역을 메모리에 올리지 않고 직접 읽습니다. 개인·현재 묶음은 memberId 색인으로 그 성도들의 내역만 읽고,
+  // 납부 당시 묶음은 색인이 없어 기간의 달을 하나씩 읽으며 거릅니다(메모리에는 한 달치만).
   const { listMonths, listRange, basis } = f;
   const versionKey = useMonthVersionKey(listMonths);
   const memberIds = useMemo(() => {
@@ -470,10 +470,13 @@ export function usePersonalReport(f: ReportFilters) {
 
   const head = selected?.familyGroupId ? currentHeadOf(members, selected.familyGroupId) : undefined;
   const byType = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const d of rows) map.set(d.offeringTypeId, (map.get(d.offeringTypeId) ?? 0) + d.amount);
+    const map = new Map<string, { amount: number; count: number }>();
+    for (const d of rows) {
+      const t = map.get(d.offeringTypeId) ?? { amount: 0, count: 0 };
+      map.set(d.offeringTypeId, { amount: t.amount + d.amount, count: t.count + 1 });
+    }
     return [...map.entries()]
-      .map(([id, amount]) => ({ id, name: typeById.get(id)?.name ?? '(삭제된 종류)', amount, sort: typeById.get(id)?.sortOrder ?? 999 }))
+      .map(([id, { amount, count }]) => ({ id, name: typeById.get(id)?.name ?? '(삭제된 종류)', amount, count, sort: typeById.get(id)?.sortOrder ?? 999 }))
       .sort((a, b) => a.sort - b.sort);
   }, [rows, typeById]);
 
@@ -482,15 +485,15 @@ export function usePersonalReport(f: ReportFilters) {
     selectedId,
     select: (id: string) => {
       setSelectedId(id || null);
-      // 선택을 풀면 조회 방식·세대 집계 기준도 처음 상태(개인 기준·현재 세대)로 복구합니다.
+      // 선택을 풀면 조회 방식·합산 기준도 처음 상태(개인 기준·현재 묶음)로 복구합니다.
       if (!id) {
         setPickedMode('PERSON');
         f.setBasis('CURRENT');
       }
     },
     selectedLabel: selected ? memberLabel(selected) : '',
-    /** 세대 합산 조회에서 보여 줄 현재 세대주(세대에 연결되지 않은 성도는 안내 문구) */
-    headLabel: !selected ? '' : !selected.familyGroupId ? '세대 미연결(본인만)' : head ? memberLabel(head) : '(세대주 없음)',
+    /** 대표자 합산 조회에서 보여 줄 현재 대표자(묶음에 연결되지 않은 성도는 안내 문구) */
+    headLabel: !selected ? '' : !selected.familyGroupId ? '묶음 없음(본인만)' : head ? memberLabel(head) : '(대표자 없음)',
     hasSelection: !!selected,
     loading,
     stale,
@@ -597,7 +600,7 @@ export function useReportExport(f: ReportFilters) {
     if (saved) await desktop()?.showInFolder(saved.path);
   }, [saved]);
 
-  // 종합 보고서는 세대 집계 기준과 무관하므로 파일명에 넣지 않습니다(기준은 개인별·세대별 탭 세대 합산에서만 씁니다).
+  // 종합 보고서는 합산 기준과 무관하므로 파일명에 넣지 않습니다(기준은 개인별·대표자별 탭 대표자 합산에서만 씁니다).
   const fileName = f.isDay
     ? `일별헌금보고서_${f.week.start}.pdf`
     : f.isWeek

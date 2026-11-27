@@ -1,6 +1,6 @@
 import type { Donation, DonationDraft, Member, OfferingType } from '../../contexts/types';
 import { isDateInRange, isValidDateString } from '../domain/dates';
-import { LINE_KEY } from './memberImportService';
+import { compact, LINE_KEY, splitPastedTable } from './memberImportService';
 
 /** 헌금 CSV 한 줄(긴 형식: 한 줄 = 헌금 1건). 값은 모두 문자열입니다. */
 export interface DonationImportRow {
@@ -67,11 +67,7 @@ const isBlankAmount = (s: string) => /^(?:[-0]원?)?$/.test(s.replace(/\s/g, '')
  * 첫 줄에 금액 열이 있으면 양식(한 줄 = 1건) 그대로, 없으면 성도 × 헌금종류 표로 보고 금액 칸마다 한 줄을 만듭니다.
  */
 export function parsePastedDonations(text: string): Record<string, string>[] {
-  // 첫 칸이 빈 제목 줄은 탭으로 시작하므로, 나누기 전에 trim하지 않습니다.
-  const lines = text.split(/\r?\n/);
-  // 줄 번호는 제목 줄을 1행으로 셉니다(중간의 빈 줄도 번호는 차지).
-  const first = lines.findIndex((l) => l.trim());
-  const table = lines.flatMap((l, i) => (l.trim() ? [{ line: i - first + 1, cells: l.split('\t').map((c) => c.trim()) }] : []));
+  const table = splitPastedTable(text);
   const header = table[0]?.cells;
   const body = table.slice(1);
   if (!header || header.length < 2) throw new Error('표를 읽지 못했습니다. 표 계산 프로그램에서 제목 줄까지 선택해 복사한 뒤 붙여넣으세요.');
@@ -133,7 +129,6 @@ export interface DonationMatchContext {
   existing?: (Donation | undefined)[];
 }
 
-const compact = (s: string) => s.replace(/\s/g, '');
 /** 한 줄 금액 상한(1조 원). 이보다 큰 값은 입력 실수로 보고 막습니다. */
 const MAX_AMOUNT = 1_000_000_000_000;
 

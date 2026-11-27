@@ -114,7 +114,7 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
   // 연도별 '사용 중' 개수(화면이 쓰는 연도)와 마지막 사용 시각: 오래 쓰지 않은 연도부터 메모리에서 내립니다.
   const pins = useRef(new Map<string, number>());
   const lastUsed = useRef(new Map<string, number>());
-  // reloadAll(복원·초기화) 이후 도착한 이전 읽기 결과를 버리기 위한 세대 번호
+  // reloadAll(복원·초기화) 이후 도착한 이전 읽기 결과를 버리기 위한 읽기 차수 번호
   const generation = useRef(0);
   // 연도 목록 새로 읽기는 가장 마지막에 시작한 것만 반영합니다(순서가 뒤바뀌어 오래된 목록이 덮어쓰는 것을 방지).
   const yearsToken = useRef(0);

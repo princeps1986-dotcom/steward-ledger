@@ -13,7 +13,7 @@ export interface MergePlan {
   memberIdMap: Map<string, string>;
   /** 백업 헌금 종류 id → 현재 종류 id (대응된 항목만) */
   typeIdMap: Map<string, string>;
-  /** 백업 성도 id → 그 성도가 이 PC에서 속한 세대 번호(세대주를 바꿨으면 성도 id와 다름). 헌금·성도의 세대 값을 바꿀 때 씁니다. */
+  /** 백업 성도 id → 그 성도가 이 PC에서 속한 묶음 번호(대표자를 바꿨으면 성도 id와 다름). 헌금·성도의 묶음 값을 바꿀 때 씁니다. */
   groupIdMap: Map<string, string>;
   /** 현재 데이터에 새로 추가할 성도(familyGroupId는 대응 결과가 반영됨) */
   addMembers: Member[];
@@ -60,8 +60,8 @@ export function planMerge(current: { members: readonly Member[]; offeringTypes: 
       if (curNames.has(norm(m.name))) sameNameAdded++;
     }
   }
-  // 새로 추가되는 성도가 가리키는 세대 그룹·세대주도 대응 결과로 바꿉니다.
-  // 대응된 성도는 지금 속한 세대 번호를 씁니다(이 PC에서 세대주를 바꿨으면 세대 번호는 예전 세대주의 id로 남아 있으므로).
+  // 새로 추가되는 성도가 가리키는 합산 묶음·대표자도 대응 결과로 바꿉니다.
+  // 대응된 성도는 지금 속한 묶음 번호를 씁니다(이 PC에서 대표자를 바꿨으면 묶음 번호는 예전 대표자의 id로 남아 있으므로).
   const curGroupOf = new Map(current.members.map((m) => [m.id, m.familyGroupId]));
   const groupIdMap = new Map([...memberIdMap].map(([from, to]) => [from, curGroupOf.get(to) ?? to]));
   const addMembers = added.map((m) => {

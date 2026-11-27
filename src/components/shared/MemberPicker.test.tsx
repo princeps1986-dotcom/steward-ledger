@@ -17,7 +17,7 @@ describe('MemberPicker', () => {
   // 줄 그리기(가상 스크롤)는 화면 크기가 필요해 jsdom에서는 확인할 수 없으므로(실제 브라우저에서 확인), 전체 길이와 키보드 선택을 검사합니다.
   it('sizes the list for all matches, moves past the visible rows with the keyboard, and narrows by phone', () => {
     const onChange = vi.fn();
-    render(<MemberPicker options={many} value="" onChange={onChange} ariaLabel="세대주" />);
+    render(<MemberPicker options={many} value="" onChange={onChange} ariaLabel="대표자" />);
     const input = screen.getByRole('combobox');
     fireEvent.focus(input);
     expect(screen.getByRole('listbox').style.height).toBe('10800px'); // 300명 x 36px
@@ -32,12 +32,12 @@ describe('MemberPicker', () => {
 
   it('shows the selected head with [연결 해제], and a disabled note for a family head', () => {
     const onChange = vi.fn();
-    const { rerender } = render(<MemberPicker options={many} value="h3" onChange={onChange} ariaLabel="세대주" />);
-    expect(screen.getByLabelText('세대주').textContent).toContain('1003');
+    const { rerender } = render(<MemberPicker options={many} value="h3" onChange={onChange} ariaLabel="대표자" />);
+    expect(screen.getByLabelText('대표자').textContent).toContain('1003');
     fireEvent.click(screen.getByText('연결 해제'));
     expect(onChange).toHaveBeenCalledWith('');
-    rerender(<MemberPicker options={many} value="" onChange={onChange} disabled disabledText="연결하지 않습니다" ariaLabel="세대주" />);
-    expect((screen.getByLabelText('세대주') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('세대주') as HTMLInputElement).value).toBe('연결하지 않습니다');
+    rerender(<MemberPicker options={many} value="" onChange={onChange} disabled disabledText="연결하지 않습니다" ariaLabel="대표자" />);
+    expect((screen.getByLabelText('대표자') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('대표자') as HTMLInputElement).value).toBe('연결하지 않습니다');
   });
 });

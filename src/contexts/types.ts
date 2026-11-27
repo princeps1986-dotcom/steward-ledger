@@ -6,7 +6,7 @@ export interface Member {
   name: string;
   position: string;
   phoneLast4?: string;
-  /** 세대 그룹 ID = 최초 세대주의 Member.id. 세대주가 바뀌어도 유지되고 isFamilyHead만 이전됩니다. */
+  /** 합산 묶음 ID = 최초 대표자의 Member.id. 대표자가 바뀌어도 유지되고 isFamilyHead만 이전됩니다. */
   familyGroupId?: string;
   isFamilyHead: boolean;
   isActive: boolean;
@@ -137,5 +137,5 @@ export interface SaveBatch {
 
 export type DuplicateResolution = 'MERGE' | 'SEPARATE';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 export const SCHEMA_VERSION = 2;

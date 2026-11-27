@@ -67,8 +67,8 @@ export const fillReason = (logs: AuditLog[]): AuditLog[] =>
 
 /**
  * v1 → v2 마이그레이션.
- * v1 가정: payload = { members, offeringTypes, donations: Donation[], auditLogs?: AuditLog[] } (연도 샤딩·세대 스냅샷 없음)
- * 세대 스냅샷은 복원 시점의 성도 familyGroupId로 채웁니다(과거 이력이 없으므로 최선의 근사치).
+ * v1 가정: payload = { members, offeringTypes, donations: Donation[], auditLogs?: AuditLog[] } (연도 샤딩·묶음 스냅샷 없음)
+ * 묶음 스냅샷은 복원 시점의 성도 familyGroupId로 채웁니다(과거 이력이 없으므로 최선의 근사치).
  */
 function migrateV1(p: Record<string, unknown>): BackupPayload | string {
   const members = p.members;

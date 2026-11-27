@@ -33,34 +33,34 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
             개인 기준 조회
           </button>
           <button className={`px-3 py-1.5 text-sm ${r.mode === 'FAMILY' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={r.mode === 'FAMILY'} onClick={() => r.setMode('FAMILY')}>
-            세대(가족) 합산 조회
+            대표자 합산 조회
           </button>
         </div>
         ) : null}
         {r.mode === 'FAMILY' ? (
           <div>
-            <span className="label">세대 집계 기준</span>
+            <span className="label">합산 기준</span>
             <div className="flex overflow-hidden rounded border border-gray-300">
               <button className={`px-3 py-1.5 text-sm ${f.basis === 'CURRENT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'CURRENT'} onClick={() => f.setBasis('CURRENT')}>
-                현재 세대 기준
+                현재 묶음 기준
               </button>
               <button className={`px-3 py-1.5 text-sm ${f.basis === 'SNAPSHOT' ? 'bg-blue-600 text-white' : 'bg-white'}`} aria-pressed={f.basis === 'SNAPSHOT'} onClick={() => f.setBasis('SNAPSHOT')}>
-                납부 당시 세대 기준
+                헌금 당시 묶음 기준
               </button>
             </div>
           </div>
         ) : null}
       </div>
-      {f.periodType !== 'YEAR' ? <p className="-mt-2 text-xs text-gray-500">※ 세대 합산 조회는 연도별 보고서에서만 가능합니다.</p> : null}
+      {f.periodType !== 'YEAR' ? <p className="-mt-2 text-xs text-gray-500">※ 대표자 합산 조회는 연도별 보고서에서만 가능합니다.</p> : null}
 
       {r.hasSelection ? (
         <>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <b>{r.selectedLabel}</b> · {r.mode === 'PERSON' ? '개인' : '세대 합산'} · {f.label}
+            <b>{r.selectedLabel}</b> · {r.mode === 'PERSON' ? '개인' : '대표자 합산'} · {f.label}
             {r.mode === 'FAMILY' ? (
               // 테마 색 변수가 정의된 blue-100/400/600/700만 써서 네 테마(어두운 테마 포함) 모두에서 글씨가 읽히게 합니다.
               <span className="rounded border border-l-4 border-blue-400 border-l-blue-600 bg-blue-100 px-3 py-1 text-base font-bold text-blue-700">
-                <span className="mr-1.5 text-xs font-semibold">세대주</span>
+                <span className="mr-1.5 text-xs font-semibold">대표자</span>
                 {r.headLabel}
               </span>
             ) : null}
@@ -68,11 +68,11 @@ export function PersonalTab({ f }: { f: ReportFilters }) {
           <div className="flex flex-wrap gap-2">
             {r.byType.map((t) => (
               <span key={t.id} className="rounded bg-gray-100 px-3 py-1 text-sm">
-                {t.name} <b>{formatWon(t.amount)}</b>
+                {t.name} <b>{formatWon(t.amount)}</b> ({t.count}건)
               </span>
             ))}
             <span className="rounded bg-blue-600 px-3 py-1 text-sm text-white">
-              합계 <b>{formatWon(r.total)}</b>
+              합계 <b>{formatWon(r.total)}</b> ({r.rows.length}건)
             </span>
           </div>
 

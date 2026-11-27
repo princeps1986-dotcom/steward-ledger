@@ -16,7 +16,7 @@ const COLUMNS: { key: MemberSortKey; label: string }[] = [
   { key: 'name', label: '이름' },
   { key: 'position', label: '직분' },
   { key: 'phoneLast4', label: '연락처 뒷4자리' },
-  { key: 'family', label: '세대' },
+  { key: 'family', label: '합산 묶음' },
 ];
 
 /** 누르면 정렬하는 머리글. 정렬 가능한 열임을 항상 보여 줍니다: 현재 기준 열은 ▲/▼(진하게), 나머지는 ↕(연하게) */
@@ -52,7 +52,7 @@ export function MembersPage() {
         <div className="flex-1" />
         <span className="pb-2 text-sm text-gray-500">활성 성도 {p.total}명</span>
         <button className="btn" onClick={p.openImport}>
-          명단 불러오기
+          성도 명단 불러오기
         </button>
         <button className="btn-primary" onClick={p.openNew}>
           + 성도 등록
@@ -67,7 +67,7 @@ export function MembersPage() {
               {COLUMNS.map((c) => (
                 <SortTh key={c.key} sortKey={c.key} label={c.label} className={c.key === 'phoneLast4' ? 'th text-center' : c.key === 'name' ? 'th !left-0 !z-20' : 'th'} sort={p.sort} onSort={p.toggleSort} />
               ))}
-              <th className="th text-center">세대주</th>
+              <th className="th text-center">대표자</th>
               <th className="th">등록일</th>
               <SortTh sortKey="state" label="상태" className="th" sort={p.sort} onSort={p.toggleSort} />
               <th className="th text-right">관리</th>
