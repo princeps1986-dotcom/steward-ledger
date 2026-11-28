@@ -55,4 +55,5 @@
 ## 개발 도구
 - 실행: `npm run dev`(브라우저 모드), `npm run dev:app`(`scripts/dev-app.mjs`, 개발 서버 + Electron 창)
 - 시험 데이터: `scripts/generate-test-data.mjs`, `testdata-core.mjs` · 스모크 시험: `scripts/smoke.mjs`
+- 로고·아이콘: 원본 `build/icon.svg`(머리글 `App.tsx`에서 가져옴, 탭 아이콘은 복사본 `public/favicon.svg`), 설치 파일 아이콘 `build/icon.ico`·`icon.png`는 `npx electron scripts/make-icon.cjs`로 다시 만듦(원본을 바꾸면 favicon도 함께 복사)
 - 배포: `.github/workflows/pages.yml`(시연 페이지), `npm run dist`(설치 파일, 먼저 `scripts/check-release.mjs`가 구글 클라이언트 ID가 비었으면 멈춤)

@@ -1,4 +1,5 @@
 import { lazy, startTransition, Suspense, useEffect, useRef } from 'react';
+import logoUrl from '../build/icon.svg';
 import { SessionBar } from './components/auth/SessionBar';
 import { BrowserNotice } from './components/shared/BrowserNotice';
 import { ClosingOverlay } from './components/shared/ClosingOverlay';
@@ -63,7 +64,10 @@ export function App() {
       <DemoBanner />
       {preparing ? <DemoPreparing done={preparing.done} total={preparing.total} /> : null}
       <header className="no-print flex items-center gap-6 bg-slate-800 px-4 text-white">
-        <h1 className="py-3 text-base font-bold">청지기 장부</h1>
+        <h1 className="flex items-center gap-2 py-3 text-base font-bold">
+          <img src={logoUrl} alt="" className="h-6 w-6" />
+          청지기 장부
+        </h1>
         <nav className="flex gap-1" aria-label="주 메뉴">
           {visiblePages().map((p) => (
             <button
