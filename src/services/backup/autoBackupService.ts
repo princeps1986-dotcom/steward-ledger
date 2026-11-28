@@ -20,7 +20,9 @@ export async function buildAutoBackup(): Promise<AutoBackupPayload | null> {
   // 직접 백업·복원 중이면 끼어들지 않되, 그냥 닫히면 진행 중인 작업이 끊기므로 오류로 알려 main이 종료 여부를 묻게 합니다.
   if (isBackupBusy()) throw new Error('백업 또는 복원이 진행 중입니다. 끝난 뒤 닫아 주세요.');
   // 10분 백업이 일부 연도만 담았으면 '변경 있음' 표시는 꺼져도 바뀐 연도 목록이 남아 있으므로 전체 백업합니다(두 값만 읽어 빠름).
-  if (!periodicRunning && !(await isDirtySinceBackup()) && !(await dirtyYearsSinceFullBackup())?.length) return null;
+  // 목록이 없으면(null: 아직 전체 종료 백업 전) 바뀐 연도를 모르므로 건너뛰지 않습니다.
+  const dirtyYears = await dirtyYearsSinceFullBackup();
+  if (!periodicRunning && !(await isDirtySinceBackup()) && dirtyYears && !dirtyYears.length) return null;
   if (!(await hasAnyData())) return null; // 성도·헌금이 하나도 없으면 빈 백업 파일을 만들지 않습니다.
   // 복원이 중간에 끊긴 데이터는 백업하지 않습니다: 반쪽 데이터가 [전체 복원]이 쓰는 최신 종료 백업이 되고, 좋은 백업이 보관 개수에 밀려 지워지지 않게.
   if (await interruptedRestore()) return null;
@@ -61,7 +63,8 @@ export async function runPeriodicBackup(settings: AppSettings): Promise<{ file: 
       years = latest ? [latest] : null;
     }
     // 일부 연도만 담으면 담은 연도를 목록에 남겨 둡니다(다음 주기 백업도 담고, 종료 때 전체 백업하도록).
-    await clearDirty(years === null, years ?? []);
+    // 전체를 담아도 목록은 비우지 않습니다: [전체 복원]은 종료 백업(backup_*)만 쓰므로, 비우면 종료 백업이 건너뛰어져 옛 파일로 복원됩니다.
+    await clearDirty(false, years ?? []);
     const file = await streamBackup(desktopSink(api, { kind: 'periodic' }), years ? { years } : {});
     return file ? { file, full: years === null } : null;
   } catch (e) {

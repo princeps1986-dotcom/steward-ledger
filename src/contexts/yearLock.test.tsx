@@ -8,6 +8,7 @@ import { setCurrentUser } from '../services/auth/currentUser';
 import type { Role } from '../services/auth/roles';
 import { resetAllData } from '../services/backup/backupService';
 import type { DesktopApi } from '../services/desktopBridge';
+import { db } from '../services/storage/db';
 import { getItem, monthWrite, readMonth, transact } from '../services/storage/storageService';
 import { DonationProvider, useDonationActions } from './DonationContext';
 import { SettingsProvider, useSettingsActions } from './SettingsContext';
@@ -137,6 +138,16 @@ describe('기간 헌금 삭제', () => {
     const logs = await audits('2025');
     expect(logs).toHaveLength(3);
     expect(logs.every((l) => l.action === 'DELETE' && l.reason === '정리 목적 삭제' && l.actor === 'me@b.c' && l.afterSnapshot === null)).toBe(true);
+  });
+
+  it('중간 달에서 실패하면 어디까지 지웠는지 알려 준다(앞 달은 이미 지워짐)', async () => {
+    const { result } = setup();
+    login('admin');
+    // 2025-02에 풀 수 없는 암호문 한 건을 넣어 그 달을 읽을 때 실패하게 합니다.
+    await db.donations.put({ ...don('x', '2025-02-03'), enc: 'bad' } as never);
+    await expect(result.current.d.deletePeriod('2025-01', '2025-02', '정리 목적 삭제')).rejects.toThrow('2025-01까지 1건을 지웠고 2025-02에서 멈췄습니다');
+    expect(await readMonth('2026-01')).toHaveLength(1);
+    expect((await audits('2025')).length).toBe(1);
   });
 
   it('재정담당·열람자는 지울 수 없다', async () => {

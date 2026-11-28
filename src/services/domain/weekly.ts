@@ -46,6 +46,8 @@ export function buildWeeklyMatrix(
   range: WeekRange,
   /** 이름이 같은 성도끼리의 순서를 정하는 보조 키(성도 id → 문자열). 없으면 입력 순서 */
   tieBreak?: (memberId: string) => string,
+  /** 성도의 지금 이름(없으면 헌금에 남은 당시 이름). 이름을 바꾼 성도가 옛 이름으로 보이지 않게 */
+  nameOf?: (memberId: string) => string | undefined,
 ): WeeklyMatrix {
   const inWeek = donations.filter((d) => d.date >= range.start && d.date <= range.end);
   const used = new Set(inWeek.map((d) => d.offeringTypeId));
@@ -70,7 +72,7 @@ export function buildWeeklyMatrix(
     if (!row) {
       const w = d.memberId === null && multiDay ? weekdayLabelOf(d.date) : null;
       const day = multiWeek ? `${Number(d.date.slice(5, 7))}/${Number(d.date.slice(8, 10))} ` : '';
-      const name = w ? `${d.donorDisplayName} (${day}${w.label})` : d.donorDisplayName;
+      const name = w ? `${d.donorDisplayName} (${day}${w.label})` : (d.memberId && nameOf?.(d.memberId)) || d.donorDisplayName;
       row = { key, name, isAnonymous: d.memberId === null, cells: columns.map(() => 0), total: 0 };
       rowMap.set(key, row);
     }

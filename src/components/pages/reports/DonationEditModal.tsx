@@ -3,6 +3,7 @@ import type { DonationEditorController } from '../../../hooks/useDonationEditor'
 import { DatePicker } from '../../shared/DatePicker';
 import { Modal } from '../../shared/Modal';
 import { ConfirmFooter } from '../../shared/ConfirmFooter';
+import { KoreanAmount } from '../donation-input/AmountRow';
 
 const OTHER = '기타(직접 입력)';
 /** 자주 쓰는 사유. 선택하면 입력 칸에 채워지고 그대로 고쳐 쓸 수 있습니다. */
@@ -60,6 +61,7 @@ export function DonationEditModal({ editor: e }: { editor: DonationEditorControl
               <label>
                 <span className="label">금액</span>
                 <input className="input text-right" inputMode="numeric" value={d.amount} onChange={(ev) => e.setField('amount')(ev.target.value)} />
+                <KoreanAmount value={d.amount} />
               </label>
               <label>
                 <span className="label">메모</span>

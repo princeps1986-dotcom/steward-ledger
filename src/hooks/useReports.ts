@@ -304,12 +304,13 @@ export function useWeeklyMatrix(f: ReportFilters, hidden: ReadonlySet<string> = 
   const orderKey = useMemberOrderKey();
   const range = f.personRange!;
   const donations = useDonationsForSummary(f.donations, includeInactive);
+  const memberById = useMemberById();
   return useMemo(() => {
-    const matrix = buildWeeklyMatrix(withoutTypes(donations, hidden), typesWithout(types, hidden), range, orderKey);
+    const matrix = buildWeeklyMatrix(withoutTypes(donations, hidden), typesWithout(types, hidden), range, orderKey, (id) => memberById.get(id)?.name);
     // 주별은 "시작 ~ 종료", 월별은 "YYYY-MM"으로 표시
     const rangeLabel = f.personKind === 'MONTH' ? range.start.slice(0, 7) : f.personKind === 'DAY' ? withWeekday(range.start) : `${withWeekday(range.start)} ~ ${withWeekday(range.end)}`;
     return { matrix, rangeLabel, hasData: matrix.count > 0 };
-  }, [donations, types, range, orderKey, hidden, f.personKind]);
+  }, [donations, types, range, orderKey, hidden, f.personKind, memberById]);
 }
 
 /** 종합 보고서에 노출할 내역(숨김 종류 제외)이 하나라도 있는지. 인쇄·PDF 저장 버튼의 활성 조건으로 씁니다. */

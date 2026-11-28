@@ -249,6 +249,8 @@ describe('runPeriodicBackup', () => {
     await db.kv.delete('meta_dirty_years');
     expect(await runPeriodicBackup(DEFAULT_SETTINGS)).toEqual({ file: 'C:/x/backup.json.gz', full: true });
     expect(f.final().filter((l) => l.includes('"t":"donations"'))).toHaveLength(3); // 2025-05, 2026-01, 2026-02 모두
+    // [전체 복원]은 종료 백업만 쓰므로, 10분 백업이 전체를 담았어도 종료 때 전체 백업은 건너뛰지 않습니다.
+    expect(await buildAutoBackup()).not.toBeNull();
   });
 
   it('성도·헌금 종류만 바뀌었으면 헌금 내역이 있는 가장 최근 연도 하나만 담고, 종료 때는 전체 백업한다', async () => {

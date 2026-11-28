@@ -521,16 +521,24 @@ export function DonationProvider({ children, maxLoadedRows = MAX_LOADED_ROWS }: 
       const hit = yms.map((m) => m.slice(0, 4)).find((y) => locked.includes(y));
       if (hit) throw new Error(`${hit}년은 잠겨 있어 지울 수 없습니다. 먼저 잠금을 푸세요.`);
       let total = 0;
+      let lastDone: string | null = null;
       for (const ym of yms) {
-        const { writes, result } = await transact(async () => {
-          const rows = await readMonth(ym);
-          if (rows.length === 0) return { writes: [], result: 0 };
-          const now = nowIso();
-          const logs = rows.map((r) => makeAudit('DELETE', r, null, reason, now));
-          return { writes: [rowWrite(ym, { puts: [], deletes: rows.map((r) => [r.date, r.id] as const) }), auditAppend(ym.slice(0, 4), logs)], result: rows.length };
-        });
-        applyWrites(writes);
-        total += result;
+        try {
+          const { writes, result } = await transact(async () => {
+            const rows = await readMonth(ym);
+            if (rows.length === 0) return { writes: [], result: 0 };
+            const now = nowIso();
+            const logs = rows.map((r) => makeAudit('DELETE', r, null, reason, now));
+            return { writes: [rowWrite(ym, { puts: [], deletes: rows.map((r) => [r.date, r.id] as const) }), auditAppend(ym.slice(0, 4), logs)], result: rows.length };
+          });
+          applyWrites(writes);
+          total += result;
+          lastDone = ym;
+        } catch (err) {
+          // 달마다 따로 저장하므로 앞 달은 이미 지워졌습니다(건마다 이력이 남음). 어디까지 지웠는지 알려 줍니다.
+          if (lastDone === null) throw err;
+          throw new Error(`${lastDone}까지 ${total.toLocaleString('ko-KR')}건을 지웠고 ${ym}에서 멈췄습니다: ${(err as Error).message}`);
+        }
       }
       return total;
     },

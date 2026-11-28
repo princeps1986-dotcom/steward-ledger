@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AuthGate } from './components/auth/AuthGate';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AppProviders } from './contexts/AppProviders';
 import { openStorage } from './services/storage/storageService';
 import { applyStoredTheme } from './services/theme';
@@ -32,11 +33,14 @@ async function bootstrap() {
   void navigator.storage?.persist?.();
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <AuthGate>
-        <AppProviders>
-          <App />
-        </AppProviders>
-      </AuthGate>
+      {/* 로그인 화면·머리글처럼 페이지 경계 밖에서 난 오류도 흰 화면 대신 안내와 [앱 새로고침]을 보여 줍니다. */}
+      <ErrorBoundary>
+        <AuthGate>
+          <AppProviders>
+            <App />
+          </AppProviders>
+        </AuthGate>
+      </ErrorBoundary>
     </StrictMode>,
   );
 }

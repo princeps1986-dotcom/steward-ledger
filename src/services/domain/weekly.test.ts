@@ -20,6 +20,12 @@ describe('withoutInactiveMembers', () => {
     expect(m.total).toBe(1500);
   });
 
+  it('이름을 바꾼 성도는 지금 이름으로, 무명은 그대로 보인다', () => {
+    const types = [{ id: 't', name: '십일조', displayArea: 'MAIN', quickAmounts: [], sortOrder: 1, isActive: true }] as never;
+    const m = buildWeeklyMatrix(donations, types, { start: '2026-11-22', end: '2026-11-28' }, undefined, (id) => (id === 'a' ? '새이름' : undefined));
+    expect(m.rows.map((r) => r.name)).toEqual(['새이름', 'b', '무명1 (일)']);
+  });
+
   it('returns the same list when every member is active', () => {
     expect(withoutInactiveMembers(donations, [{ id: 'a', isActive: true }, { id: 'b', isActive: true }])).toBe(donations);
   });

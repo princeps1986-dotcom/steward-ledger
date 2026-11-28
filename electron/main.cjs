@@ -215,6 +215,13 @@ if (!app.requestSingleInstanceLock()) {
       throw err;
     }
     // 임시 파일에 다 쓰고 검증한 뒤 이름을 바꿔, 쓰는 도중 전원이 꺼져도 잘린 백업 파일이 남지 않게 합니다.
+    // 이름을 바꾸기 전에 디스크에 내려, 정전 직후 바뀐 이름의 파일이 비어 있지 않게 합니다.
+    const fh = await fs.open(s.tmp, 'r+');
+    try {
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
     await fs.rename(s.tmp, s.file);
     // 오래된 파일 정리는 종료·주기 백업만(직접 백업과 예전 긴급 백업 파일은 지우지 않음). 정리 실패로 이미 저장된 백업을 실패로 알리지 않습니다.
     if (s.kind === 'close' || s.kind === 'periodic') await pruneBackups(path.dirname(s.file)).catch(() => undefined);

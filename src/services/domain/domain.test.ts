@@ -34,6 +34,9 @@ describe('amount', () => {
     expect(formatAmountInput('1234567')).toBe('1,234,567');
     expect(formatAmountInput('00-12a3')).toBe('123');
     expect(formatAmountInput('')).toBe('');
+    // 소수점 뒤는 버림(붙여넣은 '15,000.00'이 1,500,000이 되지 않게)
+    expect(formatAmountInput('15,000.00')).toBe('15,000');
+    expect(formatAmountInput('1234.5')).toBe('1,234');
   });
   it('parses and validates', () => {
     expect(parseAmount('')).toEqual({ kind: 'empty' });

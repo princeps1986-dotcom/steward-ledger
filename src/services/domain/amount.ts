@@ -5,9 +5,9 @@ type AmountParse =
 
 const MAX_DIGITS = 15; // Number.MAX_SAFE_INTEGER 이하 보장
 
-/** 입력 중인 문자열에서 숫자만 남기고 천 단위 쉼표로 다시 표기합니다. */
+/** 입력 중인 문자열에서 숫자만 남기고 천 단위 쉼표로 다시 표기합니다. 소수점 뒤는 버립니다('15,000.00'을 붙여넣어도 100배가 되지 않게). */
 export function formatAmountInput(raw: string): string {
-  const digits = raw.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '').slice(0, MAX_DIGITS);
+  const digits = raw.split('.')[0].replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '').slice(0, MAX_DIGITS);
   if (digits === '') return '';
   return Number(digits).toLocaleString('ko-KR');
 }
