@@ -15,7 +15,7 @@ export function HistoryPanel({ canUndo, onUndo, onEdit }: Props) {
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">최근 입력 (이번 실행)</h3>
         <button className="btn px-2 py-1 text-xs" onClick={onUndo} disabled={!canUndo}>
-          직전 입력 복구하기
+          직전 저장 취소
         </button>
       </div>
       {items.length === 0 ? <p className="text-xs text-gray-500">아직 저장한 내역이 없습니다.</p> : null}

@@ -3,8 +3,29 @@ import 'fake-indexeddb/auto';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { AppProviders } from '../contexts/AppProviders';
+import { useMemberActions } from '../contexts/MemberContext';
+import { EMPTY_MEMBER_DRAFT } from '../services/domain/memberRules';
 import { readMonth } from '../services/storage/storageService';
 import { useDonationInput } from './useDonationInput';
+
+describe('useDonationInput 성도 검색', () => {
+  it('이름이 같은 성도가 여럿이면 Enter만으로 첫 사람을 고르지 않고, ↓로 고른 뒤 Enter를 누르면 고른다', async () => {
+    const { result } = renderHook(() => ({ input: useDonationInput(), members: useMemberActions() }), { wrapper: AppProviders });
+    await waitFor(() => expect(result.current.input.primaryTypes.length).toBeGreaterThan(0));
+    await act(() => result.current.members.saveMember({ ...EMPTY_MEMBER_DRAFT, name: '동명테스트', phoneLast4: '1111' }));
+    await act(() => result.current.members.saveMember({ ...EMPTY_MEMBER_DRAFT, name: '동명테스트', phoneLast4: '2222' }));
+    const key = (k: string) => act(() => result.current.input.search.onSearchKeyDown({ key: k, preventDefault() {}, nativeEvent: {} } as never));
+
+    act(() => result.current.input.search.onQueryChange('동명테스트'));
+    await key('Enter');
+    expect(result.current.input.message?.text).toContain('같은 이름이 2명');
+    expect(result.current.input.search.selectedLabel).toBe('');
+
+    await key('ArrowDown');
+    await key('Enter');
+    expect(result.current.input.search.selectedLabel).toContain('동명테스트');
+  });
+});
 
 describe('useDonationInput 저장 흐름', () => {
   it('큰 금액은 확인을 받은 뒤 한 번만 저장합니다', async () => {

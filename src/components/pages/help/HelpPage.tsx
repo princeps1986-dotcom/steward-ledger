@@ -35,15 +35,16 @@ function Line({ text }: { text: string }) {
 }
 
 /** 메뉴별 설명서 */
-export function HelpPage() {
-  const h = useHelpPage();
+/** initialSection: [? 도움말]·F1로 열 때 처음 보여 줄 절(보던 화면의 설명) */
+export function HelpPage({ initialSection }: { initialSection?: string }) {
+  const h = useHelpPage(initialSection);
   return (
     <div className="space-y-4">
     <div className="card flex flex-wrap items-center gap-3">
       <input
         type="search"
         className="input min-w-0 flex-1"
-        placeholder="설명서 검색 (예: 백업, 복원, 복구하기)"
+        placeholder="설명서 검색 (예: 백업, 복원, 저장 취소)"
         aria-label="설명서 검색"
         value={h.query}
         onChange={(e) => h.setQuery(e.target.value)}

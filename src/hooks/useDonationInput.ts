@@ -8,7 +8,7 @@ import type { Donation, DonationDraft, DuplicateResolution, Member } from '../co
 import { addQuickAmount, formatAmountInput, formatWon, parseAmount } from '../services/domain/amount';
 import { shiftWeek } from '../services/domain/calendar';
 import { isDateInRange, isValidDateString, lastSunday, withWeekday } from '../services/domain/dates';
-import { memberLabel, searchMembers } from '../services/domain/search';
+import { compactName, memberLabel, searchMembers } from '../services/domain/search';
 
 interface DuplicateItem {
   typeName: string;
@@ -56,6 +56,8 @@ export function useDonationInput() {
   const [memo, setMemo] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  /** ↑↓로 직접 고른 항목인지(동명이인이면 기본 강조만으로는 Enter 선택을 막습니다) */
+  const [picked, setPicked] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [pendingDuplicate, setPendingDuplicate] = useState<PendingDuplicate | null>(null);
   const [pendingLarge, setPendingLarge] = useState<PendingLarge | null>(null);
@@ -153,6 +155,7 @@ export function useDonationInput() {
     setSelected(null);
     setDropdownOpen(true);
     setHighlight(0);
+    setPicked(false);
   }, []);
 
   const openQuickRegister = useCallback(() => {
@@ -168,21 +171,29 @@ export function useDonationInput() {
         e.preventDefault();
         setDropdownOpen(true);
         setHighlight((h) => (h + 1) % optionCount);
+        setPicked(true);
       } else if (e.key === 'ArrowUp' && !anonymous) {
         e.preventDefault();
         setHighlight((h) => (h - 1 + optionCount) % optionCount);
+        setPicked(true);
       } else if (e.key === 'Escape') {
         setDropdownOpen(false);
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (anonymous || selected) return focusFirstAmount();
-        if (dropdownOpen && highlight < results.length) return selectMember(results[highlight]);
+        if (dropdownOpen && highlight < results.length) {
+          // 이름이 똑같은 사람이 여럿이면 기본 강조(첫 사람)로 바로 고르지 않고 직접 고르게 합니다(다른 사람에게 기록되는 실수 방지).
+          const name = compactName(results[highlight]);
+          const same = results.filter((m) => compactName(m) === name).length;
+          if (!picked && same > 1) return setMessage({ kind: 'error', text: `같은 이름이 ${same}명 있습니다. ↓ 키로 직분·연락처를 보고 고른 뒤 Enter를 누르세요.` });
+          return selectMember(results[highlight]);
+        }
         if (dropdownOpen && highlight === results.length && query.trim()) return openQuickRegister();
         if (results.length === 1) return selectMember(results[0]);
         setMessage({ kind: 'error', text: '성도를 목록에서 선택하거나 F2로 무명 모드를 사용하세요.' });
       }
     },
-    [anonymous, selected, dropdownOpen, highlight, results, query, focusFirstAmount, selectMember, openQuickRegister],
+    [anonymous, selected, dropdownOpen, highlight, picked, results, query, focusFirstAmount, selectMember, openQuickRegister],
   );
 
   const onQuickRegistered = useCallback(
@@ -367,9 +378,9 @@ export function useDonationInput() {
       exclusive(async () => {
         try {
           const b = await actions.undoLast();
-          if (b) setMessage({ kind: 'info', text: `복구: ${b.donorDisplayName} (${withWeekday(b.date)})` });
+          if (b) setMessage({ kind: 'info', text: `저장 취소: ${b.donorDisplayName} (${withWeekday(b.date)})` });
         } catch (err) {
-          setMessage({ kind: 'error', text: `복구하기 실패: ${(err as Error).message}` });
+          setMessage({ kind: 'error', text: `저장 취소 실패: ${(err as Error).message}` });
         }
         focusSearch();
       }),

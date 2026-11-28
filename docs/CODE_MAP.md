@@ -50,7 +50,7 @@
 ## 앱 뼈대·공통 화면
 - 시작: `src/main.tsx` → `src/App.tsx`, `src/hooks/useAppShell.ts`(메뉴·종료 백업 처리)
 - 공통 부품: `src/components/shared/` (`Modal.tsx`, `DatePicker.tsx`, `Notice.tsx`, `ErrorBoundary.tsx`, `ClosingOverlay.tsx`, `RestoringOverlay.tsx` 등), 테마 `src/services/theme.ts`
-- 설명서: `src/components/pages/help/helpContent.ts`(기능이 바뀌면 함께 고침), `HelpPage.tsx`, `src/hooks/useHelpPage.ts`
+- 설명서: `src/components/pages/help/helpContent.ts`(기능이 바뀌면 함께 고침), `HelpPage.tsx`, `src/hooks/useHelpPage.ts`. 머리글의 [? 도움말 (F1)]·F1 키는 `App.tsx`(`HELP_SECTION_OF`로 보던 화면의 절을 골라 `HelpPage`의 `initialSection`으로 넘김)
 
 ## 개발 도구
 - 실행: `npm run dev`(브라우저 모드), `npm run dev:app`(`scripts/dev-app.mjs`, 개발 서버 + Electron 창)
