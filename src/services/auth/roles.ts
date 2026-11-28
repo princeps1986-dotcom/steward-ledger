@@ -38,4 +38,4 @@ export function can(role: Role | null | undefined, action: Action): boolean {
   return !!role && (ALLOWED[action] as readonly Role[]).includes(role);
 }
 
-export const ROLE_LABEL: Record<Role, string> = { admin: '관리자', finance: '재정담당', viewer: '열람자' };
+export const ROLE_LABEL: Record<Role, string> = { admin: '관리', finance: '재정담당', viewer: '열람' };

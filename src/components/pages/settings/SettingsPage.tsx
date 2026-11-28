@@ -179,7 +179,7 @@ export function SettingsPage() {
         ) : null}
       </Modal>
 
-      {/* 연도 잠금은 계정이 있는 PC앱에서만(브라우저 시연 모드에는 없음). 기간 헌금 삭제는 [관리자] 탭에 있습니다. */}
+      {/* 연도 잠금은 계정이 있는 PC앱에서만(브라우저 시연 모드에는 없음). 기간 헌금 삭제는 [관리] 탭에 있습니다. */}
       {s.isDesktop ? <YearLockSection /> : null}
 
       <DemoResetSection s={s} />

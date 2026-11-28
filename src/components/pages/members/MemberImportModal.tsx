@@ -92,10 +92,10 @@ function ImportBody({ onClose }: { onClose(): void }) {
                   };
                   // 직분·연락처는 성도 수정 창(MemberFormFields)과 같은 방식으로 받습니다.
                   const nameField = edit ? (
-                    <input className="input w-24 px-1 py-0.5" aria-label={`${r.rowNo}행 이름`} value={edit.name} onChange={(e) => setEditing({ ...edit, name: e.target.value })} onKeyDown={keys} />
+                    <input className="input w-24 px-1 py-0.5" aria-label={`${r.line}행 이름`} value={edit.name} onChange={(e) => setEditing({ ...edit, name: e.target.value })} onKeyDown={keys} />
                   ) : null;
                   const positionField = edit ? (
-                    <select className="input w-24 px-1 py-0.5" aria-label={`${r.rowNo}행 직분`} value={edit.position} onChange={(e) => setEditing({ ...edit, position: e.target.value })} onKeyDown={keys}>
+                    <select className="input w-24 px-1 py-0.5" aria-label={`${r.line}행 직분`} value={edit.position} onChange={(e) => setEditing({ ...edit, position: e.target.value })} onKeyDown={keys}>
                       <option value="">미선택</option>
                       {positionOptions(edit.position).map((p) => (
                         <option key={p} value={p}>
@@ -108,7 +108,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
                     <input
                       className="input w-16 px-1 py-0.5"
                       inputMode="numeric"
-                      aria-label={`${r.rowNo}행 연락처`}
+                      aria-label={`${r.line}행 연락처`}
                       value={edit.phoneLast4}
                       onChange={(e) => setEditing({ ...edit, phoneLast4: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })}
                       onKeyDown={keys}
@@ -127,7 +127,7 @@ function ImportBody({ onClose }: { onClose(): void }) {
                       <td className="td text-center">
                         {/* 이름만 있는 중복 행은 덮어쓸 직분·연락처가 없으므로 칸을 숨깁니다. */}
                         {r.status === 'DUPLICATE' && (r.position || r.phoneLast4) ? (
-                          <input type="checkbox" checked={r.overwrite} onChange={() => im.toggleOverwrite(r.rowNo)} aria-label={`${r.rowNo}행 덮어쓰기`} />
+                          <input type="checkbox" checked={r.overwrite} onChange={() => im.toggleOverwrite(r.rowNo)} aria-label={`${r.line}행 덮어쓰기`} />
                         ) : null}
                       </td>
                       <td className="td whitespace-nowrap text-right">
@@ -144,13 +144,13 @@ function ImportBody({ onClose }: { onClose(): void }) {
                           <span className="flex justify-end gap-1">
                             <button
                               className="btn px-2 py-0.5 text-xs"
-                              aria-label={`${r.rowNo}행 수정`}
+                              aria-label={`${r.line}행 수정`}
                               disabled={im.busy}
                               onClick={() => setEditing({ rowNo: r.rowNo, name: r.name, position: normalizePosition(r.position), phoneLast4: r.phoneLast4 })}
                             >
                               수정
                             </button>
-                            <button className="btn px-2 py-0.5 text-xs" aria-label={`${r.rowNo}행 제외`} disabled={im.busy} onClick={() => im.removeRow(r.rowNo)}>
+                            <button className="btn px-2 py-0.5 text-xs" aria-label={`${r.line}행 제외`} disabled={im.busy} onClick={() => im.removeRow(r.rowNo)}>
                               제외
                             </button>
                           </span>
