@@ -21,7 +21,7 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'members', label: '성도 정보' },
   { key: 'offerings', label: '헌금 종류' },
   { key: 'settings', label: '설정 정보' },
-  { key: 'admin', label: '관리자' },
+  { key: 'admin', label: '관리' },
   { key: 'help', label: '설명서' },
 ];
 

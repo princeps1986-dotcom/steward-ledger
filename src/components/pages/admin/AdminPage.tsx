@@ -12,7 +12,7 @@ export function AdminPage() {
   const a = useAdminPage();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('finance');
-  const [myNewRole, setMyNewRole] = useState<Role | null>(null); // 본인 역할을 낮추기 전 확인(바꾸면 [관리자] 탭이 바로 사라짐)
+  const [myNewRole, setMyNewRole] = useState<Role | null>(null); // 본인 역할을 낮추기 전 확인(바꾸면 [관리] 탭이 바로 사라짐)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

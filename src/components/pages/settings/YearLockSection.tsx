@@ -12,7 +12,9 @@ export function YearLockSection() {
   const { update } = useSettingsActions();
   const years = useDonationYears();
   const [error, setError] = useState<string | null>(null);
-  const [asking, setAsking] = useState<string | null>(null); // 스스로 풀 수 없는 사람(재정담당)이 잠그기 전 확인
+  // 잠그기·잠금 풀기 전 확인(실수로 누르지 않게)
+  const [asking, setAsking] = useState<{ year: string; lock: boolean } | null>(null);
+  const canUnlock = allowed('year:unlock');
   const all = [...new Set([...years, ...lockedYears])].sort().reverse();
 
   const toggle = async (year: string, lock: boolean) => {
@@ -41,16 +43,16 @@ export function YearLockSection() {
                 {y}년 <span className={locked ? 'font-semibold text-red-700' : 'text-gray-500'}>{locked ? '잠김' : '열림'}</span>
               </span>
               {locked ? (
-                allowed('year:unlock') ? (
+                canUnlock ? (
                   // 더블클릭의 두 번째 클릭(detail > 1)은 무시: 같은 자리에 바뀌어 나온 반대 단추가 눌리지 않게
-                  <button type="button" className="btn" onClick={(e) => e.detail > 1 || void toggle(y, false)}>
+                  <button type="button" className="btn" onClick={(e) => e.detail > 1 || setAsking({ year: y, lock: false })}>
                     잠금 풀기
                   </button>
                 ) : (
                   <span className="text-xs text-gray-500">풀려면 관리자에게 요청하세요</span>
                 )
               ) : (
-                <button type="button" className="btn" onClick={(e) => e.detail > 1 || (allowed('year:unlock') ? void toggle(y, true) : setAsking(y))}>
+                <button type="button" className="btn" onClick={(e) => e.detail > 1 || setAsking({ year: y, lock: true })}>
                   잠그기
                 </button>
               )}
@@ -61,19 +63,23 @@ export function YearLockSection() {
       <Modal
         open={asking !== null}
         onClose={() => setAsking(null)}
-        title={`${asking ?? ''}년을 잠글까요?`}
+        title={asking ? `${asking.year}년을 ${asking.lock ? '잠글까요?' : '잠금 풀까요?'}` : ''}
         footer={
           <ConfirmFooter
             onCancel={() => setAsking(null)}
             onConfirm={async () => {
-              if (asking) await toggle(asking, true);
+              if (asking) await toggle(asking.year, asking.lock);
               setAsking(null);
             }}
-            confirmLabel="잠그기"
+            confirmLabel={asking?.lock === false ? '잠금 풀기' : '잠그기'}
           />
         }
       >
-        <p className="text-sm leading-relaxed text-gray-700">잠그면 그해 헌금을 입력·수정·삭제할 수 없고, 잠금은 관리자만 풀 수 있습니다.</p>
+        <p className="text-sm leading-relaxed text-gray-700">
+          {asking?.lock === false
+            ? '풀면 그해 헌금을 다시 입력·수정·삭제할 수 있습니다. 고칠 일이 끝나면 다시 잠그세요.'
+            : `잠그면 그해 헌금을 입력·수정·삭제할 수 없습니다. ${canUnlock ? '[잠금 풀기]로 다시 열 수 있습니다.' : '잠금은 관리자만 풀 수 있습니다.'}`}
+        </p>
       </Modal>
       <p className="text-xs text-gray-500">백업 복원·전체 초기화는 잠긴 연도도 바꿉니다(관리자만 할 수 있습니다).</p>
     </section>

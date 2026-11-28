@@ -76,28 +76,39 @@ describe('연도 잠금', () => {
     await act(() => result.current.s.update({ theme: 'DARK' }));
   });
 
-  it('[잠그기]를 연달아 눌러도 앞서 잠근 연도가 풀리지 않는다', async () => {
+  /** 단추를 누르고 뜬 확인 창에서 같은 이름의 단추로 확정합니다. */
+  const confirmIn = async (title: string, label: string) => fireEvent.click(within(await screen.findByRole('dialog', { name: title })).getByRole('button', { name: label }));
+  const locked = async () => (await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears ?? [];
+
+  it('[잠그기]를 차례로 확인해도 앞서 잠근 연도가 풀리지 않는다', async () => {
     render(<YearLockSection />, { wrapper });
     const buttons = await screen.findAllByRole('button', { name: '잠그기' });
     expect(buttons).toHaveLength(2); // 2026, 2025
-    // 첫 저장이 끝나기 전에 두 번째를 누릅니다(화면의 잠금 목록은 아직 비어 있음).
-    await act(async () => {
-      fireEvent.click(buttons[0]);
-      fireEvent.click(buttons[1]);
-    });
-    await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2025', '2026']));
+    fireEvent.click(buttons[0]);
+    await confirmIn('2026년을 잠글까요?', '잠그기');
+    await waitFor(async () => expect(await locked()).toEqual(['2026']));
+    fireEvent.click(await screen.findByRole('button', { name: '잠그기' }));
+    await confirmIn('2025년을 잠글까요?', '잠그기');
+    await waitFor(async () => expect(await locked()).toEqual(['2025', '2026']));
   });
 
-  it('더블클릭의 두 번째 클릭은 바뀌어 나온 [잠금 풀기]를 누르지 않는다', async () => {
+  it('[잠금 풀기]도 확인 창을 거치고, [취소]하면 그대로 잠겨 있다', async () => {
+    const { result } = setup();
+    await act(() => result.current.s.update({ lockedYears: ['2026'] }));
     render(<YearLockSection />, { wrapper });
-    fireEvent.click((await screen.findAllByRole('button', { name: '잠그기' }))[0], { detail: 1 });
-    const unlock = await screen.findByRole('button', { name: '잠금 풀기' });
-    await act(async () => {
-      fireEvent.click(unlock, { detail: 2 });
-    });
-    expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual(['2026']);
-    fireEvent.click(unlock, { detail: 1 });
-    await waitFor(async () => expect((await getItem<{ lockedYears: string[] }>('settings'))?.lockedYears).toEqual([]));
+    fireEvent.click(await screen.findByRole('button', { name: '잠금 풀기' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: '2026년을 잠금 풀까요?' })).getByRole('button', { name: '취소' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await locked()).toEqual(['2026']);
+    fireEvent.click(screen.getByRole('button', { name: '잠금 풀기' }));
+    await confirmIn('2026년을 잠금 풀까요?', '잠금 풀기');
+    await waitFor(async () => expect(await locked()).toEqual([]));
+  });
+
+  it('더블클릭의 두 번째 클릭은 확인 창을 열지 않는다(같은 자리에 바뀌어 나온 단추가 눌리지 않게)', async () => {
+    render(<YearLockSection />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('button', { name: '잠그기' }))[0], { detail: 2 });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('스스로 풀 수 없는 재정담당은 [잠그기] 전에 한 번 더 확인한다', async () => {
