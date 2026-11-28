@@ -71,6 +71,17 @@ describe('useMemberImport 미리보기 행 수정·제외', () => {
     expect(result.current.imp.preview[0].messages.join(' ')).toContain('비활성 성도와 같습니다');
   });
 
+  it('기존 성도에 연락처가 없으면 행에 연락처를 넣어도 중복이며, 성도 화면에서 고치라고 안내한다', async () => {
+    const { result } = renderHook(() => ({ imp: useMemberImport(noop), actions: useMemberActions(), members: useMembers() }), { wrapper: AppProviders });
+    await waitFor(() => expect(result.current.imp.busy).toBe(false));
+    await act(() => result.current.actions.saveMember({ ...EMPTY_MEMBER_DRAFT, name: '연락처없음' }));
+    await act(() => result.current.imp.onPaste('이름\n연락처없음'));
+    await waitFor(() => expect(result.current.imp.preview[0]?.status).toBe('DUPLICATE'));
+    act(() => result.current.imp.updateRow(2, { name: '연락처없음', position: '', phoneLast4: '3333' }));
+    expect(result.current.imp.preview[0].status).toBe('DUPLICATE');
+    expect(result.current.imp.preview[0].messages.join(' ')).toContain('성도 화면에서 기존 성도의 연락처를 먼저');
+  });
+
   it('파일 읽기가 끝나기 전에 붙여넣으면, 늦게 끝난 파일 결과는 버린다', async () => {
     const result = await setup('늦은명단');
     let finish!: (rows: Record<string, string>[]) => void;

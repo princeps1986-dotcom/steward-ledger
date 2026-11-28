@@ -1,10 +1,11 @@
 import type { AuditLog, BackupPayload, Donation, Member, OfferingType } from '../../contexts/types';
+import { compact } from '../import/memberImportService';
 
 /**
  * 다른 PC에서 만든 백업을 [선택한 연도만 교체]로 합칠 때, 같은 성도·헌금 종류가 중복되지 않도록
  * 백업의 id를 현재 PC의 id로 대응시키는 규칙(순수 함수).
  *
- * - 헌금 종류: id가 같거나, 이름이 같으면 같은 종류.
+ * - 헌금 종류: id가 같거나, 이름이 같으면 같은 종류. 이름·연락처는 띄어쓰기를 빼고 비교합니다(불러오기와 같은 규칙).
  * - 성도: id가 같거나, 이름 + 연락처 뒷4자리가 모두 같으면 같은 사람.
  *   이름만 같고 연락처가 다르거나 없으면 동명이인일 수 있으므로 합치지 않고 새 성도로 추가합니다.
  */
@@ -23,7 +24,7 @@ export interface MergePlan {
   sameNameAdded: number;
 }
 
-const norm = (s: string | undefined): string => (s ?? '').trim();
+const norm = (s: string | undefined): string => compact(s ?? '');
 
 export function planMerge(current: { members: readonly Member[]; offeringTypes: readonly OfferingType[] }, backup: Pick<BackupPayload, 'members' | 'offeringTypes'>): MergePlan {
   const typeIdMap = new Map<string, string>();

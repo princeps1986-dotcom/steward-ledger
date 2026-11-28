@@ -32,6 +32,13 @@ describe('planMerge (다른 PC 백업 합치기 규칙)', () => {
     expect(p.addMembers).toHaveLength(0);
   });
 
+  it('띄어쓰기만 다른 이름은 같은 성도·종류로 연결한다(불러오기와 같은 규칙)', () => {
+    const p = planMerge(cur, { members: [m('b1', '김 영수', '1234')], offeringTypes: [t('b2', '십 일조')] });
+    expect(p.memberIdMap.get('b1')).toBe('c1');
+    expect(p.typeIdMap.get('b2')).toBe('ct1');
+    expect(p.addMembers.length + p.addTypes.length).toBe(0);
+  });
+
   it('이름만 같고 연락처가 다르거나 없으면 새 성도로 추가하고 동명이인으로 센다', () => {
     const p = planMerge(cur, { members: [m('b1', '김영수', '9999'), m('b2', '이철수'), m('b3', '박민수')], offeringTypes: [] });
     expect(p.addMembers.map((x) => x.id)).toEqual(['b1', 'b2', 'b3']);

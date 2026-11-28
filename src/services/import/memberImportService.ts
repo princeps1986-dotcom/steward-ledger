@@ -217,7 +217,11 @@ export function buildPreview(rows: ImportRow[], existing: Member[]): PreviewRow[
     if (dup) {
       row.duplicateOfId = dup.id;
       row.status = 'DUPLICATE';
-      row.messages.push(`이미 등록된 ${dup.isActive ? '' : '비활성 '}성도와 같습니다. 동명이인이면 [수정]에서 연락처 뒷4자리를 넣으세요.`);
+      // 기존 성도에 연락처가 없으면 행에 연락처를 넣어도 구별되지 않습니다(isSamePerson).
+      const hint = dup.phoneLast4
+        ? '동명이인이면 [수정]에서 연락처 뒷4자리를 넣으세요.'
+        : '기존 성도에 연락처가 없어 구분할 수 없습니다. 동명이인이면 성도 화면에서 기존 성도의 연락처를 먼저 넣으세요.';
+      row.messages.push(`이미 등록된 ${dup.isActive ? '' : '비활성 '}성도와 같습니다. ${hint}`);
     }
   }
   return preview;
