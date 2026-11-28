@@ -44,13 +44,23 @@ const AUTO_BACKUP_FILE_RE = /^backup_\d{8}_\d{6}\.slbk$/;
 const PERIODIC_BACKUP_FILE_RE = /^autosave_\d{8}_\d{6}\.slbk$/;
 const TEMP_BACKUP_FILE_RE = /^(backup|autosave)_\d{8}_\d{6}\.(slbk|json(\.gz)?)\.tmp$/;
 
-/** 백업 폴더의 파일 이름 중 지울 것: 쓰다 중단된 임시 파일, 종료 백업은 최근 10개·주기 백업은 최근 3개를 넘는 오래된 것 */
+const MONTHLY_BACKUP_KEEP = 6;
+
+/**
+ * 백업 폴더의 파일 이름 중 지울 것: 쓰다 중단된 임시 파일, 주기 백업은 최근 3개를 넘는 것,
+ * 종료 백업은 최근 10개와 최근 6개월의 달마다 마지막 것을 뺀 나머지
+ * (실수로 지운 뒤 모르고 여러 번 열고 닫아도 지난달 백업은 남도록)
+ */
 function backupsToPrune(names) {
   const out = names.filter((n) => TEMP_BACKUP_FILE_RE.test(n));
-  for (const [re, keep] of [[AUTO_BACKUP_FILE_RE, AUTO_BACKUP_KEEP], [PERIODIC_BACKUP_FILE_RE, PERIODIC_BACKUP_KEEP]]) {
-    const matched = names.filter((n) => re.test(n)).sort();
-    out.push(...matched.slice(0, Math.max(0, matched.length - keep)));
-  }
+  const periodic = names.filter((n) => PERIODIC_BACKUP_FILE_RE.test(n)).sort();
+  out.push(...periodic.slice(0, Math.max(0, periodic.length - PERIODIC_BACKUP_KEEP)));
+  const close = names.filter((n) => AUTO_BACKUP_FILE_RE.test(n)).sort();
+  const keep = new Set(close.slice(-AUTO_BACKUP_KEEP));
+  // 이름순 = 시각순이라 같은 달(backup_YYYYMM…)에서는 마지막 값이 남습니다.
+  const lastOfMonth = new Map(close.map((n) => [n.slice(7, 13), n]));
+  for (const n of [...lastOfMonth.values()].slice(-MONTHLY_BACKUP_KEEP)) keep.add(n);
+  out.push(...close.filter((n) => !keep.has(n)));
   return out;
 }
 

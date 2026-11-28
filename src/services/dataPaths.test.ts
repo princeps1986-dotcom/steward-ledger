@@ -21,6 +21,16 @@ describe('자동 백업 보관 개수 정리', () => {
     const out = backupsToPrune([...keep, ...close, ...periodic, 'autosave_20260101_000000.slbk.tmp']);
     expect(out.sort()).toEqual(['autosave_20260101_000000.slbk', 'autosave_20260101_000000.slbk.tmp', 'autosave_20260102_000000.slbk', close[0], close[1]].sort());
   });
+
+  it('최근 10개가 모두 이번 달이어도 최근 6개월의 달마다 마지막 종료 백업은 남긴다', () => {
+    const months = ['202604', '202605', '202606', '202607', '202608', '202609', '202610'];
+    const old = months.flatMap((m) => [`backup_${m}01_000000.slbk`, `backup_${m}20_000000.slbk`]);
+    const recent = Array.from({ length: 10 }, (_, i) => `backup_202611${String(i + 1).padStart(2, '0')}_000000.slbk`);
+    const out = backupsToPrune([...old, ...recent]);
+    // 11월(최근 10개에 포함)과 6~10월의 20일 백업이 남고, 4·5월과 달마다 1일 백업은 지운다
+    const kept = [...old, ...recent].filter((n) => !out.includes(n));
+    expect(kept.sort()).toEqual([...['202606', '202607', '202608', '202609', '202610'].map((m) => `backup_${m}20_000000.slbk`), ...recent].sort());
+  });
 });
 
 describe('복원 기록 검사', () => {

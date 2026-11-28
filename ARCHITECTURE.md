@@ -291,7 +291,7 @@ React 상태(`saving`)는 다음 렌더 뒤에야 바뀌어 연타를 막지 못
 | 복원 | `streamRestore.restoreFromFile(file, scan, years, overwrite?, full?)` | 줄 단위 백업을 달마다 저장. 예전 한 덩어리 JSON도 검사 후 `payloadBackup`으로 줄 단위처럼 감싸 같은 함수로 복원(복원 규칙은 한 곳) |
 | 전체 교체 | `replaceAllData(payload)` | 시연 데이터·초기화용(단일 트랜잭션, 큰 데이터에는 한도 있음) |
 | 초기화 | `resetAllData()` | 빈 성도·내역·이력 + 새 id의 기본 헌금 종류로 교체(설정 유지) |
-| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개 보관. 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip한 뒤 암호화해(`backup_….slbk`) 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 웹 브라우저의 직접 백업은 `createBackupBlob`이 달마다 만든 줄을 Blob으로 이어 붙이고 끝 줄에 해시를 붙인 줄 단위 파일로 내려받음 |
+| 자동 백업 | `autoBackupService` | 종료 시 변경이 있으면 전체 백업을 **줄 단위 JSON(v3, `ndjson`)**으로 만들어 저장, 최근 10개와 최근 6개월의 달마다 마지막 것 보관(`backupsToPrune`). 렌더러가 `backupLines()`로 한 달치씩 만들어 `autoBackupWrite`로 보내면 main이 SHA-256을 이어 계산하며 gzip한 뒤 암호화해(`backup_….slbk`) 바로 쓰고 마지막 줄에 해시를 붙임(메모리가 데이터 크기와 무관). 복원 화면은 `DecompressionStream`으로 `.gz`를 읽고 `parseNdjson`이 끝 줄 해시를 확인. 웹 브라우저의 직접 백업은 `createBackupBlob`이 달마다 만든 줄을 Blob으로 이어 붙이고 끝 줄에 해시를 붙인 줄 단위 파일로 내려받음 |
 
 ### 10.1 연도 복원(YEARS)과 다른 PC 백업 병합
 한 트랜잭션에서 ① 선택 연도의 기존 월 키·이력 키를 지우고 ② 백업 내용을 월별로 쓰고 ③ 성도·종류를 **현재 데이터와 대응**시킵니다. 대응 규칙(`mergeRules.planMerge`)은 다음과 같습니다.

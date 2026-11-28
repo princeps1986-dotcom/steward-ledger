@@ -1,7 +1,7 @@
 // Electron main 프로세스 (Windows 전용 데스크톱 셸)
 // - 단일 인스턴스 잠금
 // - app:// 커스텀 프로토콜로 dist 서빙 + CSP 헤더 강제
-// - 종료 시 자동 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개 보관)
+// - 종료 시 자동 백업 (렌더러에 백업 내용 요청 → 파일 기록 → 최근 10개+달마다 1개 보관)
 // - mailto: 링크는 OS 기본 메일 앱으로, 그 외 외부 탐색은 차단
 process.env.TZ = 'Asia/Seoul'; // 날짜·시각은 PC 설정과 상관없이 서울 기준(화면 프로세스도 상속)
 const { app, BrowserWindow, Menu, protocol, net, ipcMain, dialog, shell, session, safeStorage } = require('electron');

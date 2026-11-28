@@ -9,7 +9,7 @@ import type { DesktopApi } from '../services/desktopBridge';
 import { db } from '../services/storage/db';
 import { KEYS } from '../services/storage/keys';
 import { monthWrite, transact } from '../services/storage/storageService';
-import { useAutoBackupBridge } from './useAppShell';
+import { manualBackupReminder, useAutoBackupBridge } from './useAppShell';
 
 type Status = { ok: boolean; at: string; error?: string } | null;
 
@@ -107,5 +107,14 @@ describe('useAutoBackupBridge 중단된 복원 확인', () => {
     vi.spyOn(db.kv, 'get').mockImplementation(((key: string) => (key === KEYS.restoreMarker ? Promise.reject(new Error('읽기 실패')) : get(key))) as typeof db.kv.get);
     const { result } = render();
     await until(() => !!result.current.bridge.failure?.startsWith('지난 복원이 끝까지 되었는지 확인하지 못했습니다'));
+  });
+});
+
+describe('직접 백업 권고', () => {
+  const now = Date.parse('2026-11-29T00:00:00.000Z');
+  it('가장 최근 연도의 직접 백업이 없거나 30일 지났으면 권하고, 그 안이면 권하지 않는다', () => {
+    expect(manualBackupReminder('2026', undefined, now)).toContain('2026년 헌금을 백업 파일로 직접 저장한 적이 없습니다');
+    expect(manualBackupReminder('2026', '2026-10-01T00:00:00.000Z', now)).toContain('59일');
+    expect(manualBackupReminder('2026', '2026-11-20T00:00:00.000Z', now)).toBeNull();
   });
 });

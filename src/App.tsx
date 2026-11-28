@@ -50,11 +50,17 @@ export function App() {
     setHelpSection(HELP_SECTION_OF[nav.page]);
     goPage('help');
   };
+  // 메뉴로 설명서를 열면 처음부터 보이도록, 설명서를 떠나면 기억한 절을 지웁니다.
+  useEffect(() => {
+    if (nav.page !== 'help') setHelpSection(undefined);
+  }, [nav.page]);
   const openHelpRef = useRef(openHelp);
   openHelpRef.current = openHelp;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'F1' || document.querySelector('[data-lock-screen]')) return; // 잠금 화면 뒤에서는 움직이지 않습니다
+      if (e.key !== 'F1') return;
+      // 잠금 화면 뒤, 열린 창, 입력 중인 헌금(F2 옆 키를 잘못 누름)은 F1로 떠나지 않습니다. 머리글 단추는 그대로 됩니다.
+      if (document.querySelector('[data-lock-screen], [role="dialog"], [data-unsaved]')) return;
       e.preventDefault();
       openHelpRef.current();
     };

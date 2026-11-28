@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDemoActive, useDemoCreating } from '../services/demo/demoState';
 import { useDonationYears } from '../contexts/DonationContext';
-import { useMembers } from '../contexts/MemberContext';
 import { useSettings, useSettingsActions, useSettingsSelector } from '../contexts/SettingsContext';
 import { interruptedRestore } from '../services/backup/streamRestore';
 import { buildAutoBackup, PERIODIC_BACKUP_INTERVAL_MS, runPeriodicBackup } from '../services/backup/autoBackupService';
@@ -134,13 +133,23 @@ export function useAutoBackupBridge(): { failure: string | null; closing: boolea
   return { failure, closing, skipBackup, autoSave };
 }
 
+const MANUAL_BACKUP_DAYS = 30;
+/**
+ * 가장 최근 연도를 직접 저장한 백업(암호를 건 백업 파일)이 없거나 30일이 지났으면 권고 문구, 아니면 null.
+ * 자동 백업은 이 PC의 열쇠로 잠겨 PC가 고장 나면 함께 못 쓰므로, 자동 백업이 있어도 직접 백업을 권합니다.
+ */
+export function manualBackupReminder(year: string, lastAt: string | undefined, now: number): string | null {
+  if (!lastAt) return `${year}년 헌금을 백업 파일로 직접 저장한 적이 없습니다. 자동 백업은 이 PC에서만 열리므로, 설정에서 백업 파일을 저장해 USB 등에 보관하세요.`;
+  const days = Math.floor((now - Date.parse(lastAt)) / 86_400_000);
+  return days >= MANUAL_BACKUP_DAYS ? `${year}년 백업 파일을 마지막으로 직접 저장한 지 ${days}일 지났습니다. 설정에서 백업 파일을 새로 저장해 USB 등에 보관하세요.` : null;
+}
+
 /** 백업 권고 배너 */
 export function useBackupReminder(autoBackupFailure: string | null, goSettings: () => void) {
   const settings = useSettings();
   const loaded = useSettingsSelector((s) => s.loaded);
   const { markBackupDone } = useSettingsActions();
   const years = useDonationYears();
-  const members = useMembers();
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   // 시연 중에는 백업을 권하지 않고 [지금 백업]도 없습니다(시연 데이터는 백업하지 않음).
@@ -155,8 +164,10 @@ export function useBackupReminder(autoBackupFailure: string | null, goSettings: 
     tone = 'error';
   } else if (demoBlocked) {
     text = null;
-  } else if (desktop() && allowed('backup:create') && loaded && !settings.lastBackupAt && (years.length > 0 || members.length > 0)) {
-    text = '아직 백업한 적이 없습니다. 데이터 보호를 위해 백업 파일을 만들어 두세요.';
+  } else if (desktop() && allowed('backup:create') && loaded && years.length > 0) {
+    // 직접 백업은 한 해씩 저장하므로, 지금 입력하는 가장 최근 연도의 백업 시각으로 판단합니다(헌금이 없으면 백업할 연도가 없어 권하지 않음).
+    const latestYear = [...years].sort().pop()!;
+    text = manualBackupReminder(latestYear, settings.manualBackupAt[latestYear], Date.now());
   }
 
   const backupNow = useCallback(async () => {

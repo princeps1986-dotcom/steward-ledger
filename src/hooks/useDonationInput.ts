@@ -460,6 +460,8 @@ export function useDonationInput() {
   );
 
   return {
+    /** 저장하지 않은 입력(검색어·고른 성도·직접 적은 방문자 이름·금액·메모)이 있는지 */
+    hasDraft: query.trim() !== '' || selected !== null || !!anonNameEdit?.trim() || extraAmount !== '' || memo.trim() !== '' || Object.values(amounts).some((v) => v !== ''),
     date,
     setDate,
     prevWeek,

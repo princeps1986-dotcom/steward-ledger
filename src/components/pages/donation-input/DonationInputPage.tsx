@@ -17,7 +17,8 @@ export function DonationInputPage({ onNavigate }: { onNavigate(page: PageKey): v
   const c = useDonationInput();
   const editor = useDonationEditor();
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+    // data-unsaved: 입력 중인 내용이 있으면 F1(App.tsx)이 화면을 떠나지 않습니다.
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]" data-unsaved={c.hasDraft ? '' : undefined}>
       <div className="space-y-4">
         {c.isFirstRun ? <FirstRunGuide onNavigate={onNavigate} /> : null}
         <DailyTotalsBar date={c.date} flashKey={c.savedSeq} />

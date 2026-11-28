@@ -27,6 +27,35 @@ describe('useDonationInput 성도 검색', () => {
   });
 });
 
+describe('useDonationInput 입력 중 표시(F1이 화면을 떠나지 않게)', () => {
+  it('검색어·방문자 이름·금액이 있으면 hasDraft가 켜지고, 비우면 꺼진다', async () => {
+    const { result } = renderHook(() => useDonationInput(), { wrapper: AppProviders });
+    await waitFor(() => expect(result.current.primaryTypes.length).toBeGreaterThan(0));
+    const typeId = result.current.primaryTypes[0].id;
+    expect(result.current.hasDraft).toBe(false);
+
+    act(() => result.current.search.onQueryChange('김'));
+    expect(result.current.hasDraft).toBe(true);
+    act(() => result.current.search.onQueryChange(''));
+    expect(result.current.hasDraft).toBe(false);
+
+    act(() => result.current.search.toggleAnonymous());
+    expect(result.current.hasDraft).toBe(false); // 무명 모드로 바꾸기만 한 것은 입력이 아님
+    act(() => result.current.search.setAnonName('방문 손님'));
+    expect(result.current.hasDraft).toBe(true);
+    act(() => result.current.search.setAnonName('')); // 적었다가 모두 지우면 입력이 아님
+    expect(result.current.hasDraft).toBe(false);
+    act(() => result.current.search.setAnonName('방문 손님'));
+    act(() => result.current.search.toggleAnonymous());
+    expect(result.current.hasDraft).toBe(false);
+
+    act(() => result.current.onAmountChange(typeId, '5000'));
+    expect(result.current.hasDraft).toBe(true);
+    act(() => result.current.onAmountChange(typeId, ''));
+    expect(result.current.hasDraft).toBe(false);
+  });
+});
+
 describe('useDonationInput 저장 흐름', () => {
   it('큰 금액은 확인을 받은 뒤 한 번만 저장합니다', async () => {
     const { result } = renderHook(() => useDonationInput(), { wrapper: AppProviders });
